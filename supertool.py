@@ -563,7 +563,8 @@ def api_atualizar_estado(_):
     return {"estado": dict(atualizacao.ESTADO)}
 
 
-# ------------------------------------------------------------------ servidorROTAS_GET = {"componentes": api_componentes, "pacote_resumo": api_pacote_resumo, "dados": api_dados, "dados_tabelas": api_dados_tabelas, "dados_tabela": api_dados_tabela,
+# ------------------------------------------------------------------ servidor
+ROTAS_GET = {"componentes": api_componentes, "pacote_resumo": api_pacote_resumo, "dados": api_dados, "dados_tabelas": api_dados_tabelas, "dados_tabela": api_dados_tabela,
              "dados_times": api_dados_times, "dados_jogadores": api_dados_jogadores, "inicio": api_inicio, "ferramentas": api_ferramentas, "log": api_log, "guia": api_guia,
              "rdbm": api_rdbm_info, "atualizacao": api_atualizacao, "atualizar_estado": api_atualizar_estado, "versao": lambda _: {"versao": VERSAO, "app": NOME}}
 ROTAS_POST = {"componentes_instalar": api_componentes_instalar, "componentes_local": api_componentes_local,
