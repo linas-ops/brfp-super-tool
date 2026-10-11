@@ -6,7 +6,7 @@ import { api } from './comum/api.js';
 
 const S = { ini: null, e: null, aba: 'times', arvore: null, abertos: JSON.parse(localStorage.getItem('banco.abertos') || '{}'), busca: '',
   vista: null, nacoes: [], pos: {}, polling: null, tarefaAntes: false, buscaJog: '', resJog: null, pessoas: { tabela: 'manager', q: '', lista: null },
-  tabelas: null, buscaTab: '', subTime: 'elenco', probs: null, filtroProb: 'todos' };
+  tabelas: null, buscaTab: '', subTime: 'elenco', probs: null, filtroProb: 'todos', hist: [] };
 const fmt = (n) => Number(n || 0).toLocaleString('pt-BR');
 const opt = (v, t, sel) => { const o = el('option', { value: v }, t); o.selected = String(sel ?? '') === String(v ?? ''); return o; };
 async function tentar(fn) { try { return await fn(); } catch (e) { aviso(e.message, { tipo: 'erro', tempo: 8000 }); return undefined; } }
@@ -58,6 +58,41 @@ const GRUPOS_TIME = [
   ['Prestígio e finanças', ['domesticprestige', 'internationalprestige', 'popularity', 'clubworth', 'transferbudget', 'youthdevelopment', 'profitability']],
   ['Notas do time', ['overallrating', 'attackrating', 'midfieldrating', 'defenserating']],
 ];
+// atributos que entram na nota geral de cada posição (um pouco mais que a fórmula do jogo): mudar o geral em +N soma N
+// a todos eles, e assim a fórmula da posição também sobe N (fora o que esbarrar em 1 ou 99)
+const ATR_GERAL = (() => {
+  const gol = ['gkdiving', 'gkhandling', 'gkkicking', 'gkreflexes', 'gkpositioning', 'reactions'];
+  const zag = ['defensiveawareness', 'marking', 'standingtackle', 'slidingtackle', 'headingaccuracy', 'strength', 'aggression', 'interceptions', 'shortpassing', 'ballcontrol', 'reactions', 'jumping', 'composure'];
+  const lat = ['acceleration', 'sprintspeed', 'stamina', 'reactions', 'ballcontrol', 'crossing', 'headingaccuracy', 'shortpassing', 'interceptions', 'defensiveawareness', 'marking', 'standingtackle', 'slidingtackle', 'dribbling', 'agility'];
+  const vol = ['shortpassing', 'longpassing', 'interceptions', 'defensiveawareness', 'marking', 'standingtackle', 'slidingtackle', 'strength', 'stamina', 'aggression', 'reactions', 'ballcontrol', 'vision', 'composure', 'headingaccuracy'];
+  const mc = ['shortpassing', 'longpassing', 'vision', 'ballcontrol', 'dribbling', 'reactions', 'interceptions', 'positioning', 'standingtackle', 'stamina', 'longshots', 'composure', 'agility'];
+  const mlat = ['crossing', 'dribbling', 'ballcontrol', 'shortpassing', 'longpassing', 'acceleration', 'sprintspeed', 'agility', 'reactions', 'positioning', 'vision', 'stamina', 'finishing', 'longshots', 'curve'];
+  const mei = ['shortpassing', 'longpassing', 'vision', 'ballcontrol', 'dribbling', 'positioning', 'reactions', 'agility', 'finishing', 'shotpower', 'longshots', 'acceleration', 'composure'];
+  const pon = ['crossing', 'dribbling', 'ballcontrol', 'shortpassing', 'acceleration', 'sprintspeed', 'agility', 'reactions', 'positioning', 'finishing', 'vision', 'longshots', 'shotpower', 'curve'];
+  const sa = ['finishing', 'positioning', 'dribbling', 'ballcontrol', 'shortpassing', 'shotpower', 'longshots', 'reactions', 'vision', 'headingaccuracy', 'acceleration', 'sprintspeed', 'agility'];
+  const ata = ['finishing', 'positioning', 'headingaccuracy', 'shotpower', 'reactions', 'dribbling', 'ballcontrol', 'volleys', 'longshots', 'acceleration', 'sprintspeed', 'strength', 'shortpassing', 'jumping'];
+  const m = {};
+  const por = (lst, ps) => ps.forEach((p) => { m[p] = lst; });
+  por(gol, [0]); por(zag, [1, 4, 5, 6]); por(lat, [2, 3, 7, 8]); por(vol, [9, 10, 11]); por(mc, [13, 14, 15]); por(mlat, [12, 16]);
+  por(mei, [17, 18, 19]); por(pon, [23, 27]); por(sa, [20, 21, 22]); por(ata, [24, 25, 26]);
+  return m;
+})();
+// valores para o jogador 'd' (linha original de players) ficar com geral 'nova': {overallrating, atributos…, potential se precisar}
+function ajusteGeral(d, nova) {
+  nova = parseInt(nova, 10);
+  const ant = parseInt(d.overallrating, 10);
+  if (!Number.isFinite(nova) || !Number.isFinite(ant)) return {};
+  const delta = nova - ant;
+  const out = { overallrating: String(nova) };
+  for (const a of ATR_GERAL[parseInt(d.preferredposition1, 10)] || ATR_GERAL[14]) {
+    if (!(a in d)) continue;
+    const v = parseInt(d[a], 10);
+    if (Number.isFinite(v)) out[a] = String(Math.max(1, Math.min(99, v + delta)));
+  }
+  if ('potential' in d) out.potential = String(Math.max(parseInt(d.potential, 10) || 0, nova));
+  return out;
+}
+
 const DATAS = new Set(['birthdate', 'playerjointeamdate', 'loandateend']);
 const NACOES = new Set(['nationality', 'countryid', 'nationalityid']);
 const TIMES = new Set(['rivalteam', 'teamidloanedfrom']);
@@ -92,11 +127,12 @@ function controleCampo(t, campo, info, valor, mudar) {
 }
 
 // formulário de uma linha: grupos com rótulos + "Outros campos"; grava só o que mudou
-function formulario({ tabela, ref, dados, campos, grupos = [], excluir = [], rotulo, depois }) {
+function formulario({ tabela, ref, dados, campos, grupos = [], excluir = [], rotulo, depois, aoMudar }) {
   const mud = {};
+  const ctrl = {};
   const wrap = el('div', { class: 'form-linha' });
   const btn = el('button', { class: 'btn-primario peq', disabled: true }, icone('salvar', 12), 'Gravar as mudanças');
-  const marcar = (c, v) => { if (String(v) === String(dados[c] ?? '')) delete mud[c]; else mud[c] = v; btn.disabled = !Object.keys(mud).length; btn.textContent = ''; btn.append(el('span', { html: icone('salvar', 12) }), Object.keys(mud).length ? ` Gravar ${Object.keys(mud).length} mudança(s)` : ' Gravar as mudanças'); };
+  const marcar = (c, v) => { if (String(v) === String(dados[c] ?? '')) delete mud[c]; else mud[c] = v; ctrl[c]?.closest('.campo-linha')?.classList.toggle('mudado', c in mud); btn.disabled = !Object.keys(mud).length; btn.textContent = ''; btn.append(el('span', { html: icone('salvar', 12) }), Object.keys(mud).length ? ` Gravar ${Object.keys(mud).length} mudança(s)` : ' Gravar as mudanças'); };
   btn.onclick = async () => {
     const r = await tentar(() => api('linha_salvar', { tabela, ref, valores: mud, rotulo }));
     if (!r) return;
@@ -110,7 +146,12 @@ function formulario({ tabela, ref, dados, campos, grupos = [], excluir = [], rot
     const info = campos[c] || {};
     const nome = ROT[c] ? `${ROT[c]}` : c;
     const dica = `${c}${info.high ? ` · ${info.low ?? 0}–${info.high}` : ''}${TIMES.has(c) && dados[c] ? ` · time ${dados[c]}` : ''}`;
-    return el('div', { class: 'campo-linha', title: dica }, el('label', {}, nome, ROT[c] ? el('small', {}, c) : null), controleCampo(tabela, c, info, dados[c], (v) => marcar(c, v)));
+    // outro campo mudado por aoMudar (ex.: o geral ajustando os atributos): o controle mostra o valor novo
+    const definir = (k, v) => { const x = ctrl[k]; if (x && x.tagName === 'INPUT' && x.type !== 'checkbox') x.value = v; else if (x?.tagName === 'SELECT') x.value = v; marcar(k, String(v)); };
+    const ce = controleCampo(tabela, c, info, mud[c] ?? dados[c], (v) => { marcar(c, v); if (aoMudar) aoMudar(c, v, definir); });
+    ctrl[c] = ce.tagName === 'LABEL' ? ce.querySelector('input') : ce;
+    const linha = el('div', { class: `campo-linha ${c in mud ? 'mudado' : ''}`, title: dica }, el('label', {}, nome, ROT[c] ? el('small', {}, c) : null), ce);
+    return linha;
   };
   wrap.append(el('div', { class: 'barra-form' }, el('span', { class: 'mudo peq-txt' }, 'Mudou um campo? Grave para ele entrar na edição (dá para desfazer).'), btn));
   for (const [titulo, cs] of grupos) {
@@ -225,34 +266,37 @@ async function esqTimes(p) {
     S.arvore = r;
     p.innerHTML = '';
   }
-  const busca = el('input', { type: 'search', placeholder: 'Buscar time ou liga…', value: S.busca, spellcheck: 'false' });
+  const busca = el('input', { type: 'search', placeholder: 'Time ou liga (nome ou ID)…', value: S.busca, spellcheck: 'false' });
   const lista = el('div', { class: 'arvore' });
   const desenhar = () => {
     lista.innerHTML = '';
     const q = busca.value.trim().toLowerCase();
+    const porId = /^\d+$/.test(q);
+    const casa = (t) => t.nome.toLowerCase().includes(q) || (porId && String(t.teamid) === q);
     let pais = null;
     for (const l of S.arvore.ligas) {
-      const times = q ? l.times.filter((t) => t.nome.toLowerCase().includes(q) || l.nome.toLowerCase().includes(q)) : l.times;
+      const times = q ? l.times.filter((t) => casa(t) || l.nome.toLowerCase().includes(q) || (porId && String(l.leagueid) === q)) : l.times;
       if (q && !times.length) continue;
       if (l.pais_nome !== pais) { pais = l.pais_nome; lista.append(el('div', { class: 'grupo-pais' }, pais || '—')); }
       const aberto = !!q || S.abertos[l.leagueid];
       lista.append(el('div', { class: 'it-liga' },
         el('button', { class: 'seta-liga', onclick: () => { S.abertos[l.leagueid] = !S.abertos[l.leagueid]; localStorage.setItem('banco.abertos', JSON.stringify(S.abertos)); desenhar(); }, html: icone(aberto ? 'setaBaixo' : 'seta', 12) }),
         el('button', { class: `nome-liga ${S.vista?.tipo === 'liga' && S.vista.id === l.leagueid ? 'foco' : ''}`, onclick: () => abrir({ tipo: 'liga', id: l.leagueid }) },
-          el('b', {}, l.nome), el('small', {}, `${l.times.length} times${l.feminina ? ' · feminina' : ''}`))));
-      if (aberto) for (const t of times) lista.append(itemTime(t));
+          el('b', {}, l.nome), el('small', {}, `${l.times.length} times${l.feminina ? ' · feminina' : ''} · ID ${l.leagueid}`))));
+      if (aberto) for (const t of times) lista.append(itemTime(t, porId));
     }
-    if (S.arvore.sem_liga.length && (!q || S.arvore.sem_liga.some((t) => t.nome.toLowerCase().includes(q)))) {
+    if (S.arvore.sem_liga.length && (!q || S.arvore.sem_liga.some(casa))) {
       lista.append(el('div', { class: 'grupo-pais' }, 'Sem liga'));
-      for (const t of S.arvore.sem_liga.filter((t) => !q || t.nome.toLowerCase().includes(q))) lista.append(itemTime(t));
+      for (const t of S.arvore.sem_liga.filter((t) => !q || casa(t))) lista.append(itemTime(t, porId));
     }
+    if (q && !lista.childElementCount) lista.append(el('div', { class: 'arvore-vazia' }, porId ? `Nenhum time ou liga com o ID ${q}.` : 'Nada encontrado.'));
   };
   busca.oninput = () => { S.busca = busca.value; desenhar(); };
   p.append(el('div', { class: 'busca-linha' }, el('label', { class: 'campo-busca' }, el('span', { html: icone('busca', 14) }), busca)), lista);
   desenhar();
 }
-const itemTime = (t) => el('button', { class: `it-time ${S.vista?.tipo === 'time' && S.vista.id === t.teamid ? 'foco' : ''}`, onclick: () => abrir({ tipo: 'time', id: t.teamid }) },
-  el('span', {}, t.nome), el('small', {}, `${t.jogadores}`));
+const itemTime = (t, comId = false) => el('button', { class: `it-time ${S.vista?.tipo === 'time' && S.vista.id === t.teamid ? 'foco' : ''}`, title: `teamid ${t.teamid} · ${t.jogadores} jogador(es)`, onclick: () => abrir({ tipo: 'time', id: t.teamid }) },
+  el('span', {}, t.nome), el('small', {}, comId ? `ID ${t.teamid}` : `${t.jogadores}`));
 
 function esqJogadores(p) {
   const busca = el('input', { type: 'search', placeholder: 'Nome ou ID do jogador…', value: S.buscaJog, spellcheck: 'false', autofocus: true });
@@ -313,12 +357,35 @@ function esqProblemas(p) {
 }
 
 // ---------------------------------------------------------------- centro
-function abrir(v) {
+function abrir(v, { voltando = false } = {}) {
+  const ant = S.vista;
+  const mesma = ant && v && ant.tipo === v.tipo && String(ant.id) === String(v.id) && ant.tabela === v.tabela;
+  if (!voltando && ant && !mesma) {
+    S.hist.push(ant.tipo === 'time' ? { ...ant, sub: S.subTime } : ant);
+    if (S.hist.length > 60) S.hist.shift();
+  }
   S.vista = v;
   if (v.tipo === 'time' && S.vista.sub) S.subTime = S.vista.sub;
   desenharPrincipal();
   if (S.aba === 'times' || S.aba === 'mais' || S.aba === 'jogadores') desenharEsqFoco();
+  desenharVoltar();
 }
+// volta para a tela anterior (botão Voltar, Alt+←, Backspace fora de campos, botão "voltar" do mouse)
+async function voltar() {
+  if (!S.hist.length) { aviso('Não há tela anterior', { tipo: 'info', tempo: 1200 }); return; }
+  // formulário ou escalação com mudanças ainda não gravadas: confirma antes de sair
+  if (document.querySelector('#principal .barra-form .btn-primario:not(:disabled)')
+    && !await confirmar('Sair sem gravar?', 'Esta tela tem mudanças que ainda não foram gravadas na edição.', { rotulo: 'Sair sem gravar', perigo: true })) return;
+  abrir(S.hist.pop(), { voltando: true });
+}
+function desenharVoltar() {
+  const b = $('#btn-voltar');
+  if (!b) return;
+  const v = S.hist[S.hist.length - 1];
+  b.disabled = !v;
+  b.title = v ? `Voltar para ${rotuloVista(v)} (Alt+← ou Backspace)` : 'Voltar para a tela anterior (Alt+← ou Backspace)';
+}
+const rotuloVista = (v) => ({ time: 'o time', jogador: 'o jogador', liga: 'a liga', pessoas: 'a lista de pessoas', pessoa: 'a pessoa', tabela: `a tabela ${v.id}`, problemas: 'os erros' }[v.tipo] || 'a tela anterior');
 function desenharEsqFoco() {
   for (const b of document.querySelectorAll('#esq .foco')) b.classList.remove('foco');
 }
@@ -397,22 +464,23 @@ async function vistaTime(p, tid) {
   const tb = el('tbody');
   for (const j of r.elenco) {
     if (j.erro) { tb.append(el('tr', { class: 'erro-linha' }, el('td', {}, j.numero), el('td', { colspan: 9 }, `Jogador ${j.playerid}: ${j.erro}`))); continue; }
-    const num = el('input', { type: 'number', class: 'nota', min: 1, max: 99, value: j.numero, style: { width: '52px' },
+    const num = el('input', { type: 'number', class: 'rapida', min: 1, max: 99, value: j.numero, title: 'Número da camisa (quem usava fica com o antigo)',
       onchange: async (e) => { aplicarEstado(await tentar(() => api('trocar_numero', { teamid: tid, pid: j.playerid, numero: e.target.value }))); desenharPrincipal(); } });
     const sit = j.posicao_time < 28 ? 'titular' : j.posicao_time === 28 ? 'banco' : 'reserva';
+    const abrirJ = () => abrir({ tipo: 'jogador', id: j.playerid });
     tb.append(el('tr', { class: sit === 'titular' ? 'tit' : '' },
       el('td', {}, num),
-      el('td', { class: 'nome clicavel', onclick: () => abrir({ tipo: 'jogador', id: j.playerid }) }, el('b', {}, j.nome), el('small', {}, `ID ${j.playerid}`)),
-      el('td', {}, j.pos_nome), el('td', { class: 'num' }, el('span', { class: `ov ${classeOv(j.overall)}` }, j.overall)), el('td', { class: 'num' }, j.potencial),
-      el('td', { class: 'num' }, idade(j.nascimento) ?? '—'), el('td', {}, j.nacao_nome),
+      el('td', { class: 'nome clicavel', title: `Abrir ${j.nome} (todos os dados e atributos)`, onclick: abrirJ }, el('b', {}, j.nome, el('span', { class: 'ir-jog', html: icone('seta', 11) })), el('small', {}, `ID ${j.playerid}`)),
+      ...celulasRapidas(j),
       el('td', {}, j.emprestado_de ? el('span', { class: 'etiqueta laranja', title: `até ${j.emprestado_ate}` }, `emprestado pelo ${j.emprestado_de_nome || j.emprestado_de}`) : el('span', { class: 'mudo' }, sit)),
       el('td', { class: 'acoes-j' },
+        el('button', { class: 'btn-icone peq', title: 'Abrir o jogador', onclick: abrirJ, html: icone('pessoa', 13) }),
         el('button', { class: 'btn-icone peq', title: 'Transferir…', onclick: () => dialogoTransferir(j.playerid, j.nome, tid), html: icone('mover', 13) }),
         el('button', { class: 'btn-icone peq', title: 'Emprestar…', onclick: () => dialogoTransferir(j.playerid, j.nome, tid, true), html: icone('relogio', 13) }),
         j.emprestado_de ? el('button', { class: 'btn-icone peq', title: 'Encerrar o empréstimo (volta ao dono)', onclick: () => opRecarregar('encerrar_emprestimo', { pid: j.playerid }), html: icone('restaurar', 13) }) : null,
         el('button', { class: 'btn-icone peq', title: 'Liberar (Sem Contrato)', onclick: () => liberar(j.playerid, j.nome), html: icone('x', 13) }))));
   }
-  p.append(el('div', { class: 'cartao' }, el('header', {}, el('div', {}, el('h3', {}, 'Elenco'), el('p', { class: 'dica' }, 'Titulares em azul. O número muda direto na tabela (quem usava fica com o antigo). As escalações dos dois times são refeitas a cada transferência.')),
+  p.append(el('div', { class: 'cartao' }, el('header', {}, el('div', {}, el('h3', {}, 'Elenco'), el('p', { class: 'dica' }, 'Titulares em azul. Número, posição, geral, potencial, idade e nação mudam direto na tabela (Enter ou sair do campo grava; o geral leva junto os atributos da posição). Clique no nome para abrir o jogador.')),
     el('div', { class: 'acoes-linha' },
       el('button', { class: 'btn-primario peq', onclick: () => contratar(tid, r.nome) }, icone('mais', 12), 'Contratar jogador…'),
       el('button', { class: 'btn peq', onclick: () => criarJogador(tid) }, icone('pessoa', 12), 'Criar jogador'))),
@@ -434,6 +502,72 @@ function cores(r) {
     caixa.append(el('label', { class: 'cor-time' }, inp, ` Cor ${i}`));
   }
   return caixa;
+}
+
+// células editáveis do elenco: posição, geral (com os atributos), potencial, idade (muda o ano de nascimento) e nação
+function celulasRapidas(j) {
+  const salvar = async (valores, rotulo, ctl) => {
+    ctl.classList.add('gravando');
+    const x = await tentar(() => api('linha_salvar', { tabela: 'players', ref: j.ref, valores, rotulo }));
+    ctl.classList.remove('gravando');
+    if (!x) return false;
+    aplicarEstado(x);
+    ctl.classList.add('gravado');
+    setTimeout(() => ctl.classList.remove('gravado'), 900);
+    return true;
+  };
+  const numero = (valor, min, max, fn, extra = '') => {
+    const i = el('input', { type: 'number', class: `rapida ${extra}`, min, max, value: valor, title: 'Mude e tecle Enter (Esc desfaz)' });
+    i.onkeydown = (e) => { if (e.key === 'Escape') { i.value = i.defaultValue; i.blur(); } };
+    i.onchange = async () => {
+      if (i.value === i.defaultValue) return;
+      const v = parseInt(i.value, 10);
+      if (!Number.isFinite(v) || v < min || v > max) { aviso(`Use um número de ${min} a ${max}`, { tipo: 'aviso' }); i.value = i.defaultValue; return; }
+      if (await fn(v, i)) i.defaultValue = String(v); else i.value = i.defaultValue;
+    };
+    return i;
+  };
+  const pos = el('select', { class: 'seletor rapida', title: 'Posição principal (preferredposition1)' },
+    ...Object.entries(S.pos).filter(([k]) => +k < 28).map(([k, n]) => opt(k, n, j.pos)));
+  pos.onchange = async () => {
+    if (await salvar({ preferredposition1: pos.value }, `Posição de ${j.nome}: ${S.pos[j.pos] || j.pos} → ${S.pos[pos.value]}`, pos)) j.pos = +pos.value;
+    else pos.value = j.pos;
+  };
+  const pot = numero(j.potencial, 1, 99, async (v, i) => { const ok = await salvar({ potential: String(v) }, `Potencial de ${j.nome}: ${j.potencial} → ${v}`, i); if (ok) j.potencial = v; return ok; });
+  const geral = numero(j.overall, 1, 99, async (v, i) => {
+    const r = await tentar(() => api('jogador?id=' + encodeURIComponent(j.playerid)));
+    if (!r) return false;
+    const valores = ajusteGeral(r.dados, v);
+    const ok = await salvar(valores, `Geral de ${j.nome}: ${r.dados.overallrating} → ${v} (com os atributos)`, i);
+    if (ok) {
+      j.overall = v;
+      i.className = `rapida ov ${classeOv(v)}`;
+      if (valores.potential && +valores.potential !== j.potencial) { j.potencial = +valores.potential; pot.value = pot.defaultValue = valores.potential; }
+    }
+    return ok;
+  }, `ov ${classeOv(j.overall)}`);
+  let anos = el('span', { class: 'mudo' }, '—');
+  if (j.nascimento) {
+    anos = numero(idade(j.nascimento), 10, 60, async (v, i) => {
+      const [a, m, d] = j.nascimento.split('-').map(Number);
+      const ano = a - (v - idade(j.nascimento));
+      const iso = `${ano}-${String(m).padStart(2, '0')}-${String(m === 2 && d === 29 ? 28 : d).padStart(2, '0')}`;
+      const ok = await salvar({ birthdate: dataParaDia(iso) }, `Idade de ${j.nome}: ${idade(j.nascimento)} → ${v} (nascimento ${iso})`, i);
+      if (ok) { j.nascimento = iso; i.title = `Nascimento ${iso}. Mudar a idade muda o ano de nascimento.`; }
+      return ok;
+    });
+    anos.title = `Nascimento ${j.nascimento}. Mudar a idade muda o ano de nascimento.`;
+  }
+  let nac = j.nacao_nome;
+  if (S.nacoes.length) {
+    nac = el('select', { class: 'seletor rapida nacao', title: 'Nacionalidade' },
+      ...(S.nacoes.some((n) => n.id === String(j.nacao)) ? [] : [opt(j.nacao, j.nacao_nome, j.nacao)]), ...S.nacoes.map((n) => opt(n.id, n.nome, j.nacao)));
+    nac.onchange = async () => {
+      const nome = S.nacoes.find((n) => n.id === nac.value)?.nome || nac.value;
+      if (await salvar({ nationality: nac.value }, `Nação de ${j.nome}: ${j.nacao_nome} → ${nome}`, nac)) { j.nacao = nac.value; j.nacao_nome = nome; } else nac.value = j.nacao;
+    };
+  }
+  return [el('td', {}, pos), el('td', { class: 'num' }, geral), el('td', { class: 'num' }, pot), el('td', { class: 'num' }, anos), el('td', {}, nac)];
 }
 
 // ---------------------------------------------------------------- escalação
@@ -528,7 +662,14 @@ async function vistaJogador(p, pid) {
     p.append(el('div', { class: 'grupo-form' }, el('h4', {}, 'Nomes (editedplayernames)'), el('div', { class: 'grade-campos' }, campoN('Nome comum (o que o jogo mostra)', 'comum'), campoN('Nome na camisa', 'camisa'), campoN('Primeiro nome', 'primeiro'), campoN('Sobrenome', 'sobrenome')), el('div', { class: 'acoes-linha' }, bt)));
   }
   p.append(formulario({ tabela: 'players', ref: r.ref, dados: d, campos: r.campos, grupos: GRUPOS_JOGADOR, excluir: ['playerid', 'firstnameid', 'lastnameid', 'commonnameid', 'playerjerseynameid'],
-    rotulo: `Jogador ${r.nomes.nome}`, depois: () => desenharPrincipal() }));
+    rotulo: `Jogador ${r.nomes.nome}`, depois: () => desenharPrincipal(),
+    aoMudar: (c, v, definir) => {
+      if (c !== 'overallrating') return;
+      const aj = ajusteGeral(d, v);
+      for (const [k, x] of Object.entries(aj)) if (k !== 'overallrating') definir(k, x);
+      const delta = parseInt(v, 10) - parseInt(d.overallrating, 10);
+      if (delta) aviso(`Atributos da posição ${delta > 0 ? '+' : ''}${delta}`, { tipo: 'info', tempo: 2200, detalhe: 'Os atributos que pesam no geral da posição acompanharam a mudança (veja os campos em azul). Grave para valer.' });
+    } }));
   void clube;
 }
 
@@ -548,7 +689,7 @@ async function vistaLiga(p, lid) {
 
 // ---------------------------------------------------------------- pessoas (técnicos, árbitros)
 async function vistaPessoas(p, tabela) {
-  const busca = el('input', { type: 'search', class: 'entrada', placeholder: 'Buscar pelo nome…', value: S.pessoas.tabela === tabela ? S.pessoas.q : '', style: { maxWidth: '360px' } });
+  const busca = el('input', { type: 'search', class: 'entrada', placeholder: 'Buscar pelo nome ou ID…', value: S.pessoas.tabela === tabela ? S.pessoas.q : '', style: { maxWidth: '360px' } });
   const lista = el('div', { class: 'lista-pessoas' });
   p.append(el('div', { class: 'cab-detalhe' }, el('div', {}, el('span', { class: 'etiqueta' }, 'Pessoas'), el('h1', {}, tabela === 'manager' ? 'Técnicos' : 'Árbitros'),
     el('div', { class: 'sub' }, tabela === 'manager' ? 'tabela manager — o time de cada um sai do campo teamid' : 'tabela referee — a liga de cada um sai do campo leagueid'))),
@@ -558,7 +699,7 @@ async function vistaPessoas(p, tabela) {
     S.pessoas = { tabela, q: busca.value };
     const r = await tentar(() => api(`pessoas?tabela=${tabela}&q=${encodeURIComponent(busca.value)}`));
     lista.innerHTML = '';
-    for (const x of r?.pessoas || []) lista.append(el('button', { class: 'it-pessoa', onclick: () => abrir({ tipo: 'pessoa', tabela, id: x.ref }) }, el('b', {}, x.nome), el('small', {}, [x.extra, x.nacao].filter(Boolean).join(' · '))));
+    for (const x of r?.pessoas || []) lista.append(el('button', { class: 'it-pessoa', onclick: () => abrir({ tipo: 'pessoa', tabela, id: x.ref }) }, el('b', {}, x.nome), el('small', {}, [x.extra, x.nacao, x.id ? `ID ${x.id}` : null].filter(Boolean).join(' · '))));
     if (r && r.total > r.pessoas.length) lista.append(el('div', { class: 'mudo peq-txt' }, `Mostrando ${r.pessoas.length} de ${r.total}: refine a busca.`));
   };
   busca.oninput = () => { clearTimeout(tmr); tmr = setTimeout(carregar, 250); };
@@ -749,9 +890,10 @@ async function liberar(pid, nome) {
   await opRecarregar('liberar', { pid });
 }
 async function excluirJogador(pid, nome) {
+  // (depois de excluir, Voltar leva para onde você estava)
   if (!await confirmar(`Excluir ${nome} do banco?`, 'Sai de players, dos elencos, do empréstimo, dos nomes editados e das escalações. Dá para desfazer.', { rotulo: 'Excluir', perigo: true })) return;
   const x = await tentar(() => api('excluir_jogador', { pid }));
-  if (x) { aplicarEstado(x); S.vista = null; desenharPrincipal(); }
+  if (x) { aplicarEstado(x); S.hist = S.hist.filter((v) => !(v.tipo === 'jogador' && String(v.id) === String(pid))); if (S.hist.length) voltar(); else { S.vista = null; desenharPrincipal(); desenharVoltar(); } }
 }
 async function opRecarregar(rota, d) {
   const x = await tentar(() => api(rota, d));
@@ -853,6 +995,8 @@ function menus() {
       { rotulo: 'Descartar todas as mudanças…', icone: 'apagar', desabilitado: !S.e?.edicao?.mudancas, fn: descartar },
     ]],
     ['Exibir', () => [
+      { rotulo: 'Voltar para a tela anterior', atalho: 'Alt+←', desabilitado: !S.hist.length, fn: voltar },
+      '-',
       { rotulo: 'Times', marcado: S.aba === 'times', fn: () => { S.aba = 'times'; desenharAbas(); desenharEsq(); } },
       { rotulo: 'Jogadores', marcado: S.aba === 'jogadores', fn: () => { S.aba = 'jogadores'; desenharAbas(); desenharEsq(); } },
       { rotulo: 'Mais (pessoas e tabelas)', marcado: S.aba === 'mais', fn: () => { S.aba = 'mais'; desenharAbas(); desenharEsq(); } },
@@ -866,16 +1010,21 @@ function menus() {
         transferências, empréstimos, liberar, números, ligas (mover times, Resto do Mundo com a nação), árbitros, técnicos e qualquer
         tabela numa grade. A verificação acha vínculos quebrados, jogadores em dois clubes, números repetidos, escalações e
         empréstimos inválidos e valores fora da faixa, com correção. As mudanças ficam numa edição salva sozinha, com desfazer;
-        o Gravar escreve um banco novo (o original não muda), com as tabelas em .txt e o idioma.<br><br><b>1.0</b> — primeira versão.` }) },
+        o Gravar escreve um banco novo (o original não muda), com as tabelas em .txt e o idioma.<br><br><b>1.1</b> — elenco editável direto na tabela (posição, geral, potencial, idade, nação); mudar o geral (no elenco ou no jogador) leva junto os atributos da posição; Voltar para a tela anterior (Alt+← ou Backspace); busca por ID de time, liga, técnico e árbitro.<br><b>1.0</b> — primeira versão.` }) },
     ]],
   ]);
 }
 
 document.addEventListener('keydown', (e) => {
   if (modalAberto() || menuAberto()) return;
+  const emCampo = ['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName) || e.target.isContentEditable;
+  if ((e.altKey && e.key === 'ArrowLeft') || (e.key === 'Backspace' && !emCampo && !e.ctrlKey && !e.altKey)) { e.preventDefault(); voltar(); return; }
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName)) { e.preventDefault(); desfazer(); }
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); if (S.e?.edicao?.mudancas) gravar(); }
 });
+
+// botão "voltar" do mouse (botão 4)
+document.addEventListener('mouseup', (e) => { if (e.button === 3 && !modalAberto()) { e.preventDefault(); voltar(); } });
 
 async function iniciar() {
   divisorArrastavel($('#div-esq'), '--esq', { min: 230, max: 520 });
@@ -887,6 +1036,9 @@ async function iniciar() {
   $('#versao').textContent = r.versao;
   $('#btn-gravar').onclick = gravar;
   $('#btn-desfazer').onclick = desfazer;
+  $('#btn-voltar').innerHTML = icone('seta', 14, 'vira') + ' Voltar';
+  $('#btn-voltar').onclick = voltar;
+  desenharVoltar();
   aplicarEstado(r);
   menus();
   desenharAbas();
@@ -899,7 +1051,7 @@ async function iniciar() {
     if (e && JSON.stringify(e.banco?.caminho) !== JSON.stringify(S.e?.banco?.caminho)) {
       const ri = await api('inicio').catch(() => null);
       if (ri) { S.nacoes = ri.nacoes || []; aplicarEstado(ri); }
-      S.arvore = null; S.tabelas = null; S.probs = null; S.vista = null;
+      S.arvore = null; S.tabelas = null; S.probs = null; S.vista = null; S.hist = []; desenharVoltar();
       desenharEsq(); desenharPrincipal();
     }
   }, 6000);

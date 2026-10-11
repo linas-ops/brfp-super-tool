@@ -1,4 +1,4 @@
-# Editor de Banco — versão 1.0
+# Editor de Banco — versão 1.1
 
 Edita o banco do jogo importado em **Dados do jogo** (Super Tool) — qualquer versão: FIFA 16, 21, 22, 23, FC 24, 26 e 27.
 O banco original **nunca é alterado**: as mudanças ficam numa edição (salva sozinha, com desfazer) e **Gravar banco**
@@ -8,7 +8,9 @@ escreve um banco novo numa pasta escolhida.
 
 **Times** (aba Times, à esquerda: país › liga › time)
 
-- **Elenco**: número de camisa direto na tabela (quem usava o número fica com o antigo); **Transferir**, **Emprestar**
+- **Elenco**: número, posição, geral, potencial, idade (muda o ano de nascimento) e nação direto na tabela (Enter ou
+  sair do campo grava; quem usava o número fica com o antigo). Mudar o **geral** leva junto os atributos que pesam na
+  nota da posição (+N no geral = +N neles; o potencial sobe se ficar abaixo). Clique no nome para abrir o jogador; **Transferir**, **Emprestar**
   (com o fim do empréstimo), **Encerrar empréstimo** (volta ao dono) e **Liberar** (vai para o time dos livres do mesmo
   gênero: NG - FA ou NG - FA Women); **Contratar jogador…** (busca qualquer jogador do banco) e **Criar jogador** (começa
   como cópia do jogador de nota mais baixa do elenco, com ID e nome novos).
@@ -21,7 +23,8 @@ escreve um banco novo numa pasta escolhida.
   Mundo (76 / 2226) o time entra com a nação da liga de onde saiu (`teamnationlinks`).
 - **Técnico**: o da tabela `manager`.
 
-**Jogadores** (aba Jogadores: busca pelo nome ou ID): nomes (`editedplayernames`), dados, posições (até 7), habilidades,
+**Jogadores** (aba Jogadores: busca pelo nome ou ID; na aba Times a busca também aceita o ID do time ou da liga):
+nomes (`editedplayernames`), dados (mudar o geral ajusta na hora os atributos da posição, marcados em azul até gravar), posições (até 7), habilidades,
 atributos agrupados, contrato, aparência e todos os outros campos; transferir, emprestar, liberar, excluir.
 
 **Mais**: técnicos e árbitros (lista com busca, formulário, nova pessoa) e **qualquer tabela** do banco numa grade —
@@ -72,3 +75,6 @@ A aba **Erros** confere o banco inteiro, já com as mudanças da edição:
   gravar e ler de volta; regravação de todas as tabelas dos bancos do FIFA 16 ao FC 27 lida de volta igual.
 - Criar jogador copia a aparência de um jogador do elenco (a cabeça real não vem junto).
 - Liga nova ou time novo para o modo carreira também precisam do compdata (Editor de Compdata).
+
+**Voltar**: o botão Voltar (no topo), Alt+←, Backspace (fora de um campo) ou o botão de voltar do mouse levam para a
+tela anterior (com a aba do time em que você estava); se a tela tiver mudanças não gravadas, ele pergunta antes.

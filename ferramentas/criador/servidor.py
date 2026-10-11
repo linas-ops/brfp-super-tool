@@ -62,11 +62,11 @@ def exige_motor():
         raise base.ErroUsuario(MOTOR["msg"])
 
 
-VERSAO = "2.2"
+VERSAO = "2.3"
 PREFS = base.Prefs(os.path.join(AQUI, "preferencias.json"), {
     "saida": "", "espalhamento": 1.25, "escalacoes": 5, "modo": "temporada", "perfis_faltantes": 10, "baixar_imagens": True,
     "classificacao": True, "jogador_inicio": 460000, "time_inicio": 150000, "liga_inicio": 3000, "visual": "proprio",
-    "aparencia_fotos": True, "minifaces_auto": False, "fonte": "apifootball", "tm_estatisticas": False})
+    "aparencia_fotos": True, "minifaces_auto": False, "fonte": "apifootball", "tm_estatisticas": False, "completar_tm": False})
 ARQ_PROJETO = os.path.join(AQUI, "cache", "projeto.json")
 LOCK = threading.RLock()
 API = A.Api()
@@ -115,6 +115,10 @@ def carregar_projeto():
     except (OSError, ValueError):
         return
     for it in P["itens"]:
+        lid_tm = (it.get("liga_api") or it.get("api") or {}).get("id")
+        if eh_tm(it) and it.get("temporada") and not it.get("temporada_nome") and lid_tm:   # "2025" -> "2026" (Brasil)
+            c = TM.do_cache(f"competitions/{lid_tm}/seasons") or {}
+            it["temporada_nome"] = next((x.get("name") for x in c.get("seasons") or [] if str(x.get("id")) == str(it["temporada"])), None)
         antigo = "feminino" not in it
         it.setdefault("feminino", eh_feminino(it))
         it.setdefault("selecao", bool((it.get("api") or {}).get("selecao")) and it["tipo"] == "time")
@@ -287,7 +291,7 @@ def resumo_item(it):
     d = {k: it.get(k) for k in ("id", "tipo", "nome", "temporada", "modo", "escalacoes", "nivel", "nivel_auto", "nivel_motivo",
                                 "destino", "divisao", "estado", "erro", "liga_item", "modelo", "nacao", "nivel_manual",
                                 "posicao_tabela", "nivel_offset", "feminino", "selecao", "teamid", "leagueid", "tatica",
-                                "tecnico", "estadio", "sel_opcoes", "temporada_nome", "nivel_valor")}
+                                "tecnico", "estadio", "sel_opcoes", "temporada_nome", "nivel_valor", "menos11")}
     d["api"] = it.get("api")
     d["fonte"] = fonte_de(it)
     if it["tipo"] == "liga":
@@ -447,6 +451,13 @@ def _novo_time(tm, liga, temporada, modo, liga_item=None, feminino=None):
     fonte = fonte_de(liga) if fonte_de(liga) != "apifootball" else fonte_de(tm)
     pre = "TM" if fonte == "transfermarkt" else ""
     temporada = _temp(fonte, temporada)
+    if fonte == "transfermarkt" and temporada and not liga.get("temporada_nome") and liga.get("id"):
+        # na Transfermarkt o id da temporada é o ano em que ela começa: no Brasil, "2025" é a temporada 2026
+        try:
+            nome_t = next((x["nome"] for x in CT.temporadas(TM, liga["id"]) if str(x["id"]) == str(temporada)), None)
+        except T.ErroTm:
+            nome_t = None
+        liga = {**liga, "temporada_nome": nome_t}
     fem = eh_feminino(liga.get("nome"), tm.get("nome")) if feminino is None else bool(feminino)
     gen = 1 if fem else 0
     selecao = bool(tm.get("selecao"))
@@ -551,9 +562,14 @@ def api_adicionar_times(d):
 
 
 def api_remover(d):
+    """Tira um item (d["id"]) ou vários (d["ids"]); uma liga leva os times dela junto."""
     with LOCK:
-        it = item(d["id"])
-        tira = {it["id"]} | (set(it.get("times") or []) if it["tipo"] == "liga" else set())
+        tira = set()
+        for iid in (d.get("ids") or [d.get("id")]):
+            it = item(iid)
+            tira |= {it["id"]} | (set(it.get("times") or []) if it["tipo"] == "liga" else set())
+        for lig in [x for x in P["itens"] if x["tipo"] == "liga" and x["id"] not in tira]:
+            lig["times"] = [t for t in lig.get("times") or [] if t not in tira]
         P["itens"] = [x for x in P["itens"] if x["id"] not in tira]
         if P["sel"] in tira:
             P["sel"] = None
@@ -576,7 +592,7 @@ def api_selecionar(d):
 
 
 EDITAVEIS = {"nome", "nivel", "destino", "modo", "temporada", "escalacoes", "modelo", "divisao", "feminino", "teamid", "leagueid",
-             "tatica", "tecnico", "estadio", "sel_opcoes"}
+             "tatica", "tecnico", "estadio", "sel_opcoes", "menos11"}
 
 
 def _id_livre(campo, valor, it):
@@ -733,6 +749,9 @@ def api_selecao(d):
         so = it.setdefault("sel_opcoes", {"criar_faltantes": False, "incluir": [], "excluir_db": []})
         if "criar_faltantes" in d:
             so["criar_faltantes"] = bool(d["criar_faltantes"])
+            so["criar"] = {}                                # "criar todos"/"nenhum" desfaz as escolhas de um por um
+        if "criar_um" in d:                                 # {api_id, criar}: este convocado é criado ou não
+            so.setdefault("criar", {})[str(d["criar_um"]["api_id"])] = bool(d["criar_um"].get("criar"))
         if d.get("incluir"):
             pid = str(d["incluir"])
             so["incluir"] = [x for x in so.get("incluir") or [] if x != pid] + [pid]
@@ -860,6 +879,12 @@ def _coletar(ids, refazer):
                     dd = C.coletar_time(API, it["api"], it["temporada"], it.get("modo") or "temporada", int(it.get("escalacoes") or 0),
                                         int(op.get("perfis_faltantes") or 0), liga.get("id"),
                                         progresso=lambda m: TAREFA.update(msg=m))
+                    if op.get("completar_tm"):                 # o que a API não dá: nascimento, pé, posição exata, altura…
+                        try:
+                            dd.setdefault("avisos", []).append(CT.completar_api(TM, dd, it.get("temporada"), it.get("modo") or "temporada",
+                                                                                progresso=lambda m: TAREFA.update(msg=m)))
+                        except T.ErroTm as ex:
+                            dd.setdefault("avisos", []).append(f"Transfermarkt (completar): {ex}")
                 with LOCK:
                     it.update(dados=dd, estado="pronto", erro=None)
                     if not it.get("selecao"):
@@ -1011,13 +1036,14 @@ def _extra(it, op=None):
     op = op or PREFS.ler()
     ex = {"modelo": it.get("modelo"), "visual": op.get("visual") or "proprio", "posicao_tabela": it.get("posicao_tabela"),
           "teamid": it.get("teamid"), "tatica": it.get("tatica") or {}, "tecnico": it.get("tecnico") or {},
-          "estadio": it.get("estadio") or {}, "forca": it.get("forca"),
+          "estadio": it.get("estadio") or {}, "forca": it.get("forca"), "menos11": it.get("menos11"),
           "fotos": _alvos_foto(it) if op.get("aparencia_fotos", True) else {}}
     if it.get("selecao"):
         intl = dados.internationals_atual()
         so = it.get("sel_opcoes") or {}
         ex.update(nacao=it.get("nacao"), limites=intl.squad() if intl else None, idade_maxima=intl.idade_maxima() if intl else 35,
-                  criar_faltantes=so.get("criar_faltantes"), incluir=so.get("incluir") or [], excluir_db=so.get("excluir_db") or [],
+                  criar_faltantes=so.get("criar_faltantes"), criar=so.get("criar") or {}, incluir=so.get("incluir") or [],
+                  excluir_db=so.get("excluir_db") or [],
                   forca=(float(it.get("nivel") or 76) - 76.0) / 4.0)
     return ex
 
@@ -1045,6 +1071,8 @@ def api_previa(q):
     try:
         r = _criar(pj, it, destino)
     except ValueError as ex:
+        if str(ex).startswith(G.MENOS_DE_11):
+            return {"id": it["id"], "time": None, "menos11": {"msg": str(ex)[len(G.MENOS_DE_11):]}}
         raise base.ErroUsuario(str(ex))
     modelo_nome = next((t["nome"] for t in banco().times(dados.idioma_atual()) if t["teamid"] == r["modelo"]), r["modelo"])
     r["modelo_nome"] = modelo_nome
@@ -1117,13 +1145,8 @@ def _gerar(pasta, nome, itens, atualizacoes):
             _criar(pj, it, destino)
         if pj.clubes_mexidos:                              # clubes do banco que perderam jogadores para os times novos
             import atualizar as U
-            vazios = [(pj.nome_time(t) or t, pj.elenco_restante(t)) for t in sorted(pj.clubes_mexidos) if pj.elenco_restante(t) < 11]
-            if vazios:
-                raise ValueError("Usar os jogadores do banco deixaria " + ", ".join(f"{n} (banco) com {q} jogador(es)" for n, q in vazios)
-                                 + " — menos de 11. Para trocar o elenco de um time que já existe, use Atualizar banco; ou crie "
-                                 "esses jogadores novos (Criar todos novos na prévia).")
-            for tid in sorted(pj.clubes_mexidos):
-                U.reescalar(pj, tid)
+            for tid in sorted(pj.clubes_mexidos - {G.TIME_SEM_CONTRATO}):
+                U.reescalar(pj, tid)                       # com menos de 11, entram jogadores sem contrato
         TAREFA.update(msg="Gravando o banco…", feito=len(times))
         r = S.gravar(pj, pasta, nome, dados.idioma_atual(), bool(op.get("baixar_imagens")),
                      progresso=lambda m, f=None: TAREFA.update(msg=m), internationals=dados.internationals_atual())
@@ -1135,7 +1158,7 @@ def _gerar(pasta, nome, itens, atualizacoes):
             r["minifaces"] = _fila_minifaces(r)
         TAREFA.update(msg="Banco gravado.", resultado=r)
     except ValueError as ex:                               # problema explicado (não é erro do programa)
-        TAREFA.update(erro=str(ex), msg="A geração parou.")
+        TAREFA.update(erro=str(ex).replace(G.MENOS_DE_11, ""), msg="A geração parou.")
     except Exception as ex:  # noqa: BLE001
         traceback.print_exc()
         TAREFA.update(erro=f"{type(ex).__name__}: {ex}", msg="A geração falhou.")
@@ -1274,6 +1297,13 @@ def _preparar_uma(fonte, leagueid):
     """Casa os times de uma liga do banco com a liga sugerida (mesmo país e divisão) na temporada atual da fonte."""
     U = _atualizar_mod()
     b, idi = banco(), dados.idioma_atual()
+    if U.liga_sem_pais(b, leagueid):                     # Resto do Mundo, Libertadores…: cada time casado sozinho
+        temporada = None if fonte == "transfermarkt" else int((API.cfg.get("temporadas") or [None, datetime.date.today().year])[1])
+        r = U.preparar_individual(fonte, TM if fonte == "transfermarkt" else API, b, idi, leagueid, temporada,
+                                  progresso=lambda m, f=None, t=None: TAREFA.update(msg=m))
+        with LOCK:
+            P["atualizacoes"] = [a for a in P["atualizacoes"] if a["id"] != r["id"]] + [r]
+        return r
     if fonte == "transfermarkt":
         sg = U.sugerir_ligas_tm(TM, b, idi, leagueid, ligas_db())
         if not sg["ligas"]:
@@ -1337,7 +1367,7 @@ def api_atualizar_conferir_varias(d):
         if not quais:
             raise base.ErroUsuario("Marque as conferências.")
         TAREFA.update(ativa=True, tipo="atualizar", msg="Conferindo…", feito=0, total=len(quais), erro=None, fim=0, resultado=None)
-    opcoes = {k: d.get(k) for k in ("elencos", "participantes", "emprestimos", "numeros", "saidas", "notas", "criar")}
+    opcoes = {k: d.get(k) for k in ("elencos", "participantes", "emprestimos", "numeros", "saidas", "notas", "criar", "destino_saidas", "tatica", "tecnicos", "delta_max", "delta_min")}
 
     def rodar():
         erros = []
@@ -1516,7 +1546,7 @@ def api_atualizar_conferir(d):
         if not a:
             raise base.ErroUsuario("Atualização não encontrada.")
         TAREFA.update(ativa=True, tipo="atualizar", msg="Conferindo…", feito=0, total=0, erro=None, fim=0, resultado=None)
-    opcoes = {k: d.get(k) for k in ("elencos", "participantes", "emprestimos", "numeros", "saidas", "notas", "criar", "times")}
+    opcoes = {k: d.get(k) for k in ("elencos", "participantes", "emprestimos", "numeros", "saidas", "notas", "criar", "destino_saidas", "tatica", "tecnicos", "delta_max", "delta_min", "times")}
 
     def rodar():
         try:
@@ -1547,7 +1577,13 @@ def api_atualizar_marcar(d):
         quais = d.get("indices")
         for i, m in enumerate(a.get("mudancas") or []):
             if quais is None or i in quais or (d.get("tipo") and m["tipo"] == d["tipo"]):
-                m["aplicar"] = bool(d.get("aplicar"))
+                if "aplicar" in d:
+                    m["aplicar"] = bool(d.get("aplicar"))
+                if m["tipo"] == "tatica" and d.get("tatica"):   # formação, linha e saída de bola escolhidas à mão
+                    for k in ("formacao", "profundidade", "saida"):
+                        if d["tatica"].get(k) not in (None, ""):
+                            m[k] = d["tatica"][k] if k == "formacao" else int(d["tatica"][k])
+        a["avisos"] = _atualizar_mod()._avisos_elenco(banco(), dados.idioma_atual(), a.get("mudancas") or [])
     gravar_projeto()
     return {"atualizacao": a, **estado_payload()}
 
@@ -1569,7 +1605,7 @@ def api_atualizar_criar(d):
         for t in a.get("sem_par") or []:
             if d.get("ids") and t["id"] not in d["ids"]:
                 continue
-            nt = _novo_time(t, a["liga_api_info"], a["temporada"], None)
+            nt = _novo_time(t, {**a["liga_api_info"], "temporada_nome": a.get("temporada_nome")}, a["temporada"], None)
             if any(x["id"] == nt["id"] for x in P["itens"]):
                 continue
             nt["destino"] = a["leagueid"]
@@ -1583,7 +1619,8 @@ def api_atualizar_criar(d):
 def api_opcoes(d):
     op = PREFS.ler()
     for k in ("saida", "espalhamento", "escalacoes", "modo", "perfis_faltantes", "baixar_imagens", "classificacao",
-              "jogador_inicio", "time_inicio", "liga_inicio", "visual", "aparencia_fotos", "minifaces_auto", "fonte", "tm_estatisticas"):
+              "jogador_inicio", "time_inicio", "liga_inicio", "visual", "aparencia_fotos", "minifaces_auto", "fonte", "tm_estatisticas",
+              "completar_tm"):
         if k in d:
             op[k] = d[k]
     PREFS.gravar(op)

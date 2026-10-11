@@ -296,7 +296,9 @@ def coletar_time(tm, time, temporada, modo="temporada", opcoes=None, liga=None, 
                           "foto": p.get("imageUrl") or pr.get("imageUrl"), "lesionado": False, "stats": st,
                           "numero": p.get("shirtNumber"), "posicao_api": grupo_tm((pr.get("position") or {}).get("group"), pos),
                           "posicao_tm": pos, "posicoes_tm": outras, "pe_tm": p.get("foot") or pr.get("foot"), "valor": valor,
-                          "capitao_tm": bool(p.get("isCaptain"))})
+                          "capitao_tm": bool(p.get("isCaptain")),
+                          "clube_tm": {"id": str((pr.get("club") or {}).get("id") or ""), "nome": (pr.get("club") or {}).get("name")}
+                          if (pr.get("club") or {}).get("name") else None})
     if erros:
         avisos.append(f"{erros} perfil(is) de jogador não vieram (valor de mercado estimado pelo resto do elenco).")
     # escalações: jogos de um titular da temporada (formação, posições, posse de bola)
@@ -387,6 +389,77 @@ def elenco_atual(tm, clube_id):
                     "nacionalidades": [x for x in p.get("nationality") or [] if x],
                     "assinou_de": p.get("signedFrom"), "chegou": p.get("joinedOn")})
     return out
+
+
+def completar_api(tm, dados, temporada=None, modo="temporada", progresso=None):
+    """Completa um time coletado na API-Football com o elenco do mesmo clube na Transfermarkt (2 pedidos: a busca do
+    clube e o elenco): nascimento, pé, posição exata, altura, nacionalidades e valor de mercado de quem não tem. Os
+    jogadores são casados pelo nome e pela idade; nada que a API já trouxe é trocado. Devolve um resumo (texto)."""
+    import casamento as K
+    passo = progresso or (lambda m: None)
+    tm_time = dados.get("time") or {}
+    nome = tm_time.get("nome") or ""
+    passo(f"{nome}: procurando na Transfermarkt")
+    res = (tm.get(f"clubs/search/{re.sub(r'[/?#%]+', ' ', nome).strip()}").get("results") or [])
+    pais = K.norm(tm_time.get("pais"))
+    cands = sorted(((K.nota_time(nome, c.get("name")) + (0.2 if pais and K.norm(c.get("country")) == pais else 0), c) for c in res
+                    if c.get("id")), key=lambda x: -x[0])
+    if not cands or cands[0][0] < 0.75:
+        return f"Transfermarkt: {nome} não encontrado (nada foi completado)."
+    clube = cands[0][1]
+    params = {"season_id": str(temporada)} if modo != "atual" and temporada else {}
+    passo(f"{nome}: elenco na Transfermarkt")
+    lista = tm.get(f"clubs/{clube['id']}/players", **params).get("players") or []
+    if not lista:
+        return f"Transfermarkt: {clube.get('name')} sem elenco nessa temporada (nada foi completado)."
+    tms = []
+    for p in lista:
+        tk = K.significativas(K.tokens(p.get("name")))
+        tms.append((p, tk))
+    usados = set()
+    feitos = 0
+    for j in dados.get("jogadores") or []:
+        tk = K.significativas(K.tokens(j.get("nome"), j.get("primeiro"), j.get("sobrenome")))
+        tk_nome = K.significativas(K.tokens(K._sem_inicial(j.get("nome"))))
+        melhor = None
+        for p, tkp in tms:
+            if p["id"] in usados or not tkp:
+                continue
+            casam = K._batem(tk_nome or tk, tkp)
+            if not casam or (len(tk_nome) >= 2 and casam < 2 and K._batem(tkp, tk) < len(tkp)):
+                continue
+            idade_tm = p.get("age")
+            if not idade_tm and p.get("dateOfBirth"):        # o elenco do clube às vezes vem sem a idade
+                try:
+                    dn, hoje = datetime.date.fromisoformat(p["dateOfBirth"][:10]), datetime.date.today()
+                    idade_tm = hoje.year - dn.year - ((hoje.month, hoje.day) < (dn.month, dn.day))
+                except ValueError:
+                    idade_tm = None
+            if j.get("idade") and idade_tm and abs(int(j["idade"]) - int(idade_tm)) > 1 + (modo != "atual"):
+                continue
+            nota = casam / max(1, len(tk_nome or tk)) + 0.5 * K._batem(tkp, tk) / len(tkp)
+            if not melhor or nota > melhor[0]:
+                melhor = (nota, p)
+        if not melhor or melhor[0] < 0.75:
+            continue
+        p = melhor[1]
+        usados.add(p["id"])
+        pos = pos_tm(p.get("position"))
+        nacs = [x for x in p.get("nationality") or [] if x]
+        novo = {"nascimento": p.get("dateOfBirth"), "pe_tm": p.get("foot"), "posicao_tm": pos, "altura": p.get("height"),
+                "nacionalidades": nacs, "valor": p.get("marketValue"), "foto": p.get("imageUrl")}
+        mudou = False
+        for k, v in novo.items():
+            if v not in (None, "", []) and not j.get(k):
+                j[k] = v
+                mudou = True
+        if nacs and not j.get("nacionalidade"):
+            j["nacionalidade"] = nacs[0]
+        j["tm_id"] = str(p["id"])
+        feitos += mudou
+    dados["tm_clube"] = {"id": str(clube["id"]), "nome": clube.get("name")}
+    return (f"Transfermarkt ({clube.get('name')}): {feitos} de {len(dados.get('jogadores') or [])} jogadores completados "
+            "(nascimento, pé, posição, altura, nacionalidades).")
 
 
 def classificacao(tm, liga_id, temporada):

@@ -1,4 +1,4 @@
-# Criador de Ligas e Times — versão 2.2
+# Criador de Ligas e Times — versão 2.3
 
 Cria ligas, times, seleções e jogadores no banco do jogo (FC 26 / FC 27) a partir da **API-Football** (api-sports.io) —
 mais de 1.200 ligas e copas no mundo; só no Brasil, 109 competições — ou da **Transfermarkt** (pela transfermarkt-api) e
@@ -52,6 +52,14 @@ Os dados são da **Transfermarkt** (transfermarkt.com): use para fins pessoais e
 5. **Aparência pelas fotos** (opcional): usa o OpenCV, que vem com os componentes do Criador de Minifaces
    (Super Tool › Componentes).
 
+**Completar a API-Football com a Transfermarkt** (Geração, no painel da direita): ao coletar um time da API-Football, o
+Criador procura o mesmo clube na Transfermarkt (2 pedidos: a busca e o elenco da temporada) e preenche o que a API não dá —
+nascimento, pé, posição exata, altura e nacionalidades —, casando os jogadores por nome e idade. O que a API trouxe não
+muda; o resumo ("N de M jogadores completados") aparece nos avisos do time.
+
+**Projeto**: marque vários itens (caixa à esquerda de cada um) e **Tirar do projeto** tira todos de uma vez (também no
+menu do botão direito).
+
 ## API-Football: plano grátis × pago
 
 | | Grátis | Pro (US$ 19/mês) |
@@ -104,12 +112,18 @@ sempre; elencos atuais, 1 dia). A barra embaixo mostra as chamadas que restam ho
    **ficha**: nomes (comum, camisa, primeiro, sobrenome), playerid à mão, posições secundárias, capitão, tom de pele, cor
    do cabelo, barba e os 34 atributos. O que foi mudado fica em azul; *Voltar ao gerado* desfaz. Cartões do **técnico**
    (editável: nome, nascimento, nacionalidade, gênero, tom de pele), da tática, do estádio e dos uniformes.
-   **Jogadores que já estão no banco**: cada jogador é procurado no banco carregado (mesmo nome e nascimento; sem
-   nascimento, mesmo nome e idade) e ganha o selo **NO BANCO** (passe o mouse: nome, clube, ID e nota do jogador do banco).
-   *Usar o do banco* (em cada um, na ficha ou *Usar os do banco* para todos com o mesmo nascimento) põe o jogador do banco
-   no time novo em vez de criar outro igual: ele sai do clube atual (que tem a escalação refeita) e mantém nota, atributos e
-   aparência — só o número muda. Se um clube do banco ficar com menos de 11, a prévia avisa e o Gerar não grava (para trocar
-   o elenco de um time que já existe, use Atualizar banco).
+   **Jogadores que já estão no banco**: cada jogador é procurado no banco carregado e ganha o selo **NO BANCO** (passe o
+   mouse: nome, clube, ID e nota do jogador do banco). O **nome tem de bater** (todo o nome da fonte no do banco, ou o
+   contrário; uma palavra comum como "Silva" ou "da" não basta) e o nascimento só confirma; uma nacionalidade diferente de
+   todas as do jogador na fonte pesa contra. No banco BRFP 27 inteiro, os jogadores confundidos com outro nascido no mesmo
+   dia caíram de 838 para 29 (2.3). *Usar o do banco* (em cada um, na ficha ou *Usar os do banco* para todos com nome e
+   nascimento iguais) põe o jogador do banco no time novo em vez de criar outro igual: ele **é transferido** — sai do clube
+   atual (e do Sem Contrato), que tem a escalação refeita — e mantém nota, atributos e aparência; só o número muda. Se um
+   clube do banco ficar com menos de 11, ao Gerar ele é completado com jogadores sem contrato (veja abaixo).
+   **Elenco com menos de 11** (a fonte trouxe poucos jogadores): a prévia oferece **Completar com jogadores sem contrato**
+   (do time Sem Contrato — no feminino, das jogadoras sem clube —, com nota perto da média do elenco e a nação mais comum
+   dele; primeiro o que falta para escalar: goleiro, defesa, meio e ataque; selo SEM CONTRATO) ou **Criar assim mesmo**
+   (as vagas que faltam ficam vazias na escalação; o jogo pode travar quando esse time entrar em campo).
 5. **Analisar as fotos** (botão na prévia): baixa as fotos e lê de cada jogador (e do técnico) o tom de pele, a cor e o
    tamanho do cabelo e se tem barba. A aparência passa a vir de um jogador genérico do banco parecido com a foto, com a
    pele, a cor do cabelo, o penteado e a barba da foto. Fotos genéricas da API ("sem foto") são ignoradas.
@@ -121,9 +135,12 @@ sempre; elencos atuais, 1 dia). A barra embaixo mostra as chamadas que restam ho
   jogadores da **mesma nacionalidade** (nunca ídolos da Liga Clássica). Faltando gente numa posição, entram os melhores da
   nação no banco até o **mínimo** de cada grupo do internationals (GK 3–5, LB 2–4, CB 6–8, RB 2–4, LM 2–4, CM 6–10,
   RM 2–4, ST 5–8, até 35 anos); acima do **máximo**, saem primeiro os completados. Os grupos aparecem em verde/vermelho.
-- Convocados que não estão no banco: **Escolher no banco…** (casar à mão) ou **Criar os que faltam** (entram sem clube,
-  com nota estimada). **Pôr jogador do banco…** inclui qualquer um; o **×** tira (os completados são trocados pelo próximo
-  da posição). Número e capitão editáveis.
+- Convocados que não estão no banco: **Escolher no banco…** (casar à mão) ou marcar **quem criar** — um por um, ou todos
+  com *Criar todos os convocados que não estão no banco* (com nota estimada); os desmarcados ficam fora. Os criados vão para
+  o **clube deles, se o clube estiver no banco** (Transfermarkt: o clube do perfil do jogador; colete a seleção de novo para
+  ter esse dado), senão para os Passes Livres (Sem Contrato).
+  **Pôr jogador do banco…** inclui qualquer um; o **×** tira (os completados são trocados pelo próximo da posição). Número
+  e capitão editáveis.
 - **Seleção que já existe** (pela nação na liga de seleções): o elenco, a escalação, os cobradores e o técnico (se a API
   tiver outro) são substituídos; o resto do time fica.
 - **Seleção nova**: copia uma seleção do banco da mesma confederação e nível parecido, entra na liga de seleções
@@ -143,6 +160,14 @@ Quando dois times do banco têm nome parecido com o da fonte ("Botafogo FC" na T
 (nascimentos na Transfermarkt, nomes na API-Football; 1 pedido a mais só nesses casos). Esses pares aparecem como
 "% · elenco".
 
+**Ligas sem país** (Resto do Mundo, ou uma Libertadores/Sul-Americana com clubes de vários países): não há uma liga
+correspondente na fonte, então **Casar os N times** procura cada time do banco sozinho (1 pedido/chamada por time) pelo nome,
+pela nação dele e pelas grafias em inglês ("Sparta Praga" → Sparta Prague); o que já foi casado antes vem do mapa. Depois a
+conferência é igual, sem a lista de participantes. No Resto do Mundo do BRFP 27, 68 de 74 times foram achados.
+
+**Sem par**: no lápis de um par, *Sem par (não está no banco)* põe o time da fonte na lista dos sem par com o nome e o escudo
+(antes ficava só o id) e tira o par guardado no mapa.
+
 **Seleções**: as ligas de seleções do banco (masculina e feminina) aparecem no alto da lista. Marque as seleções,
 **Procurar** na fonte (Transfermarkt: rápido, só masculino; API-Football: 1 chamada por seleção, depois cache) e **Pôr no
 projeto**: elas entram como seleções que já existem — ao Gerar, a convocação atual (casada com o banco e completada até o
@@ -159,12 +184,30 @@ mínimo de cada posição), a escalação, os cobradores e o técnico são troca
      divisão de baixo do mesmo país — e, se o banco não tiver divisão abaixo, para o **Resto do Mundo** (76, ou 2226 no
      feminino), com a nação do time em `teamnationlinks`;
    - **Transferências** e **empréstimos** (com o clube dono e o fim estimado do empréstimo em `playerloans`), **fim de
-     empréstimo**, **saídas** (vão para Sem Contrato), **números de camisa**;
-   - **Notas** (opcional): ±2 no máximo, pela nota da API na última temporada liberada em relação à média do time;
+     empréstimo**, **números de camisa**;
+   - **Saídas**: quem não está mais no elenco. Com *Saídas para o clube novo* (ligado por padrão), cada um é procurado na
+     fonte — na Transfermarkt, pela busca de jogadores (casado por nome, idade e nacionalidade e **confirmado pela data de
+     nascimento** no perfil: ≈2 pedidos por jogador); na API-Football, pelas transferências do time — e vai para o **clube de
+     hoje, se ele estiver no banco** (a saída vira uma transferência ou um empréstimo). O clube é achado pelo nome entre os do
+     mesmo gênero (o West Ham masculino e o feminino têm o mesmo nome). Se o clube de destino já tem no banco um jogador com o
+     nome e a idade do achado, o achado é ele (não quem saiu) e a saída fica Sem Contrato. No sub-20/B do mesmo clube, a
+     saída vem desmarcada; sem clube, aposentado ou num clube que não está no banco, vai para Sem Contrato;
+   - **Formação e tática** (opcional): a formação mais usada nos últimos jogos da fonte (Transfermarkt: 5 jogos, ≈6 pedidos
+     por time; API-Football: 3 escalações, ≈4 chamadas) e a linha defensiva e a saída de bola pela posição na tabela, como
+     nos times criados. Cada time vira uma mudança com a formação, a linha e a saída de bola editáveis na própria lista;
+   - **Técnicos** (opcional): o técnico de hoje de cada time (Transfermarkt: 2 pedidos; API-Football: 1 chamada). Se for
+     outro, a linha do técnico do time recebe o nome, o nascimento e a nacionalidade dele; se ele já está no banco (mesmo
+     nome e nascimento, em outro time ou sem time), com a aparência dele — senão, a de um técnico genérico;
+   - **Notas** (opcional): ±2 no máximo, pela nota da API na última temporada liberada em relação à média do time. O
+     máximo (±1 a ±10) e a diferença mínima para mudar (na Transfermarkt, entre a nota estimada e a do banco; padrão 3) se
+     escolhem embaixo das opções;
    - **Novos** (opcional): jogadores do elenco atual que não existem no banco, criados com nota estimada pelo nível.
 4. Cada mudança tem uma caixa; as duvidosas (nome de uma palavra só em outro clube) vêm desmarcadas. As marcadas entram
    ao **Gerar**, junto com o projeto. Times que perdem ou ganham jogadores têm a escalação padrão, os cobradores e o
-   capitão refeitos — ninguém que saiu fica escalado.
+   capitão refeitos — ninguém que saiu fica escalado. Um time que **ficaria com menos de 11** aparece num aviso na
+   conferência e, ao Gerar, é completado com jogadores sem contrato (nota perto da média do time, mesma nação). Antes da
+   2.3, esse time ficava com a escalação antiga, apontando para quem saiu, e a conferência final barrava o banco com o erro
+   "default_mentalities do time …: jogador … escalado fora do elenco".
 
 Na API-Football, conferir a temporada de agora (promovidos e elencos atuais da liga) exige o plano pago; no grátis, as
 temporadas liberadas servem para atualizar um banco mais antigo (ex.: um banco do FC 24).

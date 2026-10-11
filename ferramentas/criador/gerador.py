@@ -24,6 +24,7 @@ import casamento as K
 import notas as N
 
 MAX_JOGADORES = 40
+MENOS_DE_11 = "[menos11] "                     # começo da mensagem de erro de elenco com menos de 11 (a prévia oferece as opções)
 TIME_SEM_CONTRATO = "111592"
 LIGA_RDM = {0: "76", 1: "2226"}                 # Resto do Mundo (masculino, feminino)
 LIGA_SELECOES = {0: "78", 1: "2136"}
@@ -399,10 +400,13 @@ class Projeto:
 
     def ja_no_banco(self, j, genero):
         """O jogador do banco que é este (mesmo nascimento e nome; sem nascimento, o mesmo nome e a idade): None ou
-        {playerid, nome, clube, clube_nome, overall, idade, forte, idolo}."""
+        {playerid, nome, clube, clube_nome, overall, idade, forte, idolo}. O nome tem de bater (o nascimento só confirma)
+        e uma nacionalidade diferente de todas as do jogador na fonte pesa contra."""
         idx = self.indice_jogadores()
+        nacs = [n for n in (self.nacao(x) for x in [j.get("nacionalidade"), *(j.get("nacionalidades") or [])] if x) if n]
         cand = idx.buscar(j.get("nome"), j.get("primeiro") or "", j.get("sobrenome") or "", j.get("nascimento"),
-                          None if j.get("nascimento") else j.get("idade_hoje", j.get("idade")), genero=str(genero), minimo=0.9)
+                          None if j.get("nascimento") else j.get("idade_hoje", j.get("idade")), genero=str(genero), minimo=0.9,
+                          nacoes=nacs)
         if not cand:
             return None
         nota, pid = cand[0]
@@ -570,18 +574,21 @@ class Projeto:
         jogs = self._preparar_jogadores(dados, None if auto_tm else nivel_time, genero, ajustes, ex.get("fotos") or {})
         fo_mod = self.copiar("formations", "teamid", mod_form)[0]
         vagas = [int(fo_mod[f"position{i}"]) for i in range(11)]
-        titulares, reservas, ordem = self._escalacao(jogs, vagas)
+        menos11 = self._menos_de_11(jogs, ex.get("menos11"), tm["nome"], nivel_time, nacao_time, genero) if len(jogs) < 11 else None
+        titulares, reservas, ordem = self._escalacao(jogs, vagas, parcial=menos11 == "assim")
+        escolha = self.ultima_escolha
+        vagas_tit = [v for v, j in zip(vagas, escolha) if j]
         afetados = self.clubes_afetados(ordem)             # antes de tirar os jogadores dos clubes antigos
         for j in ordem:
             self._linhas_jogador(j, teamid, genero)
-            self.novas["teamplayerlinks"].append(self._vinculo(teamid, j, titulares, reservas, vagas))
+            self.novas["teamplayerlinks"].append(self._vinculo(teamid, j, titulares, reservas, vagas_tit))
         takers = self._cobradores(titulares)
         # tática: formação (a mais usada nas escalações ou a escolhida), linha defensiva e saída de bola
         auto = tatica_auto(ex.get("forca"), fo_mod.get("formationname"))
         prof = int(tat.get("profundidade") or auto["profundidade"])
         saida = int(tat.get("saida") or auto["saida"])
         # time
-        notas_lin = self._notas_time(titulares, vagas)
+        notas_lin = self._notas_time(titulares, vagas_tit)
         cores = self._cores(dados)
         t = dict(self.copiar("teams", "teamid", modelo)[0])
         nome = limpar(ajustes.get("_time_nome") or tm["nome"], 59)
@@ -626,7 +633,7 @@ class Projeto:
         if str(leagueid) in LIGA_RDM.values() or self.pais_liga.get(str(leagueid)) == "211":
             self.novas["teamnationlinks"].append({"leagueid": str(leagueid), "teamid": teamid, "nationid": str(nacao_time)})
         # formação, mentalidade padrão, dados padrão e escalação
-        self._formacao_e_escalacao(teamid, modelo, mod_form, fo_mod, titulares, ordem, takers, prof, saida)
+        self._formacao_e_escalacao(teamid, modelo, mod_form, fo_mod, escolha, ordem, takers, prof, saida)
         # estádio genérico (capacidade do estádio real ou típica do nível) + o nome do estádio real
         est = self._estadio(teamid, modelo, tm, cap_alvo, est_aj)
         for d in self.copiar("broadcastleague", "teamid", modelo):
@@ -653,14 +660,38 @@ class Projeto:
                "nivel": round(nivel_time, 1), "geral": notas_lin["geral"], "genero": genero,
                "jogadores": [self._publico(j) for j in ordem], "cores": cores, "tecnico": tec,
                "estadio": est, "avisos": list(dados.get("avisos") or []), "excluidos": list(self.excluidos),
-               "clubes_afetados": afetados,
+               "clubes_afetados": afetados, "menos11": menos11,
+               "livres": sum(1 for j in ordem if j.get("origem") == "livre"),
                "usar_db_todos": bool(ajustes.get("_usar_db_todos"))}
+        if menos11 == "assim":
+            res["avisos"].append(f"Criado com {len(ordem)} jogador(es), menos de 11: as vagas que faltam ficam vazias na escalação. "
+                                 "O jogo pode travar ao escalar este time; complete o elenco antes de jogar com ele.")
         self.resumo.append(res)
         return res
 
     # ---- partes do time
-    def _escalacao(self, jogs, vagas):
-        titulares = self._escalar(jogs, vagas)
+    def _menos_de_11(self, jogs, modo, nome, nivel, nacao_time, genero):
+        """Elenco da fonte com menos de 11: "livres" completa com jogadores sem contrato (nota perto da média do
+        elenco, a nação mais comum dele); "assim" cria mesmo assim; sem escolha, para com a explicação."""
+        if modo == "livres":
+            nacs = collections.Counter(str(j.get("nacao") or self.nacao_jogador(j)) for j in jogs)
+            nacs.pop("211", None)
+            nacao = nacs.most_common(1)[0][0] if nacs else nacao_time
+            alvo = sum(j["overall"] for j in jogs) / len(jogs) if jogs else float(nivel) - 3
+            for pid in self.livres(11 - len(jogs), alvo, nacao, genero, [j["pos"] for j in jogs]):
+                jogs.append(self.jogador_livre(pid))
+            if len(jogs) < 11:
+                raise ValueError(f"{nome}: não há jogadores sem contrato suficientes para chegar a 11 ({len(jogs)}).")
+            return "livres"
+        if modo == "assim" and jogs:
+            return "assim"
+        raise ValueError(f"{MENOS_DE_11}{nome} tem só {len(jogs)} jogador(es) no elenco da fonte. Escolha na prévia: completar com "
+                         "jogadores sem contrato (nota e nacionalidade parecidas com as do elenco) ou criar assim mesmo.")
+
+    def _escalacao(self, jogs, vagas, parcial=False):
+        """parcial: menos de 11 jogadores — as vagas sem ninguém ficam vazias (ultima_escolha tem None nelas)."""
+        self.ultima_escolha = self._escalar(jogs, vagas, parcial)
+        titulares = [j for j in self.ultima_escolha if j]
         ordem = titulares + sorted((j for j in jogs if j not in titulares), key=lambda j: -j["overall"])
         reservas = ordem[11:11 + 9]
         usados = set()
@@ -707,8 +738,8 @@ class Projeto:
         self.novas["formations"].append(fo)
         dm = dict(self.copiar("default_mentalities", "teamid", mod_form)[0])
         dm.update(teamid=teamid, mentalityid=str(self.ids("ment", "default_mentalities", "mentalityid").novo()))
-        for i in range(11):
-            dm[f"playerid{i}"] = str(titulares[i]["playerid"])
+        for i in range(11):                                # vaga sem jogador (time criado com menos de 11): -1
+            dm[f"playerid{i}"] = str(titulares[i]["playerid"]) if i < len(titulares) and titulares[i] else "-1"
         if "buildupplay" in dm:
             dm["buildupplay"] = str(saida)
         if "defensivedepth" in dm:
@@ -967,8 +998,9 @@ class Projeto:
             jogs = jogs[:MAX_JOGADORES]
         return jogs
 
-    def _escalar(self, jogs, vagas):
-        """11 titulares, um por vaga, pela melhor combinação nota x posição (goleiro primeiro)."""
+    def _escalar(self, jogs, vagas, parcial=False):
+        """11 titulares, um por vaga, pela melhor combinação nota x posição (goleiro primeiro). parcial: com menos de 11
+        jogadores, as vagas que sobram ficam None."""
         livres = list(jogs)
         escolha = [None] * 11
         ordem = sorted(range(11), key=lambda i: (0 if vagas[i] == 0 else 1, sum(1 for j in jogs if j["pos"] == VAGA_BASE.get(vagas[i]))))
@@ -980,7 +1012,7 @@ class Projeto:
                          + (40 if j.get("titular_manual") else 0))
             escolha[i] = melhor
             livres.remove(melhor)
-        if any(e is None for e in escolha):
+        if any(e is None for e in escolha) and not parcial:
             raise ValueError("O time tem menos de 11 jogadores.")
         return escolha
 
@@ -1032,6 +1064,25 @@ class Projeto:
         j["clube"] = nb.get("clube_nome")
         j["atr_manual"] = []
 
+    def clube_por_nome(self, nome, genero=0, tm_id=None):
+        """teamid do clube do banco pelo id da Transfermarkt (mapa) ou pelo nome (claro: ≥ 0,9 e nenhum outro perto),
+        entre os clubes do mesmo gênero; None se não estiver no banco."""
+        if tm_id:
+            tid = K.ler_mapa().get("tm_times", {}).get(str(tm_id))
+            if tid and self.atuais("teams", teamid=tid):
+                return tid
+        if not nome or re.search(r"\b(U-?\d\d|Sub-?\d\d|B|II|Youth|Reserves?|Juniors?|Academy)\b", nome, re.I):
+            return None
+        if self._nomes_times is None:
+            self.nome_time("0")
+        gen = {d["teamid"]: d.get("gender") or "0" for d in self.tab("teams").dicts()}
+        cands = sorted(((K.nota_time(nome, n), tid) for tid, n in self._nomes_times.items()
+                        if self.liga_de.get(tid) not in LIGAS_NAO_CLUBE and gen.get(tid) == str(genero) and tid != TIME_SEM_CONTRATO),
+                       reverse=True)
+        if cands and cands[0][0] >= 0.9 and (len(cands) < 2 or cands[1][0] < cands[0][0] - 0.15):
+            return cands[0][1]
+        return None
+
     def elenco_restante(self, teamid):
         """Quantos jogadores o time do banco tem agora (com as mudanças do projeto)."""
         return len(self.atuais("teamplayerlinks", teamid=teamid)) + len(self.novas_de("teamplayerlinks", teamid=teamid))
@@ -1041,6 +1092,123 @@ class Projeto:
         saem = collections.Counter(j["no_banco"]["clube"] for j in jogs if j.get("usar_db") and (j.get("no_banco") or {}).get("clube"))
         return [{"teamid": t, "nome": self.nome_time(t), "saem": n, "ficam": self.elenco_restante(t) - n} for t, n in saem.most_common()]
 
+    # ---- passes livres (Sem Contrato) para completar elencos com menos de 11
+    def livres(self, n, alvo, nacao, genero, posicoes=()):
+        """playerids de `n` jogadores sem contrato (time 111592, ou sem clube nenhum) para completar um elenco: nota perto de `alvo`, da mesma
+        nação (senão da mesma confederação), até 34 anos de preferência; primeiro um goleiro e as linhas que faltam
+        (posicoes: posições dos que já estão no elenco)."""
+        usados = getattr(self, "_livres_usados", set())
+        self._livres_usados = usados
+        idx = self.indice_jogadores()
+        conf = self.confed.get(str(nacao))
+        cand = []
+        pool = [d["playerid"] for d in self.atuais("teamplayerlinks", teamid=TIME_SEM_CONTRATO)]
+        # sem vínculo com clube nenhum (no futebol feminino o Sem Contrato fica vazio: as jogadoras livres só estão na
+        # seleção); ídolos da Liga Clássica não entram
+        pool += [pid for pid, ts in idx.times_de.items() if TIME_SEM_CONTRATO not in ts
+                 and all(self.liga_de.get(t) in LIGAS_NAO_CLUBE and self.liga_de.get(t) not in LIGAS_LENDAS for t in ts)]
+        pool += [pid for pid in idx.info if pid not in idx.times_de]
+        for pid in dict.fromkeys(pool):
+            i = idx.info.get(pid)
+            if not i or pid in usados or str(i["genero"]) != str(genero):
+                continue
+            if any(self.liga_de.get(t) not in LIGAS_NAO_CLUBE and t != TIME_SEM_CONTRATO for t in
+                   (x["teamid"] for x in self.atuais("teamplayerlinks", playerid=pid))):
+                continue                                   # já foi para um clube neste projeto
+            pen = 0 if str(i["nacao"]) == str(nacao) else 3 if conf and self.confed.get(str(i["nacao"])) == conf else 6
+            pen += 3 if (i["idade"] or 25) > 34 else 0
+            cand.append((abs(i["overall"] - alvo) + pen, pid, i["pos"]))
+        cand.sort()
+        linha = lambda p: "G" if p == 0 else "D" if p in (2, 3, 5, 7, 8) else "M" if p in (10, 12, 14, 16, 18) else "A"  # noqa: E731
+        tem = collections.Counter(linha(int(p)) for p in posicoes)
+        precisa = {"G": 1, "D": 4, "M": 3, "A": 2}
+        escolha = []
+        for g, q in precisa.items():                       # primeiro o que falta para escalar 11
+            for _, pid, p in cand:
+                if len(escolha) >= n or tem[g] >= q:
+                    break
+                if linha(p) == g and pid not in escolha:
+                    escolha.append(pid)
+                    tem[g] += 1
+        for _, pid, _ in cand:
+            if len(escolha) >= n:
+                break
+            if pid not in escolha:
+                escolha.append(pid)
+        usados.update(escolha)
+        return escolha
+
+    def jogador_livre(self, pid):
+        """Um jogador sem contrato no formato dos jogadores preparados (entra no time como os "do banco")."""
+        idx = self.indice_jogadores()
+        i = idx.info[str(pid)]
+        j = {"id": f"livre{pid}", "nome": i["nome"], "idade": i["idade"], "stats": {}, "usar_db": str(pid), "playerid": int(pid),
+             "no_banco": {"playerid": str(pid), "nome": i["nome"], "clube": TIME_SEM_CONTRATO, "clube_nome": "Sem Contrato",
+                          "overall": i["overall"], "idade": i["idade"], "forte": True, "idolo": False}}
+        self._dados_do_banco(j)
+        j["origem"] = "livre"
+        j["nascimento"] = str(N.data_de_dias(i["nascimento"])) if i["nascimento"] else None
+        j["camisa_manual"] = None
+        j["capitao_manual"] = False
+        return j
+
+    def completar_clube(self, teamid, minimo=11):
+        """Time do banco que ficou com menos de `minimo`: entram jogadores sem contrato (nota perto da média do elenco,
+        mesma nação do time). Devolve os nomes de quem entrou."""
+        vincs = self.atuais("teamplayerlinks", teamid=teamid) + self.novas_de("teamplayerlinks", teamid=teamid)
+        falta = minimo - len(vincs)
+        if falta <= 0:
+            return []
+        idx = self.indice_jogadores()
+        ovs, poss, nacs = [], [], collections.Counter()
+        for v in vincs:
+            i = idx.info.get(v["playerid"])
+            if i:
+                ovs.append(i["overall"])
+                poss.append(i["pos"])
+                nacs[i["nacao"]] += 1
+            else:
+                for p in self.novas_de("players", playerid=v["playerid"]):
+                    ovs.append(int(p["overallrating"]))
+                    poss.append(int(p["preferredposition1"]))
+        tn = self.atuais("teamnationlinks", teamid=teamid)
+        nacao = tn[0]["nationid"] if tn else (nacs.most_common(1)[0][0] if nacs else self.pais_liga.get(self.liga_de.get(teamid), "211"))
+        t = self.atuais("teams", teamid=teamid)
+        genero = (t[0].get("gender") or "0") if t else "0"
+        alvo = (sum(ovs) / len(ovs)) if ovs else self.nivel_time_db.get(teamid, 62) - 4
+        nomes = []
+        for pid in self.livres(falta, alvo, nacao, genero, poss):
+            usados = {d["jerseynumber"] for d in self.atuais("teamplayerlinks", teamid=teamid)} | \
+                     {d["jerseynumber"] for d in self.novas_de("teamplayerlinks", teamid=teamid)}
+            num = next((k for k in range(2, 99) if str(k) not in usados), 99)
+            if not self.alterar("teamplayerlinks", {"teamid": teamid, "jerseynumber": num, "position": 29}, playerid=pid,
+                                teamid=TIME_SEM_CONTRATO):          # sem vínculo nenhum (jogadora livre): vínculo novo
+                tl = self.linha_vazia("teamplayerlinks")
+                tl.update(teamid=teamid, playerid=str(pid), jerseynumber=str(num), position="29", form="3",
+                          artificialkey=str(self.ids("tpl", "teamplayerlinks", "artificialkey").novo()))
+                self.novas["teamplayerlinks"].append(tl)
+            nomes.append(f"{idx.info[pid]['nome']} ({idx.info[pid]['overall']})")
+        return nomes
+
+    def aplicar_tatica(self, teamid, formacao=None, profundidade=None, saida=None):
+        """Time do banco: troca a formação (posições, papéis e deslocamentos de um time do banco com ela), a linha
+        defensiva e a saída de bola. A escalação é refeita depois (reescalar)."""
+        fo = self.atuais("formations", teamid=teamid)
+        if formacao and fo and fo[0]["formationname"] != formacao:
+            mod_form = self.modelo_formacao(formacao, teamid)
+            if mod_form != teamid:
+                self._trocar_formacao(teamid, mod_form, self.copiar("formations", "teamid", mod_form)[0])
+        vals = {k: v for k, v in (("buildupplay", saida), ("defensivedepth", profundidade)) if v}
+        if vals:
+            t = self.atuais("teams", teamid=teamid)
+            if t:
+                self.alterar("teams", {k: v for k, v in vals.items() if k in t[0]}, teamid=teamid)
+            dm = self.atuais("default_mentalities", teamid=teamid)
+            if dm:
+                self.alterar("default_mentalities", {k: v for k, v in vals.items() if k in dm[0]}, teamid=teamid)
+            if profundidade and self.atuais("defaultteamdata", teamid=teamid):
+                self.alterar("defaultteamdata", {"defensivedepth": profundidade}, teamid=teamid)
+
     def _transferir_do_banco(self, j, teamid):
         """Tira o jogador do clube antigo (o vínculo com a seleção fica) e apaga o empréstimo, se houver."""
         pid = str(j["usar_db"])
@@ -1048,6 +1216,8 @@ class Projeto:
         if antigo:
             self.remover("teamplayerlinks", playerid=pid, teamid=antigo)
             self.clubes_mexidos.add(antigo)
+        # sem contrato (o time 111592 fica numa liga especial, então clube_db não o vê): sai de lá também
+        self.remover("teamplayerlinks", playerid=pid, teamid=TIME_SEM_CONTRATO)
         if self.tem_tabela("playerloans"):
             self.remover("playerloans", playerid=pid)
 
@@ -1239,12 +1409,17 @@ class Projeto:
                 dos.sort(key=lambda j: (j["origem"] == "convocado", j["origem"] == "manual", j["overall"]))
                 for j in dos[:len(dos) - mx]:
                     pool.remove(j)
-        # 5. convocados que não estão no banco: criados (sem clube) se pedido
+        # 5. convocados que não estão no banco: criados (sem clube) os escolhidos — "criar os que faltam" marca todos e
+        # cada um pode ser marcado ou desmarcado (criar = {api_id: bool})
+        escolhidos = ex.get("criar") or {}
+        criar = lambda a: escolhidos.get(str(a["id"]), bool(ex.get("criar_faltantes")))  # noqa: E731
         criados = []
-        if faltam and ex.get("criar_faltantes"):
+        if any(criar(a) for a in faltam):
             base_ov = sorted((j["overall"] for j in pool), reverse=True)
             ref = base_ov[min(len(base_ov) - 1, 18)] if base_ov else int(nivel) - 6
             for a in faltam:
+                if not criar(a):
+                    continue
                 a = dict(a, nacionalidade=self.nome_nacao.get(nacao), stats={})
                 criados.append(a)
             novos = self._preparar_jogadores({"time": tm, "jogadores": criados}, ref + 1.8, genero, ajustes, ex.get("fotos"))
@@ -1285,12 +1460,21 @@ class Projeto:
         titulares, reservas, ordem = self._escalacao(pool, vagas)
         for j in ordem:
             if not j.get("existente"):
-                self._linhas_jogador(j, TIME_SEM_CONTRATO, genero)
-                if genero == 0:
+                # o convocado criado vai para o clube dele, se o clube estiver no banco; senão, Passes Livres (Sem Contrato)
+                clube = self.clube_por_nome((j.get("clube_tm") or {}).get("nome"), genero, (j.get("clube_tm") or {}).get("id"))
+                self._linhas_jogador(j, clube or TIME_SEM_CONTRATO, genero)
+                if clube or genero == 0:
+                    alvo = clube or TIME_SEM_CONTRATO
+                    usados = {d["jerseynumber"] for d in self.atuais("teamplayerlinks", teamid=alvo)} | \
+                             {d["jerseynumber"] for d in self.novas_de("teamplayerlinks", teamid=alvo)}
+                    num = "99" if not clube else str(next((k for k in range(2, 99) if str(k) not in usados), 99))
                     sc = self.linha_vazia("teamplayerlinks")
-                    sc.update(teamid=TIME_SEM_CONTRATO, playerid=str(j["playerid"]), jerseynumber="99", position="29", form="3",
+                    sc.update(teamid=alvo, playerid=str(j["playerid"]), jerseynumber=num, position="29", form="3",
                               artificialkey=str(self.ids("tpl", "teamplayerlinks", "artificialkey").novo()))
                     self.novas["teamplayerlinks"].append(sc)
+                    if clube:
+                        self.clubes_mexidos.add(clube)          # a escalação do clube é refeita (o novo fica no banco)
+                j["clube"] = (self.nome_time(clube) if clube else "Passes Livres") if (clube or genero == 0) else "sem clube"
         takers = self._cobradores(titulares)
         auto = tatica_auto(ex.get("forca"), fo_mod.get("formationname"))
         prof = int(tat.get("profundidade") or auto["profundidade"])
@@ -1371,14 +1555,16 @@ class Projeto:
                "jogadores": [self._publico(j) for j in ordem], "cores": cores, "tecnico": tec, "estadio": None,
                "grupos": {g: {"n": cont.get(g, 0), "min": mn, "max": mx} for g, (mn, mx) in limites.items()},
                "falta_grupo": falta_grupo, "nao_encontrados": [{"id": a["id"], "nome": a.get("nome"), "idade": a.get("idade"),
-                                                                "pos": a.get("posicao_api")} for a in faltam if not ex.get("criar_faltantes")],
+                                                                "pos": a.get("posicao_api"), "criar": criar(a)} for a in faltam],
                "avisos": list(dados.get("avisos") or [])}
         if falta_grupo:
             res["avisos"].append("Abaixo do mínimo: " + ", ".join(f"{g} {cont[g]}/{limites[g][0]}" for g in falta_grupo) +
                                  " (a nação não tem mais jogadores no banco nessas posições).")
-        if faltam and not ex.get("criar_faltantes"):
-            res["avisos"].append(f"{len(faltam)} convocado(s) não estão no banco: {', '.join(a.get('nome') or '?' for a in faltam[:6])}"
-                                 f"{'…' if len(faltam) > 6 else ''}. Ative \"criar os que faltam\" ou escolha à mão.")
+        fora = [a for a in faltam if not criar(a)]
+        if fora:
+            res["avisos"].append(f"{len(fora)} convocado(s) não estão no banco e não serão criados: "
+                                 f"{', '.join(a.get('nome') or '?' for a in fora[:6])}{'…' if len(fora) > 6 else ''}. "
+                                 "Marque quem criar ou escolha o jogador do banco.")
         self.selecoes.append({"teamid": teamid, "nacao": nacao, "nome": nome, "genero": genero, "nivel": nivel, "novo": not existente,
                               "confederacao": self.confed.get(nacao)})
         self.resumo.append(res)

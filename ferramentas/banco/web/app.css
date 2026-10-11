@@ -126,3 +126,22 @@
 
 @media (max-width: 1250px) { #app { --esq: 250px; --dir: 260px; } .grade-escalacao { grid-template-columns: 1fr; } }
 @media (max-width: 900px) { #app { grid-template-columns: var(--esq) 4px 1fr 0 0; } #painel-dir, #div-dir { display: none; } }
+
+/* elenco: abrir o jogador e edição rápida */
+.tabela.elenco td.nome { cursor: pointer; }
+.tabela.elenco td.nome:hover b { color: var(--acento); text-decoration: underline; text-underline-offset: 3px; }
+.tabela.elenco td.nome .ir-jog { display: inline-flex; margin-left: 4px; color: var(--acento); opacity: 0; transition: opacity .12s; vertical-align: -1px; }
+.tabela.elenco td.nome:hover .ir-jog { opacity: 1; }
+.tabela.elenco tr:hover td { background: var(--hover); }
+.tabela td input.rapida { width: 52px; padding: 0 2px; text-align: center; font-family: var(--mono); }
+.tabela td select.rapida { padding: 0 2px; max-width: 82px; color: var(--texto); }
+.tabela td select.rapida.nacao { max-width: 140px; }
+.tabela td input.rapida.ov { font-weight: 600; }
+.tabela td input.rapida.ov.a { background: rgba(69, 185, 124, .22); color: #8fdcb2; } .tabela td input.rapida.ov.b { background: rgba(76, 141, 255, .2); color: #9fc0ff; }
+.tabela td input.rapida.ov.c { background: rgba(240, 180, 41, .18); color: #f5d27a; } .tabela td input.rapida.ov.d { background: rgba(240, 86, 90, .16); color: #ffb3b5; }
+.tabela td .rapida:focus { border-color: var(--acento); outline: none; }
+.rapida.gravando { opacity: .55; }
+.rapida.gravado { box-shadow: 0 0 0 2px rgba(69, 185, 124, .65); }
+.campo-linha.mudado .entrada, .campo-linha.mudado .seletor { border-color: var(--acento); background: rgba(76, 141, 255, .1); }
+.campo-linha.mudado label { color: #9fc0ff; }
+.ic.vira { transform: rotate(180deg); }

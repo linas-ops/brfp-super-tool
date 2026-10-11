@@ -22,7 +22,7 @@ import base  # noqa: E402
 import dados  # noqa: E402
 import edicao as E  # noqa: E402
 
-VERSAO = "1.0"
+VERSAO = "1.1"
 PREFS = base.Prefs(os.path.join(AQUI, "preferencias.json"), {"saida": ""})
 CACHE = os.path.join(AQUI, "cache")
 LOCK = threading.RLock()
@@ -159,14 +159,14 @@ def api_buscar_jogadores(q):
     for r, d in e.dicts("players"):
         pid = d["playerid"]
         n = e.nome_jogador(pid, d)
-        if termo.isdigit() and termo == pid or termo in dados.normalizar(f"{n['nome']} {n['primeiro']} {n['sobrenome']} {n['camisa']}"):
+        if termo.isdigit() and termo == str(pid) or termo in dados.normalizar(f"{n['nome']} {n['primeiro']} {n['sobrenome']} {n['camisa']}"):
             clube = e.clube_de(pid)
             out.append({"playerid": pid, "nome": n["nome"], "overall": int(d.get("overallrating") or 0),
                         "pos": E.POS.get(int(d.get("preferredposition1") or 0), "?"), "clube": clube,
                         "clube_nome": e.nome_time(clube) if clube else "sem clube", "nascimento": E.data_de(d.get("birthdate"))})
             if len(out) >= lim * 3:
                 break
-    out.sort(key=lambda j: (not dados.normalizar(j["nome"]).startswith(termo), -j["overall"]))
+    out.sort(key=lambda j: (str(j["playerid"]) != termo, not dados.normalizar(j["nome"]).startswith(termo), -j["overall"]))
     return {"jogadores": out[:lim]}
 
 
@@ -176,10 +176,10 @@ def api_buscar_times(q):
     out = []
     for _, d in e.dicts("teams"):
         n = e.nome_time(d["teamid"], d)
-        if not termo or termo in dados.normalizar(n) or termo == d["teamid"]:
+        if not termo or termo in dados.normalizar(n) or termo == str(d["teamid"]):
             lid = e.liga_do_time(d["teamid"])
             out.append({"teamid": d["teamid"], "nome": n, "liga": e.nome_liga(lid) if lid else "sem liga"})
-    out.sort(key=lambda t: (not dados.normalizar(t["nome"]).startswith(termo), dados.normalizar(t["nome"])))
+    out.sort(key=lambda t: (str(t["teamid"]) != termo, not dados.normalizar(t["nome"]).startswith(termo), dados.normalizar(t["nome"])))
     return {"times": out[:80]}
 
 
@@ -203,14 +203,15 @@ def api_pessoas(q):
     if t not in ("referee", "manager") or not e.tem(t):
         raise base.ErroUsuario("Tabela de pessoas inválida.")
     termo = dados.normalizar(q.get("q") or "")
+    chave = "managerid" if t == "manager" else "refereeid"
     out = []
     for r, d in e.dicts(t):
         nome = d.get("commonname") or f"{d.get('firstname', '')} {d.get('surname', '')}".strip() or f"#{E._rs(r)}"
-        if termo and termo not in dados.normalizar(nome):
+        if termo and termo not in dados.normalizar(nome) and not (termo.isdigit() and termo == str(d.get(chave, ""))):
             continue
         extra = e.nome_time(d["teamid"]) if t == "manager" and d.get("teamid") not in (None, "", "-1", "0") else \
             (e.nome_liga(d["leagueid"]) if t == "referee" and d.get("leagueid") not in (None, "", "-1", "0") else "")
-        out.append({"ref": E._rs(r), "nome": nome, "extra": extra, "nacao": e.nome_nacao(d.get("nationality"))})
+        out.append({"ref": E._rs(r), "nome": nome, "extra": extra, "nacao": e.nome_nacao(d.get("nationality")), "id": d.get(chave)})
     out.sort(key=lambda x: dados.normalizar(x["nome"]))
     return {"pessoas": out[:400], "total": len(out)}
 
