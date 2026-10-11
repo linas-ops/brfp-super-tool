@@ -103,6 +103,7 @@ def main():
 
     if not os.path.isdir(os.path.join(SUPERTOOL, ".git")):
         git("init", "-b", "main")
+    if "origin" not in git("remote").split():
         git("remote", "add", "origin", f"https://github.com/{DONO}/{NOME_REPO}.git")
     git("add", "-A")
     if git("status", "--porcelain").strip():
