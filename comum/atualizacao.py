@@ -107,7 +107,8 @@ def iniciar():
         pasta = tempfile.mkdtemp(prefix="brfp-atualizacao-")
         try:
             arq = os.path.join(pasta, "leve.zip")
-            req = urllib.request.Request(zipa["browser_download_url"], headers={"User-Agent": "BRFP-Super-Tool"})
+            # pelo id do arquivo na API (o link pelo nome pode ficar em cache apontando para um arquivo trocado)
+            req = urllib.request.Request(zipa["url"], headers={"User-Agent": "BRFP-Super-Tool", "Accept": "application/octet-stream"})
             with urllib.request.urlopen(req, timeout=30) as r, open(arq, "wb") as fh:
                 while True:
                     bloco = r.read(256 * 1024)
