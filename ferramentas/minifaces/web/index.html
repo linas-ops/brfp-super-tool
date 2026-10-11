@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Criador de Minifaces</title>
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="comum/brfp.css">
+  <link rel="stylesheet" href="app.css">
+</head>
+<body>
+  <div id="app">
+    <header id="topo">
+      <div class="marca" title="Criador de Minifaces">
+        <span class="marca-ic"></span>
+        <span class="marca-txt">Criador de Minifaces</span>
+        <span class="marca-versao" id="versao"></span>
+      </div>
+      <nav id="menus" aria-label="Menu principal"></nav>
+      <div class="titulo-centro" id="titulo"></div>
+      <div class="topo-acoes">
+        <button id="btn-exportar" class="btn-primario" title="Gravar p&lt;ID&gt;.png na pasta de saída (Ctrl+E)" disabled>
+          <span id="btn-exportar-ic"></span><span id="btn-exportar-txt">Exportar</span><span id="contador" class="contador" hidden>0</span>
+        </button>
+      </div>
+    </header>
+
+    <aside id="painel-esq" class="painel" aria-label="Fotos">
+      <div class="painel-cab">
+        <h2>Fotos</h2>
+        <div class="painel-cab-acoes">
+          <button id="btn-add-arq" class="btn-icone peq" title="Adicionar fotos…"></button>
+          <button id="btn-add-pasta" class="btn-icone peq" title="Adicionar pasta…"></button>
+          <button id="btn-limpar" class="btn-icone peq" title="Limpar a lista"></button>
+        </div>
+      </div>
+      <div class="time-linha" id="time-linha"></div>
+      <div class="busca-linha">
+        <label class="campo-busca">
+          <span id="busca-ic"></span>
+          <input id="busca" type="search" placeholder="Buscar foto ou jogador…" autocomplete="off" spellcheck="false">
+        </label>
+        <select id="filtro" class="seletor" title="Filtrar a lista">
+          <option value="tudo">Todas</option>
+          <option value="ligadas">Ligadas</option>
+          <option value="sem">Sem jogador</option>
+          <option value="problemas">Sem rosto / erro</option>
+        </select>
+      </div>
+      <div id="lista" class="arvore" role="listbox" aria-label="Fotos na lista"></div>
+      <div class="painel-rodape"><span id="resumo-lista"></span></div>
+    </aside>
+    <div class="divisor" id="div-esq"></div>
+
+    <main id="viewport">
+      <div id="estudio" class="estudio" hidden>
+        <section class="vista-foto">
+          <div class="barra-flutuante esq" id="ferramentas">
+            <button class="btn-icone ativo" data-modo="mover" title="Mover e aproximar o quadro (arraste · roda do mouse)"></button>
+            <button class="btn-icone" data-modo="rosto" title="Marcar o rosto (arraste um quadrado sobre o rosto)"></button>
+            <span class="sep-v"></span>
+            <button class="btn-icone" data-modo="manter" title="Pincel: manter (pinte o que é do jogador)"></button>
+            <button class="btn-icone" data-modo="apagar" title="Pincel: apagar (pinte o que é fundo)"></button>
+            <input id="raio" type="range" min="2" max="60" value="12" title="Tamanho do pincel">
+            <button class="btn-icone" id="btn-desfazer-traco" title="Desfazer o último traço (Ctrl+Z)"></button>
+          </div>
+          <canvas id="tela-foto" tabindex="0" aria-label="Foto original"></canvas>
+          <div class="legenda-vista" id="legenda-foto"></div>
+        </section>
+        <section class="vista-mini">
+          <div class="barra-flutuante dir">
+            <div class="segmentado" id="seg-fundo">
+              <button data-fundo="xadrez" class="ativo" title="Fundo xadrez (transparência)">Xadrez</button>
+              <button data-fundo="escuro" title="Fundo escuro">Escuro</button>
+              <button data-fundo="claro" title="Fundo claro">Claro</button>
+            </div>
+            <button class="btn-icone" id="btn-referencia" title="Comparar com uma miniface do jogo (sobreposta)"></button>
+          </div>
+          <div class="quadro-mini" id="quadro-mini">
+            <img id="img-mini" alt="Prévia da miniface">
+            <img id="img-ref" src="referencia_p158023.png" alt="" hidden>
+          </div>
+          <div class="legenda-vista" id="legenda-mini"></div>
+          <div class="vizinhos" id="vizinhos"></div>
+        </section>
+      </div>
+      <div id="vazio-vista" class="soltar">
+        <div class="soltar-caixa">
+          <div class="ic-grande" id="soltar-ic"></div>
+          <h2>Arraste fotos de jogadores para cá</h2>
+          <p>Qualquer tamanho, com fundo transparente, de cor neutra ou não. A ferramenta tira o fundo e enquadra o rosto como as minifaces do jogo (180×180).</p>
+          <div class="acoes">
+            <button class="btn-primario" id="btn-vazio-arq"></button>
+            <button class="btn" id="btn-vazio-pasta"></button>
+          </div>
+          <small>Escolha o <b>time</b> no painel da esquerda: cada foto é ligada ao jogador pelo nome do arquivo e sai como <b>p&lt;ID&gt;.png</b>.</small>
+        </div>
+      </div>
+      <div id="carregando" class="aviso-previa" hidden></div>
+    </main>
+    <div class="divisor" id="div-dir"></div>
+
+    <aside id="painel-dir" class="painel" aria-label="Ajustes">
+      <div id="propriedades" class="propriedades"></div>
+    </aside>
+
+    <footer id="status">
+      <span class="status-esq contagem" id="status-esq"></span>
+      <span class="status-dir">
+        <span id="status-progresso" hidden><span class="barra-progresso mini"><div id="progresso-barra"></div></span><span id="progresso-txt"></span></span>
+        <span class="chip" id="chip-banco"></span>
+        <span class="chip" id="chip-motor"></span>
+      </span>
+    </footer>
+  </div>
+  <div id="camada-soltar" hidden><div>Solte as fotos para adicionar</div></div>
+  <div id="camada-modal"></div>
+  <div id="menu-contexto" class="menu-flutuante" hidden></div>
+  <div id="toasts" aria-live="polite"></div>
+  <script type="module" src="app.js"></script>
+</body>
+</html>

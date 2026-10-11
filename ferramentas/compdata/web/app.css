@@ -1,0 +1,38 @@
+/* Editor de Compdata — só o que é específico; o resto vem de comum/brfp.css (tema do Editor de Estádios). */
+#app {
+  display: grid; height: 100vh;
+  grid-template-columns: var(--esq) 4px 1fr;
+  grid-template-rows: var(--topo) 1fr var(--rodape);
+  grid-template-areas: "topo topo topo" "esq div conteudo" "status status status";
+  --esq: 340px;
+}
+#topo { grid-area: topo; }
+#painel-esq { grid-area: esq; border-right: 0; }
+#divisor { grid-area: div; }
+#conteudo { grid-area: conteudo; }
+#status { grid-area: status; }
+#app.sem-pasta { grid-template-columns: 0 0 1fr; }
+#app.sem-pasta #painel-esq, #app.sem-pasta #divisor { display: none; }
+
+/* árvore: cores por tipo de nó */
+.linha-arv .tipo.t-1 { color: #565d69; }
+.linha-arv .tipo.t0 { color: var(--texto-2); }
+.linha-arv .tipo.t1 { color: #9d8be8; }
+.linha-arv .tipo.t2 { color: #86a8e8; }
+.linha-arv .tipo.t3, .linha-arv .tipo.t6 { color: #e0b65a; }
+.linha-arv .tipo.t4 { color: var(--acento); }
+.linha-arv .tipo.t5 { color: var(--texto-3); }
+.linha-arv.t3 .nome, .linha-arv.t6 .nome { font-weight: 600; }
+.linha-arv.reservado .nome { color: var(--texto-3); }
+
+/* impacto de uma exclusão */
+.impacto { font: 12px var(--mono); color: var(--texto-2); background: var(--bg); border: 1px solid var(--borda); border-radius: var(--raio); padding: 10px 12px; display: grid; gap: 2px; }
+.impacto div { display: flex; justify-content: space-between; }
+.impacto b { color: #ff9a9c; }
+
+.bv-wrap { max-width: 900px; padding-top: 40px; }
+.bv-lista { display: flex; flex-direction: column; gap: 8px; }
+.marca-ic { background-image: url(favicon.svg); }
+.bv-hero-ic { background-image: url(favicon.svg); }
+
+@media (max-width: 1000px) { #app { --esq: 260px; } }

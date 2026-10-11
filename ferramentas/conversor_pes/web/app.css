@@ -1,0 +1,132 @@
+/* Conversor PES → FC — só o específico; o resto vem de comum/brfp.css. */
+#app {
+  display: grid; height: 100vh;
+  grid-template-columns: var(--esq) 4px 1fr 4px var(--dir);
+  grid-template-rows: var(--topo) 1fr var(--rodape);
+  grid-template-areas: "topo topo topo topo topo" "esq div1 conteudo div2 dir" "status status status status status";
+  --esq: 300px; --dir: 330px;
+}
+#topo { grid-area: topo; }
+#painel-esq { grid-area: esq; }
+#div-esq { grid-area: div1; }
+#conteudo { grid-area: conteudo; display: flex; flex-direction: column; }
+#div-dir { grid-area: div2; }
+#painel-dir { grid-area: dir; }
+#status { grid-area: status; }
+.marca-ic, .bv-hero-ic { background-image: url(favicon.svg); }
+#principal { max-width: none; flex: 1; display: flex; flex-direction: column; min-height: 0; width: 100%; }
+
+.cfg { display: flex; flex-direction: column; gap: 3px; width: 100%; padding: 10px 12px 10px 12px; border: 0; border-left: 2px solid transparent; border-bottom: 1px solid var(--borda); background: none; color: var(--texto); text-align: left; }
+.cfg:hover { background: var(--hover); }
+.cfg.sel { background: var(--selecao-suave); border-left-color: var(--selecao); }
+.cfg b { font-weight: 600; }
+.cfg small { color: var(--texto-3); font-size: 12px; line-height: 1.4; }
+.cfg .etiquetas { margin-top: 4px; }
+
+.etapas { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 6px; }
+.etapa { position: relative; display: grid; grid-template-columns: 22px 1fr auto; gap: 8px; align-items: center; padding: 7px 8px 7px 10px; border: 1px solid var(--borda); border-radius: var(--raio); background: var(--painel); min-width: 0; }
+.etapa .n { color: var(--texto-3); font: 11px var(--mono); text-align: right; }
+.etapa .txt { min-width: 0; }
+.etapa .txt b { display: flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 600; }
+.etapa .txt small { display: block; color: var(--texto-3); font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.etapa .acoes { display: flex; gap: 2px; opacity: 0; transition: opacity .1s; }
+.etapa:hover .acoes, .etapa:focus-within .acoes { opacity: 1; }
+.etapa.rodando { border-color: var(--acento); background: var(--acento-suave); }
+.etapa.ok { border-color: rgba(69, 185, 124, .35); }
+.etapa.erro { border-color: rgba(240, 86, 90, .5); background: var(--perigo-suave); }
+.etapa .estado { position: absolute; right: 8px; top: 7px; font-size: 11px; color: var(--texto-3); }
+.etapa.ok .estado { color: var(--sucesso); }
+.etapa.erro .estado { color: var(--perigo); }
+.etapa .tipo-bl { color: #ff9233; }
+.etapa .tipo-py { color: #86a8e8; }
+
+.bloco-log { flex: 1; display: flex; flex-direction: column; min-height: 260px; margin-top: 14px; }
+.bloco-log header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+.bloco-log h3 { margin: 0; font-size: 11px; text-transform: uppercase; letter-spacing: .8px; color: var(--texto-3); font-weight: 600; }
+.bloco-log .console { flex: 1; min-height: 200px; }
+
+/* markdown (PASSOS_FET.md) */
+.md { color: var(--texto-2); line-height: 1.6; font-size: 13px; }
+.md h1, .md h2, .md h3 { color: var(--texto); margin: 18px 0 8px; font-weight: 600; }
+.md h1 { font-size: 20px; } .md h2 { font-size: 16px; } .md h3 { font-size: 14px; }
+.md table { border-collapse: collapse; width: 100%; margin: 8px 0 14px; font-size: 12.5px; }
+.md th, .md td { border: 1px solid var(--borda); padding: 5px 8px; text-align: left; vertical-align: top; }
+.md th { background: var(--painel-2); color: var(--texto); }
+.md code { font: 12px var(--mono); background: var(--painel-3); padding: 1px 5px; border-radius: 4px; color: #e7c38a; }
+.md pre { background: #0e1013; border: 1px solid var(--borda); border-radius: var(--raio); padding: 10px; overflow: auto; }
+.md pre code { background: none; padding: 0; color: #c9ced8; }
+.md ul, .md ol { padding-left: 22px; }
+.md strong { color: var(--texto); }
+
+/* 2.0: assistente, formulário, visão geral, lista de conferência, prévias, ferramentas */
+.nova-conv { padding: 10px 12px; border-bottom: 1px solid var(--borda); }
+.corpo-aba { display: flex; flex-direction: column; gap: 12px; min-height: 0; }
+#principal { max-width: 1180px; }
+.fluxo { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; margin: 16px 0; text-align: left; }
+.passo-fluxo { display: flex; flex-direction: column; gap: 3px; padding: 10px; border: 1px solid var(--borda); border-radius: var(--raio); background: var(--painel); }
+.passo-fluxo .n { width: 22px; height: 22px; border-radius: 50%; background: var(--acento-suave); color: var(--acento); display: grid; place-items: center; font: 600 12px var(--mono); }
+.passo-fluxo small { color: var(--texto-3); font-size: 11.5px; line-height: 1.45; }
+.lista-geral { display: flex; flex-direction: column; gap: 8px; }
+.passo-geral { display: grid; grid-template-columns: 34px 1fr auto; gap: 12px; align-items: center; padding: 12px 14px; border: 1px solid var(--borda); border-radius: var(--raio); background: var(--painel); }
+.passo-geral .n { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; background: var(--painel-3); color: var(--texto-2); font: 600 13px var(--mono); }
+.passo-geral.ok .n { background: var(--sucesso-suave); color: var(--sucesso); }
+.passo-geral.falta .n, .passo-geral.erro .n { background: var(--perigo-suave); color: var(--perigo); }
+.passo-geral.rodando .n { background: var(--acento-suave); color: var(--acento); }
+.passo-geral .txt b { font-size: 13.5px; }
+.passo-geral .txt .estado { margin-left: 8px; font-size: 11.5px; color: var(--texto-3); }
+.passo-geral.ok .txt .estado { color: #8fdcb2; }
+.passo-geral.erro .txt .estado, .passo-geral.falta .txt .estado { color: #ff9a9c; }
+.passo-geral .txt p { margin: 4px 0 0; font-size: 12px; color: var(--texto-3); line-height: 1.5; }
+.barra-form { position: sticky; top: -18px; z-index: 2; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 0; background: var(--bg); }
+.secao-form { border: 1px solid var(--borda); border-radius: var(--raio); background: var(--painel); }
+.secao-form > summary { display: flex; align-items: center; gap: 8px; padding: 10px 12px; cursor: pointer; font-weight: 600; list-style: none; }
+.secao-form > summary::-webkit-details-marker { display: none; }
+.secao-form > summary .seta { transition: transform .15s; }
+.secao-form[open] > summary .seta { transform: rotate(90deg); }
+.secao-form .md, .secao-form .secao-corpo { padding: 0 14px 14px; }
+.grade-form { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 12px 18px; padding: 2px 14px 14px; }
+.campo-form { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.campo-form > label { font-size: 12px; font-weight: 600; color: var(--texto); }
+.campo-form .ajuda { font-size: 11.5px; color: var(--texto-3); line-height: 1.45; }
+.campo-form .padrao { font: 11px var(--mono); color: var(--texto-3); opacity: .8; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.campo-form textarea { resize: vertical; min-height: 44px; }
+.campo-form.t-json, .campo-form.t-pastas, .campo-form.t-presetTorcida { grid-column: 1 / -1; }
+textarea.erro { border-color: var(--perigo); }
+.json-cfg { width: 100%; min-height: 320px; font-size: 12px; }
+.assistente { display: flex; flex-direction: column; gap: 14px; min-height: 360px; }
+.passos-ass { display: flex; gap: 6px; flex-wrap: wrap; }
+.passos-ass span { padding: 4px 10px; border-radius: 12px; font-size: 12px; background: var(--painel-2); color: var(--texto-3); }
+.passos-ass span.atual { background: var(--acento-suave); color: var(--acento); font-weight: 600; }
+.passos-ass span.feito { color: #8fdcb2; }
+.area-ass { display: flex; flex-direction: column; gap: 12px; flex: 1; }
+.area-ass > p { margin: 0; color: var(--texto-2); line-height: 1.55; font-size: 13px; }
+.nav-ass { display: flex; justify-content: flex-end; gap: 8px; border-top: 1px solid var(--borda); padding-top: 12px; }
+.opcoes-ass { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 6px; }
+.op-ass { display: flex; flex-direction: column; gap: 2px; padding: 8px 10px; text-align: left; border: 1px solid var(--borda); border-radius: var(--raio); background: var(--painel); color: var(--texto); }
+.op-ass small { color: var(--texto-3); font-size: 11.5px; }
+.op-ass.sel { border-color: var(--selecao); background: var(--selecao-suave); }
+.linha-check { display: flex; align-items: center; gap: 6px; font-size: 12.5px; padding: 2px 0; }
+.progresso-conv { display: flex; align-items: center; gap: 12px; font-size: 12.5px; color: var(--texto-2); }
+.progresso-conv .barra { flex: 1; height: 8px; border-radius: 4px; background: var(--painel-3); overflow: hidden; }
+.progresso-conv .barra > div { height: 100%; background: var(--acento); transition: width .3s; }
+.progresso-conv .barra > div.erro { background: var(--perigo); }
+.checklist { display: flex; flex-direction: column; gap: 2px; }
+.item-check { display: grid; grid-template-columns: 20px 1fr; gap: 8px; align-items: start; padding: 7px 8px; border-radius: var(--raio); cursor: pointer; }
+.item-check:hover { background: var(--hover); }
+.item-check input { margin-top: 3px; }
+.item-check code { font: 12px var(--mono); color: #e7c38a; margin-left: 6px; word-break: break-all; }
+.item-check small { display: block; color: var(--texto-3); font-size: 11.5px; line-height: 1.45; margin-top: 2px; }
+.item-check.feito { opacity: .55; }
+.item-check.feito code { text-decoration: line-through; }
+.galeria { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
+.galeria .prev { display: flex; flex-direction: column; gap: 4px; padding: 0; border: 1px solid var(--borda); border-radius: var(--raio); background: var(--painel-2); overflow: hidden; color: var(--texto-2); text-align: left; }
+.galeria .prev img { width: 100%; aspect-ratio: 16 / 10; object-fit: cover; background: #111; }
+.galeria .prev span { padding: 4px 8px 6px; font-size: 11.5px; }
+.grade-ferramentas { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 10px; }
+.ferramenta .cartao-corpo { display: grid; grid-template-columns: 40px 1fr; gap: 12px; }
+.ferramenta .ic { color: var(--acento); }
+.ferramenta h3 { margin: 0 0 4px; font-size: 14px; }
+.ferramenta p { margin: 0 0 10px; font-size: 12px; color: var(--texto-3); line-height: 1.5; }
+
+@media (max-width: 1150px) { #app { --esq: 230px; --dir: 260px; } }
+@media (max-width: 860px) { #app { grid-template-columns: var(--esq) 4px 1fr 0 0; } #painel-dir, #div-dir { display: none; } }

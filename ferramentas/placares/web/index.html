@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Editor de Placares FC</title>
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="app.css">
+</head>
+<body>
+  <div id="app" class="sem-arquivo">
+    <header id="topo">
+      <div class="marca" title="Editor de Placares FC">
+        <span class="marca-ic"></span>
+        <span class="marca-txt">Editor de Placares</span>
+        <span class="marca-versao" id="marca-versao"></span>
+      </div>
+      <nav id="menus" aria-label="Menu principal"></nav>
+      <div id="titulo-arquivo" class="titulo-mundo"></div>
+      <div class="topo-acoes">
+        <button id="btn-desfazer" class="btn-icone" title="Desfazer (Ctrl+Z)" disabled></button>
+        <button id="btn-refazer" class="btn-icone" title="Refazer (Ctrl+Shift+Z)" disabled></button>
+        <span class="sep-v"></span>
+        <button id="btn-saida" class="btn-fantasma" title="Onde os arquivos editados são gravados"></button>
+        <button id="btn-salvar" class="btn-primario" title="Gravar o placar editado na pasta de saída (Ctrl+S)" disabled>
+          <span class="btn-salvar-ic"></span><span>Salvar</span><span id="contador-pendentes" class="contador" hidden>0</span>
+        </button>
+      </div>
+    </header>
+
+    <aside id="painel-esq" class="painel" aria-label="Arquivos e camadas">
+      <div class="abas" role="tablist">
+        <button class="aba ativa" data-aba="arquivos" role="tab">Arquivos</button>
+        <button class="aba" data-aba="camadas" role="tab">Camadas</button>
+        <button class="aba" data-aba="imagens" role="tab">Imagens</button>
+        <button class="aba" data-aba="animacao" role="tab" title="Animações do placar (código): prévia, tempos, posições e curvas">Animação</button>
+        <button class="aba" data-aba="fontes" role="tab" title="Fontes dos textos do placar e do tema (FIFA.xml)">Fontes</button>
+      </div>
+      <section id="aba-arquivos" class="aba-corpo">
+        <div class="busca-linha">
+          <select id="sel-fonte" class="seletor largo" title="De onde ler os placares"></select>
+          <button id="btn-fontes" class="btn-icone" title="Mods e pastas…"></button>
+        </div>
+        <div class="busca-linha">
+          <label class="campo-busca">
+            <span class="campo-busca-ic"></span>
+            <input id="busca-arquivos" type="search" placeholder="Buscar placar ou conjunto…" autocomplete="off" spellcheck="false">
+          </label>
+        </div>
+        <div id="lista-arquivos" class="lista-arquivos" tabindex="0"></div>
+      </section>
+      <section id="aba-camadas" class="aba-corpo" hidden>
+        <div class="busca-linha">
+          <label class="campo-busca">
+            <span class="campo-busca-ic"></span>
+            <input id="busca-camadas" type="search" placeholder="Buscar elemento (mcClockText…)" autocomplete="off" spellcheck="false">
+          </label>
+          <select id="filtro-camadas" class="seletor" title="Filtrar">
+            <option value="nomeados">Com nome</option>
+            <option value="tudo">Tudo</option>
+            <option value="alterados">Alterados</option>
+          </select>
+        </div>
+        <div id="arvore-camadas" class="lista-arquivos arvore-camadas" tabindex="0"></div>
+      </section>
+      <section id="aba-imagens" class="aba-corpo" hidden>
+        <div id="grade-imagens" class="grade-imagens"></div>
+      </section>
+      <section id="aba-animacao" class="aba-corpo" hidden>
+        <div id="aba-animacao-corpo" class="aba-rolagem"></div>
+      </section>
+      <section id="aba-fontes" class="aba-corpo" hidden>
+        <div id="aba-fontes-corpo" class="aba-rolagem"></div>
+      </section>
+    </aside>
+    <div class="divisor" data-lado="esq" title="Arraste para redimensionar"></div>
+
+    <main id="viewport">
+      <canvas id="tela" tabindex="0" aria-label="Prévia do overlay"></canvas>
+      <canvas id="sobre" aria-hidden="true"></canvas>
+      <div id="barra-vista" class="barra-vista" role="toolbar" aria-label="Exibição"></div>
+      <div id="dica-navegacao" class="dica-navegacao"></div>
+      <div id="rotulo-hover" class="rotulo-hover" hidden></div>
+      <div id="aviso-viewport" class="aviso-viewport" hidden></div>
+    </main>
+    <div class="divisor" data-lado="dir" title="Arraste para redimensionar"></div>
+
+    <aside id="painel-dir" class="painel" aria-label="Propriedades">
+      <div id="propriedades" class="propriedades"></div>
+    </aside>
+
+    <footer id="status">
+      <span id="status-dica" class="status-dica"></span>
+      <span class="status-dir">
+        <span id="status-cursor"></span>
+        <span id="status-zoom"></span>
+        <span id="status-jogo"></span>
+      </span>
+    </footer>
+
+    <section id="boas-vindas" class="boas-vindas" aria-label="Início"></section>
+    <div id="carregando" class="carregando" hidden>
+      <div class="carregando-caixa">
+        <div class="carregando-titulo" id="carregando-titulo">Carregando…</div>
+        <div class="barra-progresso indeterminado"><div></div></div>
+        <div class="carregando-detalhe" id="carregando-detalhe"></div>
+      </div>
+    </div>
+  </div>
+  <div id="camada-modal"></div>
+  <div id="menu-contexto" class="menu-flutuante" hidden></div>
+  <div id="toasts" aria-live="polite"></div>
+  <script type="module" src="js/main.js"></script>
+  <script>fetch('/api/versao').then((r) => r.json()).then((j) => { document.getElementById('marca-versao').textContent = j.versao; }).catch(() => {});</script>
+</body>
+</html>

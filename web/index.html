@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>BRFP Super Tool</title>
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="comum/brfp.css">
+  <link rel="stylesheet" href="hub.css">
+</head>
+<body>
+  <div id="hub">
+    <nav id="trilho" aria-label="Ferramentas">
+      <button class="trilho-logo" id="btn-logo" title="BRFP Super Tool — início"><span></span></button>
+      <div id="trilho-ferramentas" class="trilho-grupo"></div>
+      <div class="trilho-espaco"></div>
+      <div class="trilho-grupo">
+        <button class="trilho-btn" id="btn-componentes" data-alvo="componentes" title="Componentes"></button>
+        <button class="trilho-btn" id="btn-dados" data-alvo="dados" title="Dados do jogo"></button>
+        <button class="trilho-btn" id="btn-inicio" data-alvo="inicio" title="Início (Ctrl+0)"></button>
+        <button class="trilho-btn" id="btn-sobre" title="Versões e guias"></button>
+      </div>
+    </nav>
+    <main id="area">
+      <section id="tela-inicio" class="tela" aria-label="Início"></section>
+      <section id="tela-rdbm" class="tela" hidden aria-label="RDBM 26 · Add-on FC 27"></section>
+      <section id="tela-dados" class="tela" hidden aria-label="Dados do jogo"></section>
+      <section id="tela-componentes" class="tela" hidden aria-label="Componentes"></section>
+      <div id="quadros"></div>
+      <div id="abrindo" class="abrindo" hidden></div>
+    </main>
+  </div>
+  <div id="camada-modal"></div>
+  <div id="menu-contexto" class="menu-flutuante" hidden></div>
+  <div id="toasts" aria-live="polite"></div>
+  <script type="module" src="hub.js"></script>
+</body>
+</html>

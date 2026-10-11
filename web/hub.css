@@ -1,0 +1,122 @@
+/* BRFP Super Tool — janela principal: trilho de ferramentas à esquerda, ferramenta aberta à direita. */
+#hub { display: grid; grid-template-columns: 56px 1fr; height: 100vh; }
+#trilho { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 8px 0 10px; background: #0f1115; border-right: 1px solid var(--borda); min-height: 0; }
+.trilho-logo { width: 40px; height: 40px; border: 0; border-radius: 10px; background: none; padding: 0; display: grid; place-items: center; margin-bottom: 6px; }
+.trilho-logo span { width: 32px; height: 32px; background: url(favicon.svg) center/contain no-repeat; }
+.trilho-logo:hover { background: var(--hover); }
+.trilho-grupo { display: flex; flex-direction: column; gap: 4px; align-items: center; }
+.trilho-espaco { flex: 1; }
+.trilho-btn { position: relative; width: 40px; height: 40px; border: 0; border-radius: 10px; background: none; color: var(--texto-3); display: grid; place-items: center; padding: 0; }
+.trilho-btn:hover { background: var(--hover); color: var(--texto); }
+.trilho-btn.ativo { background: var(--acento-suave); color: var(--acento); }
+.trilho-btn.ativo::before { content: ""; position: absolute; left: -8px; top: 9px; bottom: 9px; width: 3px; border-radius: 0 3px 3px 0; background: var(--acento); }
+.trilho-btn .ponto { position: absolute; right: 5px; bottom: 5px; width: 8px; height: 8px; border-radius: 50%; border: 2px solid #0f1115; background: var(--sucesso); }
+.trilho-btn .ponto.iniciando { background: var(--alerta); }
+.trilho-btn .ponto.erro { background: var(--perigo); }
+.dica-trilho { position: fixed; z-index: 90; left: 60px; padding: 6px 10px; border-radius: 6px; background: var(--painel-3); border: 1px solid var(--borda-forte); box-shadow: var(--sombra); white-space: nowrap; pointer-events: none; font-size: 12.5px; }
+.dica-trilho small { color: var(--texto-3); margin-left: 6px; }
+
+#area { position: relative; min-width: 0; min-height: 0; overflow: hidden; }
+.tela { position: absolute; inset: 0; overflow: auto; background: radial-gradient(1200px 600px at 50% -10%, #1f2a3d 0%, var(--bg) 60%); }
+#quadros iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; background: var(--bg); }
+.abrindo { position: absolute; inset: 0; display: grid; place-items: center; background: var(--bg); z-index: 5; }
+.abrindo-caixa { width: min(560px, 90%); text-align: center; color: var(--texto-2); }
+.abrindo-caixa .ic-grande { width: 56px; height: 56px; margin: 0 auto 14px; color: var(--acento); }
+.abrindo-caixa h2 { margin: 0 0 6px; font-size: 17px; color: var(--texto); font-weight: 600; }
+.abrindo-caixa .barra-progresso { margin: 16px auto 0; max-width: 300px; }
+.abrindo-caixa .console { text-align: left; max-height: 240px; margin-top: 14px; }
+.abrindo-caixa .acoes { display: flex; gap: 8px; justify-content: center; margin-top: 14px; }
+
+/* início */
+.inicio { max-width: 1120px; margin: 0 auto; padding: 44px 32px 40px; }
+.inicio .bv-hero-ic { background-image: url(favicon.svg); }
+.inicio .bv-hero h1 { display: flex; align-items: center; gap: 10px; }
+.inicio .bv-hero .marca-versao { font-size: 12px; height: 22px; padding: 0 8px; border-radius: 11px; }
+.grade-ferramentas { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px; margin-bottom: 30px; }
+.cartao-ferr { display: flex; flex-direction: column; gap: 10px; padding: 16px; border: 1px solid var(--borda); background: rgba(26, 29, 35, .88); border-radius: 12px; min-width: 0; }
+.cartao-ferr:hover { border-color: var(--borda-forte); }
+.cartao-ferr .topo-c { display: flex; gap: 12px; align-items: flex-start; }
+.cartao-ferr .ic-c { width: 42px; height: 42px; border-radius: 10px; display: grid; place-items: center; background: var(--acento-suave); color: var(--acento); flex: none; }
+.cartao-ferr.nativo .ic-c { background: var(--selecao-suave); color: var(--selecao); }
+.cartao-ferr .nome-c { flex: 1; min-width: 0; }
+.cartao-ferr .nome-c b { display: flex; align-items: center; gap: 8px; font-size: 14.5px; font-weight: 600; }
+.cartao-ferr .nome-c small { display: flex; align-items: center; gap: 6px; color: var(--texto-3); font-size: 12px; margin-top: 3px; }
+.cartao-ferr p { margin: 0; color: var(--texto-2); line-height: 1.5; font-size: 12.5px; flex: 1; }
+.cartao-ferr .acoes-c { display: flex; gap: 6px; align-items: center; }
+.estado-c { display: inline-flex; align-items: center; gap: 5px; }
+.estado-c::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--texto-3); }
+.estado-c.rodando::before { background: var(--sucesso); }
+.estado-c.iniciando::before { background: var(--alerta); }
+.estado-c.erro::before { background: var(--perigo); }
+.tabela-versoes { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.tabela-versoes th { text-align: left; font-size: 11px; font-weight: 600; letter-spacing: .6px; text-transform: uppercase; color: var(--texto-3); padding: 8px 10px; border-bottom: 1px solid var(--borda); }
+.tabela-versoes td { padding: 8px 10px; border-bottom: 1px solid var(--borda); vertical-align: top; color: var(--texto-2); }
+.tabela-versoes td:first-child { color: var(--texto); white-space: nowrap; }
+.tabela-versoes td.v { font: 12px var(--mono); color: #9fc0ff; white-space: nowrap; }
+.rodape-inicio { display: flex; gap: 16px; flex-wrap: wrap; color: var(--texto-3); font-size: 12px; margin-top: 18px; }
+.rodape-inicio button { background: none; border: 0; color: var(--acento); padding: 0; }
+
+/* página do RDBM (programa nativo) */
+.pagina { max-width: 980px; margin: 0 auto; padding: 36px 32px 40px; }
+.pagina .grade2 { margin-bottom: 14px; }
+.md { color: var(--texto-2); line-height: 1.6; }
+.md h1, .md h2, .md h3 { color: var(--texto); margin: 18px 0 8px; font-weight: 600; }
+.md h1 { font-size: 20px; } .md h2 { font-size: 16px; } .md h3 { font-size: 14px; }
+.md table { border-collapse: collapse; width: 100%; margin: 8px 0 14px; font-size: 12.5px; }
+.md th, .md td { border: 1px solid var(--borda); padding: 5px 8px; text-align: left; vertical-align: top; }
+.md th { background: var(--painel-2); color: var(--texto); }
+.md code { font: 12px var(--mono); background: var(--painel-3); padding: 1px 5px; border-radius: 4px; color: #e7c38a; }
+.md pre { background: #0e1013; border: 1px solid var(--borda); border-radius: var(--raio); padding: 10px; overflow: auto; }
+.md pre code { background: none; padding: 0; color: #c9ced8; }
+.md ul, .md ol { padding-left: 22px; }
+.md strong { color: var(--texto); }
+.texto-puro { white-space: pre-wrap; font: 12.5px/1.55 var(--mono); color: var(--texto-2); }
+
+/* dados do jogo */
+.faixa-dados { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: -14px 0 26px; }
+.faixa-dados .chip { height: 26px; font-size: 12px; }
+.faixa-dados button.chip { cursor: pointer; }
+.cartoes-dados { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 12px; margin-bottom: 18px; }
+.cartoes-dados .cartao { margin: 0; }
+.navegador { display: grid; grid-template-columns: 280px 1fr; gap: 12px; height: 560px; }
+.nav-lista { display: flex; flex-direction: column; border: 1px solid var(--borda); border-radius: var(--raio-g); background: var(--painel); min-height: 0; overflow: hidden; }
+.nav-lista .busca-linha { padding: 10px 10px 8px; }
+.nav-lista .itens { flex: 1; overflow: auto; }
+.nav-item { display: flex; align-items: center; gap: 8px; width: 100%; padding: 6px 12px; border: 0; border-left: 2px solid transparent; background: none; color: var(--texto); text-align: left; }
+.nav-item:hover { background: var(--hover); }
+.nav-item.sel { background: var(--selecao-suave); border-left-color: var(--selecao); }
+.nav-item .cresce { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nav-item small { color: var(--texto-3); font: 11px var(--mono); }
+.nav-grade { display: flex; flex-direction: column; border: 1px solid var(--borda); border-radius: var(--raio-g); background: var(--painel); min-width: 0; min-height: 0; overflow: hidden; }
+.nav-grade header { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--borda); }
+.nav-grade header b { flex: 1; }
+.nav-grade .rolagem { flex: 1; overflow: auto; }
+.grade-dados { border-collapse: collapse; font-size: 12px; white-space: nowrap; }
+.grade-dados th { position: sticky; top: 0; background: var(--painel-2); color: var(--texto-2); font-weight: 600; text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--borda); }
+.grade-dados th small { display: block; color: var(--texto-3); font-weight: 400; font-size: 10.5px; }
+.grade-dados td { padding: 4px 10px; border-bottom: 1px solid var(--borda); color: var(--texto-2); font-variant-numeric: tabular-nums; max-width: 260px; overflow: hidden; text-overflow: ellipsis; }
+.grade-dados tr:hover td { background: var(--hover); color: var(--texto); }
+.grade-dados th.chave { color: #f5d27a; }
+
+/* componentes */
+.prog-linha { display: grid; grid-template-columns: 22px 1fr auto; gap: 10px; align-items: center; padding: 9px 12px; border-radius: var(--raio);
+  background: var(--painel-2); border: 1px solid var(--borda); }
+.prog-linha .prog-ic { display: grid; color: var(--texto-3); }
+.prog-linha.ok .prog-ic { color: var(--sucesso, #3ecf8e); }
+.prog-linha.aviso .prog-ic, .prog-linha.falta .prog-ic { color: var(--alerta); }
+.prog-linha.erro .prog-ic { color: var(--perigo); }
+.prog-txt { display: flex; flex-direction: column; gap: 2px; min-width: 0; font-size: 12.5px; }
+.prog-txt small { color: var(--texto-3); font-size: 11.5px; }
+.prog-txt .mudo { font-size: 11.5px; }
+.prog-cam { font-size: 11px; color: var(--texto-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.acoes-prog { display: flex; gap: 6px; }
+.acoes-prog a.btn { text-decoration: none; }
+.pacote-opcoes { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 10px; }
+.pacote-op { display: flex; flex-direction: column; gap: 6px; padding: 12px; border-radius: var(--raio); background: var(--painel-2); border: 1px solid var(--borda); }
+.pacote-op p { margin: 0; font-size: 12.5px; color: var(--texto-2); line-height: 1.5; }
+.pacote-op button { align-self: flex-start; margin-top: 4px; }
+
+.faixa-atualizacao { margin: 0 0 14px; }
+.faixa-atualizacao:empty { display: none; }
+.faixa-atualizacao .nota { align-items: center; }
+

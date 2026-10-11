@@ -1,0 +1,26 @@
+﻿BRFP SUPER TOOL
+===============
+
+Ferramentas de modding do BRFP (EA SPORTS FC 26 / FC 27) numa janela só: estádios, placares, compdata,
+faces, corpos (tatuagens), minifaces, tabelas do banco e o conversor de estádios do PES.
+
+COMO ABRIR
+----------
+1. Deixe esta pasta num lugar seu, de caminho curto (ex.: C:\BRFP Super Tool ou Documentos).
+2. Dê dois cliques em "BRFP Super Tool.bat".
+   - Se o Windows avisar que o arquivo veio da internet: "Mais informações" > "Executar assim mesmo"
+     (ou "Executar"). Para não ver o aviso: antes de extrair o .zip, botão direito > Propriedades >
+     marque "Desbloquear".
+   - Pacote leve: na primeira vez ele pergunta se baixa o Python do Super Tool (11 MB, de python.org).
+     Escolha 1. Precisa de internet só nessa hora; nada é instalado no Windows.
+3. Abre a janela do Super Tool. A janela preta precisa ficar aberta; feche-a para encerrar tudo.
+
+PRIMEIROS PASSOS
+----------------
+- "Dados do jogo" (cilindro, embaixo à esquerda): importe o banco (fifa_ng_db.db com o meta ao lado) e o
+  idioma (LanguageStrings1/2.txt exportados pelo FET). Todas as ferramentas usam.
+- "Componentes" (chip, embaixo à esquerda): mostra o que está pronto. O Conversor de Faces e o Criador de
+  Minifaces baixam os pacotes deles na primeira vez que forem abertos (botão "Baixar os componentes...").
+- O Conversor PES -> FC precisa do Blender 5.2 (blender.org) e o Add-on FC 27 precisa do RDBM 26 instalado.
+
+Guia completo: LEIAME.md (também em "Guia do Super Tool", no Início).

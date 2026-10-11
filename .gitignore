@@ -1,0 +1,35 @@
+# o mesmo que o comum/pacote.py deixa fora: o que é deste computador
+.perfil_janela/
+runtime/
+dados/
+cache/
+__pycache__/
+exportados/
+saida/
+autosalvo/
+downloads/
+backups/
+work/
+.i-*/
+.vscode/
+.idea/
+preferencias.json
+componentes_locais.json
+addon.ini
+addon.log
+local.json
+Thumbs.db
+desktop.ini
+*.pyc
+*.pyo
+*.tmp
+*.parcial
+*.log
+*.bak
+*.novo
+.instalando*
+
+# modelos tirados do jogo (EA): não vão para o repositório público
+ferramentas/corpos/motor/referencia/*.fbx
+ferramentas/faces/motor/referencia/*.fbx
+ferramentas/minifaces/web/referencia_p158023.png

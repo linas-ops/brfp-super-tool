@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Editor de Estádios FC</title>
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="app.css">
+  <script type="importmap">
+    { "imports": { "three": "./vendor/three/three.module.js", "three/addons/": "./vendor/three/addons/" } }
+  </script>
+</head>
+<body>
+  <div id="app" class="sem-cena">
+    <header id="topo">
+      <div class="marca" title="Editor de Estádios FC">
+        <span class="marca-ic"></span>
+        <span class="marca-txt">Editor de Estádios</span>
+        <span class="marca-versao" id="marca-versao"></span>
+      </div>
+      <nav id="menus" aria-label="Menu principal"></nav>
+      <div id="titulo-mundo" class="titulo-mundo"></div>
+      <div class="topo-acoes">
+        <button id="btn-desfazer" class="btn-icone" title="Desfazer (Ctrl+Z)" disabled></button>
+        <button id="btn-refazer" class="btn-icone" title="Refazer (Ctrl+Shift+Z)" disabled></button>
+        <span class="sep-v"></span>
+        <button id="btn-alteracoes" class="btn-fantasma" title="Arquivos já gravados que diferem do original">Alterações</button>
+        <button id="btn-salvar" class="btn-primario" title="Gravar as alterações nos arquivos (Ctrl+S)" disabled>
+          <span class="btn-salvar-ic"></span><span>Salvar</span><span id="contador-pendentes" class="contador" hidden>0</span>
+        </button>
+      </div>
+    </header>
+
+    <aside id="painel-esq" class="painel" aria-label="Estrutura do estádio">
+      <div class="painel-cab">
+        <h2>Estrutura</h2>
+        <div class="painel-cab-acoes">
+          <button id="btn-expandir" class="btn-icone peq" title="Expandir tudo"></button>
+          <button id="btn-recolher" class="btn-icone peq" title="Recolher tudo"></button>
+        </div>
+      </div>
+      <div class="busca-linha">
+        <label class="campo-busca">
+          <span class="campo-busca-ic"></span>
+          <input id="busca" type="search" placeholder="Buscar objeto…  (Ctrl+F)" autocomplete="off" spellcheck="false">
+        </label>
+        <select id="filtro" class="seletor" title="Filtrar a lista">
+          <option value="tudo">Tudo</option>
+          <option value="geometria">Com malha</option>
+          <option value="luzes">Luzes</option>
+          <option value="pessoas">Pessoas e banco</option>
+          <option value="alterados">Alterados</option>
+          <option value="ocultos">Ocultos no jogo</option>
+          <option value="faltando">Não exportados</option>
+        </select>
+      </div>
+      <div id="arvore" class="arvore" tabindex="0" role="tree" aria-label="Objetos do estádio">
+        <div id="arvore-espaco"></div>
+        <div id="arvore-linhas"></div>
+      </div>
+      <div class="legenda" id="legenda"></div>
+    </aside>
+    <div class="divisor" data-lado="esq" title="Arraste para redimensionar"></div>
+
+    <main id="viewport">
+      <canvas id="tela" tabindex="0" aria-label="Visualização 3D do estádio"></canvas>
+      <div id="ferramentas" class="ferramentas" role="toolbar" aria-label="Ferramentas"></div>
+      <div id="barra-vista" class="barra-vista" role="toolbar" aria-label="Exibição"></div>
+      <div id="dica-navegacao" class="dica-navegacao"></div>
+      <div id="rotulo-hover" class="rotulo-hover" hidden></div>
+      <div id="caixa-selecao" class="caixa-selecao" hidden></div>
+      <div id="aviso-viewport" class="aviso-viewport" hidden></div>
+    </main>
+    <div class="divisor" data-lado="dir" title="Arraste para redimensionar"></div>
+
+    <aside id="painel-dir" class="painel" aria-label="Propriedades">
+      <div id="propriedades" class="propriedades"></div>
+    </aside>
+
+    <footer id="status">
+      <span id="status-dica" class="status-dica"></span>
+      <span class="status-dir">
+        <span id="status-selecao"></span>
+        <span id="status-cena"></span>
+        <span id="status-fps" title="Quadros por segundo"></span>
+      </span>
+    </footer>
+
+    <section id="boas-vindas" class="boas-vindas" aria-label="Início"></section>
+    <div id="carregando" class="carregando" hidden>
+      <div class="carregando-caixa">
+        <div class="carregando-titulo" id="carregando-titulo">Carregando…</div>
+        <div class="barra-progresso"><div id="carregando-barra"></div></div>
+        <div class="carregando-detalhe" id="carregando-detalhe"></div>
+      </div>
+    </div>
+  </div>
+  <div id="camada-modal"></div>
+  <div id="menu-contexto" class="menu-flutuante" hidden></div>
+  <div id="toasts" aria-live="polite"></div>
+  <script type="module" src="js/main.js"></script>
+  <script>fetch('/api/versao').then((r) => r.json()).then((j) => { document.getElementById('marca-versao').textContent = j.versao; }).catch(() => {});</script>
+</body>
+</html>

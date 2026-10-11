@@ -1,0 +1,407 @@
+{
+ "_sobre": "Componentes que o BRFP Super Tool baixa (versões fixas, conferidas pelo SHA-256). Lido por componentes.py e por instalar_python.ps1.",
+ "python": {
+  "nome": "Python embutido",
+  "versao": "3.12.10",
+  "arquivo": "python-3.12.10-embed-amd64.zip",
+  "url": "https://www.python.org/ftp/python/3.12.10/python-3.12.10-embed-amd64.zip",
+  "sha256": "4acbed6dd1c744b0376e3b1cf57ce906f9dc9e95e68824584c8099a63025a3c3",
+  "tamanho": 11133606,
+  "pth": "python312._pth"
+ },
+ "pacotes": {
+  "numpy": {
+   "nome": "numpy",
+   "distribuicao": "numpy",
+   "modulo": "numpy",
+   "versao": "1.26.4",
+   "arquivo": "numpy-1.26.4-cp312-cp312-win_amd64.whl",
+   "url": "https://files.pythonhosted.org/packages/16/2e/86f24451c2d530c88daf997cb8d6ac622c1d40d19f5a031ed68a4b73a374/numpy-1.26.4-cp312-cp312-win_amd64.whl",
+   "sha256": "08beddf13648eb95f8d867350f6a018a4be2e5ad54c8d8caed89ebca558b2818",
+   "tamanho": 15517754
+  },
+  "scipy": {
+   "nome": "SciPy",
+   "distribuicao": "scipy",
+   "modulo": "scipy",
+   "versao": "1.13.1",
+   "arquivo": "scipy-1.13.1-cp312-cp312-win_amd64.whl",
+   "url": "https://files.pythonhosted.org/packages/3e/df/963384e90733e08eac978cd103c34df181d1fec424de383cdc443f418dd4/scipy-1.13.1-cp312-cp312-win_amd64.whl",
+   "sha256": "cdd7dacfb95fea358916410ec61bbc20440f7860333aee6d882bb8046264e949",
+   "tamanho": 45910955,
+   "requer": [
+    "numpy"
+   ]
+  },
+  "opencv": {
+   "nome": "OpenCV",
+   "distribuicao": "opencv_python_headless",
+   "modulo": "cv2",
+   "versao": "4.10.0.84",
+   "arquivo": "opencv_python_headless-4.10.0.84-cp37-abi3-win_amd64.whl",
+   "url": "https://files.pythonhosted.org/packages/26/d0/22f68eb23eea053a31655960f133c0be9726c6a881547e6e9e7e2a946c4f/opencv_python_headless-4.10.0.84-cp37-abi3-win_amd64.whl",
+   "sha256": "afcf28bd1209dd58810d33defb622b325d3cbe49dcd7a43a902982c33e5fad05",
+   "tamanho": 38754031,
+   "requer": [
+    "numpy"
+   ],
+   "omitir": [
+    "cv2/opencv_videoio_ffmpeg"
+   ]
+  },
+  "pillow": {
+   "nome": "Pillow",
+   "distribuicao": "pillow",
+   "modulo": "PIL",
+   "versao": "10.3.0",
+   "arquivo": "pillow-10.3.0-cp312-cp312-win_amd64.whl",
+   "url": "https://files.pythonhosted.org/packages/d3/23/3927d888481ff7c44fdbca3bc2a2e97588c933db46723bf115201377c436/pillow-10.3.0-cp312-cp312-win_amd64.whl",
+   "sha256": "412444afb8c4c7a6cc11a47dade32982439925537e483be7c0ae0cf96c4f6a0b",
+   "tamanho": 2531641
+  },
+  "tm_annotated_doc": {
+   "nome": "annotated-doc",
+   "distribuicao": "annotated_doc",
+   "modulo": "annotated_doc",
+   "versao": "0.0.5",
+   "arquivo": "annotated_doc-0.0.5-py3-none-any.whl",
+   "url": "https://files.pythonhosted.org/packages/3e/30/e900b21425a860e195f32e37657aa1f7c7f2b1bfb26f03ca209b90933c06/annotated_doc-0.0.5-py3-none-any.whl",
+   "sha256": "117bac03a25ede5df5440e855b32d556049ca169ead221505badf432fed4b101",
+   "tamanho": 5302
+  },
+  "tm_annotated_types": {
+   "nome": "annotated-types",
+   "distribuicao": "annotated_types",
+   "modulo": "annotated_types",
+   "versao": "0.8.0",
+   "arquivo": "annotated_types-0.8.0-py3-none-any.whl",
+   "url": "https://files.pythonhosted.org/packages/99/91/8acff4f5e50511b911bbccb72b8628a49c68ce14148cd9f6431094859a90/annotated_types-0.8.0-py3-none-any.whl",
+   "sha256": "f072f4d804ea359e4eaf198b1af7a8b0943881a87f31bb764f8bf219bb9419e0",
+   "tamanho": 13427
+  },
+  "tm_anyio": {
+   "nome": "anyio",
+   "distribuicao": "anyio",
+   "modulo": "anyio",
+   "versao": "4.15.1",
+   "arquivo": "anyio-4.15.1-py3-none-any.whl",
+   "url": "https://files.pythonhosted.org/packages/12/b8/4bd346e22b28902df4d651910f5242c28d84e4a5c2435ca5c3f797ed7e2e/anyio-4.15.1-py3-none-any.whl",
+   "sha256": "6152fdbbf9a77fdec97731721bebf7c4c44f7c29b424b0065826173efc7ed101",
+   "tamanho": 132079
+  },
+  "tm_cachetools": {
+   "nome": "cachetools",
+   "distribuicao": "cachetools",
+   "modulo": "cachetools",
+   "versao": "7.2.0",
+   "arquivo": "cachetools-7.2.0-py3-none-any.whl",
+   "url": "https://files.pythonhosted.org/packages/cc/bb/1c6e7a89b11da19f137e4ef5a5c5fe47a5bb686449ba343944ccf8fb34b2/cachetools-7.2.0-py3-none-any.whl",
+   "sha256": "3045213f186b89fdd95d94441354c4bd87c570b7a38d8c3fd1d9dd37f6dc90d8",
+   "tamanho": 16918
+  },
+  "tm_certifi": {
+   "nome": "certifi",
+   "distribuicao": "certifi",
+   "modulo": "certifi",
+   "versao": "2026.7.22",
+   "arquivo": "certifi-2026.7.22-py3-none-any.whl",
+   "url": "https://files.pythonhosted.org/packages/0b/a7/71ac2cff56fec219ed242bb11b8efb69fcc4bec75db06fb7bfe35de520e6/certifi-2026.7.22-py3-none-any.whl",
+   "sha256": "62f22742b58a1a33014a2b6b706588a8d7e2a88ae7bd1a6ebe8c992928483775",
+   "tamanho": 136983
+  },
+  "tm_click": {
+   "nome": "click",
+   "distribuicao": "click",
+   "modulo": "click",
+   "versao": "8.5.0",
+   "arquivo": "click-8.5.0-py3-none-any.whl",
+   "url": "https://files.pythonhosted.org/packages/58/50/6c0d534c5f134586a8e1ba4e330569e32f057e33372ae556463212fb4cd3/click-8.5.0-py3-none-any.whl",
+   "sha256": "255bc9599cf7748b4b1a446ccc735421bd08a2ae529a8b88597d3de5664ee360",
+   "tamanho": 125251
+  },
+  "tm_deprecated": {
+   "nome": "deprecated",
+   "distribuicao": "deprecated",
+   "modulo": "deprecated",
+   "versao": "3.0.0",
+   "arquivo": "deprecated-3.0.0-py3-none-any.whl",
+   "url": "https://files.pythonhosted.org/packages/83/ae/676feae8e4644a6d7169951a97f61c56f416c73f67bf1761f2461d75cc81/deprecated-3.0.0-py3-none-any.whl",
+   "sha256": "58204cf4a7f6270d547af5c278ee7a6bb56045a4b3d8441a1cd11660f41b7939",
+   "tamanho": 21912
+  },
+  "tm_fastapi": {
+   "nome": "fastapi",
+   "distribuicao": "fastapi",
+   "modulo": "fastapi",
+   "versao": "0.142.2",
+   "arquivo": "fastapi-0.142.2-py3-none-any.whl",
+   "url": "https://files.pythonhosted.org/packages/a0/b6/78aaf9141fb46742928c113f3cf6ef2259d538cb02b604b7656c1dc9883c/fastapi-0.142.2-py3-none-any.whl",
+   "sha256": "bd5f4d81f1e93a88bcd77caf4dfe3c2dbffc3805407a0007e9a114c18b3a670b",
+   "tamanho": 144409
+  },
+  "tm_h11": {
+   "nome": "h11",
+   "distribuicao": "h11",
+   "modulo": "h11",
+   "versao": "0.16.0",
+   "arquivo": "h11-0.16.0-py3-none-any.whl",
+   "url": "https://files.pythonhosted.org/packages/04/4b/29cac41a4d98d144bf5f6d33995617b185d14b22401f75ca86f384e87ff1/h11-0.16.0-py3-none-any.whl",
+   "sha256": "63cf8bbe7522de3bf65932fda1d9c2772064ffb3dae62d55932da54b31cb6c86",
+   "tamanho": 37515
+  },
+  "tm_httpcore": {
+   "nome": "httpcore",
+   "distribuicao": "httpcore",
+   "modulo": "httpcore",
+   "versao": "1.0.9",
+   "arquivo": "httpcore-1.0.9-py3-none-any.whl",
+   "url": "https://files.pythonhosted.org/packages/7e/f5/f66802a942d491edb555dd61e3a9961140fd64c90bce1eafd741609d334d/httpcore-1.0.9-py3-none-any.whl",
+   "sha256": "2d400746a40668fc9dec9810239072b40b4484b640a8c38fd654a024c7a1bf55",
+   "tamanho": 78784
+  },
+  "tm_httpx": {
+   "nome": "httpx",
+   "distribuicao": "httpx",
+   "modulo": "httpx",
+   "versao": "0.28.1",
+   "arquivo": "httpx-0.28.1-py3-none-any.whl",
+   "url": "https://files.pythonhosted.org/packages/2a/39/e50c7c3a983047577ee07d2a9e53faf5a69493943ec3f6a384bdc792deb2/httpx-0.28.1-py3-none-any.whl",
+   "sha256": "d909fcccc110f8c7faf814ca82a9a4d816bc5a6dbfea25d6591d6985b8ba59ad",
+   "tamanho": 73517
+  },
+  "tm_idna": {
+   "nome": "idna",
+   "distribuicao": "idna",
+   "modulo": "idna",
+   "versao": "3.20",
+   "arquivo": "idna-3.20-py3-none-any.whl",
+   "url": "https://files.pythonhosted.org/packages/58/a2/bb081bab032533a855d44de1d56f8e8426114ff1ba5d1f07a438a0a654f8/idna-3.20-py3-none-any.whl",
+   "sha256": "ab7ae7122974553370f0bdb919e1a960b2cd1bc1ef0276416d896db81c14582c",
+   "tamanho": 69583
+  },
+  "tm_limits": {
+   "nome": "limits",
+   "distribuicao": "limits",
+   "modulo": "limits",
+   "versao": "5.8.0",
+   "arquivo": "limits-5.8.0-py3-none-any.whl",
+   "url": "https://files.pythonhosted.org/packages/b9/98/cb5ca20618d205a09d5bec7591fbc4130369c7e6308d9a676a28ff3ab22c/limits-5.8.0-py3-none-any.whl",
+   "sha256": "ae1b008a43eb43073c3c579398bd4eb4c795de60952532dc24720ab45e1ac6b8",
+   "tamanho": 60954
+  },
+  "tm_opentelemetry_api": {
+   "nome": "opentelemetry-api",
+   "distribuicao": "opentelemetry_api",
+   "modulo": "opentelemetry",
+   "versao": "1.45.0",
+   "arquivo": "opentelemetry_api-1.45.0-py3-none-any.whl",
+   "url": "https://files.pythonhosted.org/packages/44/b9/040d1a1c7836922828e6480cd2366bb8fe0ebf75b413d2bb51a9b0e7f78f/opentelemetry_api-1.45.0-py3-none-any.whl",
+   "sha256": "80e068aba7cd56c8b58512d6a36f8d25cb1dfaa0c0a4cc1c938ccf9f362d9cb3",
+   "tamanho": 60020
+  },
+  "tm_packaging": {
+   "nome": "packaging",
+   "distribuicao": "packaging",
+   "modulo": "packaging",
+   "versao": "26.3",
+   "arquivo": "packaging-26.3-py3-none-any.whl",
+   "url": "https://files.pythonhosted.org/packages/63/34/ba1c580383c9eada3711951fef0795c80b829a078d72188184bcab9dd527/packaging-26.3-py3-none-any.whl",
+   "sha256": "d7193f7c8e4e93f444fde0262bf90af30e16fa0ad0ad44cb553c87339b23cd1c",
+   "tamanho": 129956
+  },
+  "tm_pydantic": {
+   "nome": "pydantic",
+   "distribuicao": "pydantic",
+   "modulo": "pydantic",
+   "versao": "2.13.5",
+   "arquivo": "pydantic-2.13.5-py3-none-any.whl",
+   "url": "https://files.pythonhosted.org/packages/eb/47/c95ffc2009878c7aac0c5e08528022dcb885933252a88b5f170058014464/pydantic-2.13.5-py3-none-any.whl",
+   "sha256": "346a034f080da3755d8e9cb5e00e8b07de1d39e4f6e2c87d8ab7cafa0b269a73",
+   "tamanho": 472589
+  },
+  "tm_pydantic_core": {
+   "nome": "pydantic-core",
+   "distribuicao": "pydantic_core",
+   "modulo": "pydantic_core",
+   "versao": "2.46.5",
+   "arquivo": "pydantic_core-2.46.5-cp312-cp312-win_amd64.whl",
+   "url": "https://files.pythonhosted.org/packages/cf/c9/4c19f41b84cf6b622a72fbeed7665b25d47a187d68d47d0d430c07f23268/pydantic_core-2.46.5-cp312-cp312-win_amd64.whl",
+   "sha256": "5e81740c09e310f5aa5cbd3e434a01c154d4bef93241c7877b39f211d2b78ba8",
+   "tamanho": 2043140
+  },
+  "tm_pydantic_settings": {
+   "nome": "pydantic-settings",
+   "distribuicao": "pydantic_settings",
+   "modulo": "pydantic_settings",
+   "versao": "2.15.0",
+   "arquivo": "pydantic_settings-2.15.0-py3-none-any.whl",
+   "url": "https://files.pythonhosted.org/packages/30/a4/2bffa9f8e804325a09867f0e9d30795c80ea9f8d62560bd1b6ad6220eb2f/pydantic_settings-2.15.0-py3-none-any.whl",
+   "sha256": "0ba092c291c94baceb5eff768aa0d56400a457585bc0175925a5a5510303da42",
+   "tamanho": 69413
+  },
+  "tm_python_dotenv": {
+   "nome": "python-dotenv",
+   "distribuicao": "python_dotenv",
+   "modulo": "dotenv",
+   "versao": "1.2.4",
+   "arquivo": "python_dotenv-1.2.4-py3-none-any.whl",
+   "url": "https://files.pythonhosted.org/packages/60/d1/38f3a3405989a89ac18390803e70c6ad7c7760da4f9b83cbeca0c44a0c72/python_dotenv-1.2.4-py3-none-any.whl",
+   "sha256": "42269a8a5b3fd54ffa6f3d84b18abed50064717576b4ecf03dc4a55d8aa04fdc",
+   "tamanho": 23266
+  },
+  "tm_starlette": {
+   "nome": "starlette",
+   "distribuicao": "starlette",
+   "modulo": "starlette",
+   "versao": "1.7.0",
+   "arquivo": "starlette-1.7.0-py3-none-any.whl",
+   "url": "https://files.pythonhosted.org/packages/4e/d6/1ec1b290f9e0fb067899b61e1d37a30c923068bad260b216dbe37a7d2967/starlette-1.7.0-py3-none-any.whl",
+   "sha256": "67f8e99895493dd2911a03f11314af6ceebeae4e704bb9f43dfc6a9db151c93e",
+   "tamanho": 78980
+  },
+  "tm_typing_extensions": {
+   "nome": "typing-extensions",
+   "distribuicao": "typing_extensions",
+   "modulo": "typing_extensions.py",
+   "versao": "4.16.0",
+   "arquivo": "typing_extensions-4.16.0-py3-none-any.whl",
+   "url": "https://files.pythonhosted.org/packages/49/d3/b8441a820a491ddfc024b0b0cf0393375b75ea13866d9c66727e54c2fc80/typing_extensions-4.16.0-py3-none-any.whl",
+   "sha256": "481caa481374e813c1b176ada14e97f1f67a4539ce9cfeb3f350d78d6370c2e8",
+   "tamanho": 45571
+  },
+  "tm_typing_inspection": {
+   "nome": "typing-inspection",
+   "distribuicao": "typing_inspection",
+   "modulo": "typing_inspection",
+   "versao": "0.4.4",
+   "arquivo": "typing_inspection-0.4.4-py3-none-any.whl",
+   "url": "https://files.pythonhosted.org/packages/67/81/4add07e5172b7ac40d8ed5ff580409a7801a4fe26d529bdd915401dabfbe/typing_inspection-0.4.4-py3-none-any.whl",
+   "sha256": "65b8397ba37ccbce054456aaccddfc91e6e3083c92824df348d96ca832f3f147",
+   "tamanho": 14750
+  },
+  "tm_uvicorn": {
+   "nome": "uvicorn",
+   "distribuicao": "uvicorn",
+   "modulo": "uvicorn",
+   "versao": "0.54.0",
+   "arquivo": "uvicorn-0.54.0-py3-none-any.whl",
+   "url": "https://files.pythonhosted.org/packages/38/0c/b54a4fdd7f90a3af8b02ebc9ce6712c2c208b7926a2f7bad95c33ebbe943/uvicorn-0.54.0-py3-none-any.whl",
+   "sha256": "505bdb0f318731d45f1f712071fc781a8981f6847a31c902c9f5e652d4f67faf",
+   "tamanho": 87427
+  },
+  "tm_wrapt": {
+   "nome": "wrapt",
+   "distribuicao": "wrapt",
+   "modulo": "wrapt",
+   "versao": "2.5.0",
+   "arquivo": "wrapt-2.5.0-cp312-cp312-win_amd64.whl",
+   "url": "https://files.pythonhosted.org/packages/96/9f/9e56db2a3492275be809082c6f63a7a063f52b3e1812aae1eb03ec33f64c/wrapt-2.5.0-cp312-cp312-win_amd64.whl",
+   "sha256": "ab45839c912777e2738fed369636589c8b2a6d9c44ca56de0fd0814581d467c2",
+   "tamanho": 105786
+  }
+ },
+ "grupos": {
+  "faces": {
+   "nome": "Conversor de Faces",
+   "pacotes": [
+    "numpy",
+    "scipy"
+   ]
+  },
+  "corpos": {
+   "nome": "Conversor de Corpos",
+   "pacotes": [
+    "numpy",
+    "scipy",
+    "pillow"
+   ]
+  },
+  "minifaces": {
+   "nome": "Criador de Minifaces",
+   "pacotes": [
+    "numpy",
+    "opencv",
+    "pillow"
+   ]
+  },
+  "criador": {
+   "nome": "Criador de Ligas e Times",
+   "pacotes": [
+    "numpy"
+   ]
+  },
+  "transfermarkt": {
+   "nome": "Transfermarkt API (servidor local)",
+   "pacotes": [
+    "tm_annotated_doc",
+    "tm_annotated_types",
+    "tm_anyio",
+    "tm_cachetools",
+    "tm_certifi",
+    "tm_click",
+    "tm_deprecated",
+    "tm_fastapi",
+    "tm_h11",
+    "tm_httpcore",
+    "tm_httpx",
+    "tm_idna",
+    "tm_limits",
+    "tm_opentelemetry_api",
+    "tm_packaging",
+    "tm_pydantic",
+    "tm_pydantic_core",
+    "tm_pydantic_settings",
+    "tm_python_dotenv",
+    "tm_starlette",
+    "tm_typing_extensions",
+    "tm_typing_inspection",
+    "tm_uvicorn",
+    "tm_wrapt"
+   ],
+   "projetos": [
+    "transfermarkt_api"
+   ],
+   "resumo": "transfermarkt-api 4.2.0 (felipeall, MIT) + FastAPI, uvicorn, httpx, pydantic e mais 20 bibliotecas",
+   "usado_por": "Criador de Ligas e Times (fonte Transfermarkt sem o limite da instância pública)",
+   "opcional": true
+  }
+ },
+ "projetos": {
+  "transfermarkt_api": {
+   "nome": "transfermarkt-api",
+   "versao": "4.2.0+brfp1",
+   "arquivo": "transfermarkt-api-4.2.0.zip",
+   "url": "https://codeload.github.com/felipeall/transfermarkt-api/zip/refs/tags/v4.2.0",
+   "sha256": "ebaebf9a640d9124a8520bcf5609301beffcce07775832e8fef9a1fcb40d76a7",
+   "tamanho": 884321,
+   "pasta": "apps/transfermarkt-api",
+   "incluir": [
+    "app/",
+    "pyproject.toml",
+    "LICENSE",
+    "README.md"
+   ],
+   "origem": "github.com/felipeall/transfermarkt-api (MIT)",
+   "remendos": [
+    {
+     "arquivo": "app/schemas/clubs/players.py",
+     "de": "Optional[HttpUrl]",
+     "para": "Optional[str]",
+     "motivo": "jogador sem foto (imageUrl vazio) derrubava o elenco inteiro com erro 500"
+    },
+    {
+     "arquivo": "app/schemas/coaches/__init__.py",
+     "de": "Optional[HttpUrl]",
+     "para": "Optional[str]",
+     "motivo": "idem"
+    },
+    {
+     "arquivo": "app/schemas/players/profile.py",
+     "de": "Optional[HttpUrl]",
+     "para": "Optional[str]",
+     "motivo": "idem"
+    }
+   ]
+  }
+ }
+}

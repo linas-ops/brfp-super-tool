@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Editor de Compdata</title>
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="comum/brfp.css">
+  <link rel="stylesheet" href="app.css">
+</head>
+<body>
+  <div id="app" class="sem-pasta">
+    <header id="topo">
+      <div class="marca" title="Editor de Compdata">
+        <span class="marca-ic"></span>
+        <span class="marca-txt">Editor de Compdata</span>
+        <span class="marca-versao" id="versao"></span>
+      </div>
+      <nav id="menus" aria-label="Menu principal"></nav>
+      <div class="titulo-centro" id="titulo"></div>
+      <div class="topo-acoes">
+        <span class="pendente" id="sujo" hidden>alterações não salvas</span>
+        <button id="btn-desfazer" class="btn-icone" title="Desfazer (Ctrl+Z)" disabled></button>
+        <button id="btn-refazer" class="btn-icone" title="Refazer (Ctrl+Shift+Z)" disabled></button>
+        <span class="sep-v"></span>
+        <button id="btn-salvar" class="btn-primario" title="Gravar nos arquivos, com backup antes (Ctrl+S)" disabled>
+          <span id="btn-salvar-ic"></span><span>Salvar</span>
+        </button>
+      </div>
+    </header>
+
+    <aside id="painel-esq" class="painel" aria-label="Competições">
+      <div class="painel-cab">
+        <h2>Competições</h2>
+        <div class="painel-cab-acoes">
+          <button id="btn-expandir" class="btn-icone peq" title="Expandir as confederações e países"></button>
+          <button id="btn-recolher" class="btn-icone peq" title="Recolher tudo"></button>
+        </div>
+      </div>
+      <div class="busca-linha">
+        <label class="campo-busca">
+          <span id="busca-ic"></span>
+          <input id="busca" type="search" placeholder="Buscar nome, sigla ou ID…  ( / )" autocomplete="off" spellcheck="false">
+        </label>
+      </div>
+      <div id="arvore" class="arvore" role="tree" aria-label="Hierarquia do compdata"></div>
+      <div class="painel-rodape"><span id="contagem-nos"></span><span id="planilha" class="mudo"></span></div>
+    </aside>
+    <div class="divisor" id="divisor" title="Arraste para redimensionar"></div>
+
+    <main id="conteudo" class="conteudo">
+      <section id="boas-vindas" class="conteudo-interno"></section>
+      <section id="vazio" class="tela-vazia" hidden></section>
+      <article id="no" class="conteudo-interno" hidden>
+        <nav class="migalhas" id="migalhas"></nav>
+        <header class="cab-detalhe">
+          <div>
+            <span class="etiqueta" id="no-tipo"></span>
+            <h1 id="no-titulo"></h1>
+            <div class="sub" id="no-sub"></div>
+          </div>
+          <div class="acoes">
+            <button class="btn peq" id="btn-copiar" title="Copiar este nó com tudo que há nele (Ctrl+C)"></button>
+            <button class="btn peq" id="btn-colar" title="Nada copiado ainda" disabled></button>
+            <button class="btn-icone" id="btn-cima" title="Mover para cima entre os irmãos (Alt+↑)"></button>
+            <button class="btn-icone" id="btn-baixo" title="Mover para baixo entre os irmãos (Alt+↓)"></button>
+            <button class="btn-perigo peq" id="btn-excluir" title="Excluir o nó e tudo abaixo dele (Delete)"></button>
+          </div>
+        </header>
+        <nav class="abas" id="abas" role="tablist"></nav>
+        <div id="painel-aba"></div>
+      </article>
+    </main>
+
+    <footer id="status">
+      <span class="status-esq contagem" id="contagens"></span>
+      <span class="status-dir">
+        <button class="chip" id="chip-validacao" title="Ver problemas de consistência"></button>
+      </span>
+    </footer>
+  </div>
+  <div id="camada-modal"></div>
+  <div id="menu-contexto" class="menu-flutuante" hidden></div>
+  <div id="toasts" aria-live="polite"></div>
+  <script type="module" src="app.js"></script>
+</body>
+</html>

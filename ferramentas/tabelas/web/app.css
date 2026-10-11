@@ -1,0 +1,44 @@
+/* Conversor de Tabelas — só o específico; o resto vem de comum/brfp.css. */
+#app {
+  display: grid; height: 100vh;
+  grid-template-columns: var(--esq) 4px 1fr 4px var(--dir);
+  grid-template-rows: var(--topo) 1fr var(--rodape);
+  grid-template-areas: "topo topo topo topo topo" "esq div1 conteudo div2 dir" "status status status status status";
+  --esq: 290px; --dir: 330px;
+}
+#topo { grid-area: topo; }
+#painel-esq { grid-area: esq; }
+#div-esq { grid-area: div1; }
+#conteudo { grid-area: conteudo; }
+#div-dir { grid-area: div2; }
+#painel-dir { grid-area: dir; }
+#status { grid-area: status; }
+.marca-ic, .bv-hero-ic { background-image: url(favicon.svg); }
+#principal { max-width: none; }
+
+.tab { display: grid; grid-template-columns: 18px 1fr auto; gap: 8px; align-items: center; width: 100%; padding: 5px 10px 5px 12px; border: 0; border-left: 2px solid transparent; background: none; color: var(--texto); text-align: left; }
+.tab:hover { background: var(--hover); }
+.tab.foco { background: var(--selecao-suave); border-left-color: var(--selecao); }
+.tab input { margin: 0; accent-color: var(--acento); width: 14px; height: 14px; }
+.tab .txt { min-width: 0; }
+.tab .txt b { display: block; font-weight: 500; font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tab .txt small { display: block; font-size: 11px; color: var(--texto-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tab .txt small.so { color: #f5d27a; }
+.tab .txt small.outra { color: #9fc0ff; }
+.tab .n { font: 11px var(--mono); color: var(--texto-3); }
+
+.colunas td { vertical-align: top; }
+.colunas td.coluna b { display: block; font-family: var(--mono); font-size: 12px; font-weight: 500; }
+.colunas td.coluna small { display: block; color: var(--texto-3); font-size: 11px; }
+.colunas tr.nova td.coluna b { color: #8fdcb2; }
+.colunas tr.alterada td { background: rgba(76, 141, 255, .05); }
+.colunas td select, .colunas td input { height: 26px; font-size: 12px; }
+.colunas td select { min-width: 170px; }
+.colunas td.coluna { min-width: 140px; }
+.colunas .exemplos { font: 11px var(--mono); color: var(--texto-3); max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.grade-previa { overflow: auto; max-height: 360px; border: 1px solid var(--borda); border-radius: var(--raio); }
+.grade-previa table { border-collapse: collapse; font-size: 11.5px; white-space: nowrap; }
+.grade-previa th { position: sticky; top: 0; background: var(--painel-2); color: var(--texto-2); text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--borda); font-weight: 600; }
+.grade-previa th.nova { color: #8fdcb2; }
+.grade-previa td { padding: 3px 8px; border-bottom: 1px solid var(--borda); color: var(--texto-2); font-variant-numeric: tabular-nums; }
+@media (max-width: 1150px) { #app { --esq: 230px; --dir: 270px; } }

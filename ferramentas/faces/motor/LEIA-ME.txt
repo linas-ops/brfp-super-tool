@@ -1,0 +1,69 @@
+CONVERSOR DE FACES FC 26 <-> FC 27
+==================================
+
+O que faz
+---------
+Converte o FBX da cabeça exportado pelo FIFA Editor Tool (FET) de um jogo para o outro:
+
+- FC 26 -> FC 27: gera o FBX no formato "morph head" do FC 27 (malha basehead_0, 4 LODs,
+  head_mat/eyes_mat/teeth_mat), pronto para importar no asset headmorphpreset_<id>_0_0
+  do jogador. No FC 27 o FET só aceita a malha base com a mesma quantidade e ordem de
+  vértices; o conversor deforma essa malha até ela ter o formato da face do FC 26.
+- FC 27 -> FC 26: gera o FBX no formato do FC 26 (3 LODs, head_mat/eyes_mat, dentes e
+  interior da boca dentro da head_mat), pronto para importar no head_<id>_0_0_mesh.
+
+Esqueleto, pesos, LODs e nomes vêm de uma face real de cada jogo (Messi, pasta
+"referencia" - não apague), então a saída tem a mesma estrutura do que o FET exporta.
+
+Como usar
+---------
+1. Arraste um ou mais .fbx, ou pastas inteiras, para "Converter faces.bat".
+   - O jogo de origem é detectado sozinho; o destino é o outro.
+   - Pastas: todas as subpastas são varridas (ex.: a pasta do "Batch Import Faces" do FET,
+     com uma subpasta por ID de jogador). A estrutura é mantida na saída.
+   - Saída: "<pasta>_FC27" (ou "_FC26") ao lado da pasta de entrada; para arquivos soltos,
+     "Convertidos_FC27" ao lado do arquivo. A entrada nunca é alterada.
+   - Nomes: head_<id>_0_0_mesh.fbx <-> headmorphpreset_<id>_0_0.fbx (os nomes que o FET
+     usa em cada jogo). Outros nomes de arquivo são mantidos.
+   - Na saída fica o relatorio_conversao_faces.txt (o que foi convertido, como, e avisos).
+
+2. Linha de comando (mais opções):
+     "Converter faces.bat" ENTRADA [ENTRADA ...] [opções]
+   --saida PASTA        pasta de saída
+   --para fc27|fc26     força o destino (pula o que já estiver nele)
+   --textura fc26|fc27  layout de textura da UV da pele (veja abaixo; padrão fc26)
+   --copiar-outros      copia para a saída, sem alterar, o que não é cabeça (texturas,
+                        cabelo...), deixando a pasta pronta para o Batch Import Faces
+   --sobrescrever       substitui arquivos que já existem na saída
+
+Texturas
+--------
+O layout UV do rosto é o mesmo nos dois jogos; o do pescoço e da faixa de baixo da textura
+mudou. Por padrão (--textura fc26) a UV da pele segue o layout do FC 26:
+- FC 26 -> FC 27: as texturas de face do FC 26 (face_<id>_0_0_color, normal...) servem direto.
+- FC 27 -> FC 26: a saída usa a UV padrão do FC 26; uma textura tirada do FC 27 precisaria
+  ser adaptada no pescoço e na faixa de baixo (onde o FC 26 pinta dentes e boca).
+Com --textura fc27 é o contrário: a pele segue o layout do FC 27.
+
+O que o conversor faz com cada parte
+------------------------------------
+- Pele: segue a superfície da face de entrada (precisão típica de 0,2 mm). Detalhes finos
+  do Messi não passam para a face convertida.
+- Olhos: seguem os olhos da entrada; se o facemaker trocou a malha dos olhos, cada olho é
+  ajustado por posição, escala e rotação.
+- Boca por dentro e dentes: acompanham a boca da entrada; cada dente se move sem deformar.
+- Base do pescoço: fica fixa para encaixar no corpo do jogo de destino.
+- LODs: todos são gerados a partir do LOD0 da entrada.
+
+Limitações
+----------
+- Só cabeças masculinas (basehead_0). As femininas do FC 27 usam outra malha base.
+- Cabelo, mouthbag e outros FBX não são convertidos. O FC 27 não usa mouthbag (os dentes
+  ficam na própria cabeça), então mouthbags são ignorados mesmo com --copiar-outros.
+- Só FBX binário (o padrão do FET e do Blender). FBX ASCII não é lido.
+
+Requisitos
+----------
+O Python embutido do BRFP Super Tool (runtime\python) com numpy e SciPy; se faltarem, baixe na página
+Componentes do Super Tool (ou pelo Conversor de Faces). Sem o Super Tool, serve um Python 3.12 com numpy e
+scipy (comando "py -3.12").
