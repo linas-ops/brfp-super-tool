@@ -24,8 +24,9 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(AQUI)), "comum")
 
 import base  # noqa: E402
 import componentes  # noqa: E402
+import referencias  # noqa: E402
 
-VERSAO = "1.2"
+VERSAO = "1.3"
 OUTRO = {"fc26": "fc27", "fc27": "fc26"}
 PREFS = base.Prefs(os.path.join(AQUI, "preferencias.json"), {
     "saida": "", "destino": "auto", "textura": "fc26", "copiar_outros": False, "sobrescrever": False, "ultima_pasta": ""})
@@ -38,6 +39,10 @@ SEQ = itertools.count(1)
 PY312 = {"cmd": None, "ok": False, "msg": "verificando…"}
 PREVIAS = {}                           # (caminho, mtime) -> partes
 SEM_JANELA = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+# faces do Messi exportadas pelo FET de cada jogo: tiradas do jogo, não vêm no pacote leve
+REF = referencias.Referencias("Conversor de Faces", {
+    n: os.path.join(MOTOR, "referencia", n) for n in ("messi_158023_fc26.fbx", "messi_158023_fc27.fbx")},
+    "converter as faces")
 
 
 # ------------------------------------------------------------------ ambiente (Python com numpy/scipy)
@@ -165,7 +170,7 @@ def estado_payload():
     with LOCK:
         itens = [item_publico(it, op) for it in ITENS.values()]
         job = {k: JOB[k] for k in ("rodando", "total", "feitos", "atual", "inicio", "fim", "resumo", "cancelado")}
-    return {"itens": itens, "job": job, "opcoes": op, "ambiente": dict(PY312, cmd=None),
+    return {"itens": itens, "job": job, "opcoes": op, "ambiente": dict(PY312, cmd=None), "referencias": REF.estado(),
             "raizes": {r: len(v["outros"]) for r, v in RAIZES.items()}}
 
 
@@ -278,6 +283,7 @@ def api_remover(d):
 
 
 def api_converter(d):
+    REF.exigir()
     op = PREFS.ler()
     with LOCK:
         if JOB["rodando"]:
@@ -454,9 +460,9 @@ ROTAS_GET = {"inicio": api_inicio, "estado": api_estado, "previa": api_previa,
 ROTAS_POST = {"opcoes": api_opcoes, "adicionar": api_adicionar, "dialogo": api_dialogo, "receber": api_receber,
               "remover": api_remover, "converter": api_converter, "cancelar": api_cancelar, "abrir": api_abrir,
               "relatorio": api_relatorio}
-_G, _P = base.rotas_componentes("faces", ao_concluir=verificar_python)
-ROTAS_GET.update(_G)
-ROTAS_POST.update(_P)
+for _G, _P in (base.rotas_componentes("faces", ao_concluir=verificar_python), REF.rotas()):
+    ROTAS_GET.update(_G)
+    ROTAS_POST.update(_P)
 
 
 def main():

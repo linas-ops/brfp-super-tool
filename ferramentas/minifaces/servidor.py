@@ -26,12 +26,16 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(AQUI)), "comum")
 import base  # noqa: E402
 import componentes  # noqa: E402
 import dados  # noqa: E402
+import referencias  # noqa: E402
 
-VERSAO = "1.2"
+VERSAO = "1.3"
 PREFS = base.Prefs(os.path.join(AQUI, "preferencias.json"), {
     "saida": "", "lado": 180, "sobrescrever": False, "sem_ligacao": "pular", "teamid": None, "fundo_padrao": "auto",
     "ultima_pasta": ""})
 EXT = (".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tif", ".tiff")
+# miniface do Messi tirada do jogo (comparação sobreposta): não vem no pacote leve
+REF = referencias.Referencias("Criador de Minifaces", {
+    "referencia_p158023.png": os.path.join(AQUI, "web", "referencia_p158023.png")}, "comparar com uma miniface do jogo")
 LOCK = threading.RLock()
 ITENS = collections.OrderedDict()
 SEQ = itertools.count(1)
@@ -610,19 +614,14 @@ def api_abrir(d):
     return {}
 
 
-def api_referencia(_):
-    p = os.path.join(AQUI, "web", "referencia_p158023.png")
-    return {"existe": os.path.isfile(p)}
-
-
 ROTAS_GET = {"inicio": api_inicio, "estado": api_estado, "item": api_item, "times": api_times, "jogadores": api_jogadores,
-             "versao": lambda _: {"versao": VERSAO}, "referencia": api_referencia}
+             "versao": lambda _: {"versao": VERSAO}}
 ROTAS_POST = {"adicionar": api_adicionar, "dialogo": api_dialogo, "receber": api_receber, "remover": api_remover,
               "params": api_params, "gerar": api_gerar, "restaurar": api_restaurar, "opcoes": api_opcoes, "time": api_time,
               "ligar": api_ligar, "ligar_auto": api_ligar_auto, "exportar": api_exportar, "abrir": api_abrir}
-_G, _P = base.rotas_componentes("minifaces", ao_concluir=lambda: MOTOR.reiniciar())
-ROTAS_GET.update(_G)
-ROTAS_POST.update(_P)
+for _G, _P in (base.rotas_componentes("minifaces", ao_concluir=lambda: MOTOR.reiniciar()), REF.rotas()):
+    ROTAS_GET.update(_G)
+    ROTAS_POST.update(_P)
 
 
 def main():

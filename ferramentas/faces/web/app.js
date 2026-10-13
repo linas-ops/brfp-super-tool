@@ -3,9 +3,10 @@ import { $, el, esc, aviso, modal, confirmar, barraMenus, abrirMenu, divisorArra
 import { icone } from './comum/icones.js';
 import { api } from './comum/api.js';
 import { instalarComponentes } from './comum/componentes.js';
+import { importarReferencias, notaReferencias } from './comum/referencias.js';
 import { Previa } from './previa.js';
 
-const S = { itens: [], job: {}, opcoes: {}, ambiente: {}, raizes: {}, sel: null, versao: '', qual: 'entrada', previa: null, polling: null, ultimoResumo: null };
+const S = { itens: [], job: {}, opcoes: {}, ambiente: {}, referencias: {}, raizes: {}, sel: null, versao: '', qual: 'entrada', previa: null, polling: null, ultimoResumo: null };
 const NOME_JOGO = { fc26: 'FC 26', fc27: 'FC 27' };
 const EST = {
   pronto: ['ponto', 'Pronta para converter'], na_fila: ['relogio', 'Na fila'], convertendo: ['recarregar', 'Convertendo…'],
@@ -23,6 +24,7 @@ function aplicar(r) {
   if (r.job) S.job = r.job;
   if (r.opcoes) S.opcoes = r.opcoes;
   if (r.ambiente) S.ambiente = r.ambiente;
+  if (r.referencias) S.referencias = r.referencias;
   if (r.raizes) S.raizes = r.raizes;
   if (S.sel !== null && !S.itens.some((i) => i.id === S.sel)) S.sel = null;
   if (S.sel === null && S.itens.length) S.sel = S.itens[0].id;
@@ -276,11 +278,16 @@ function opcoes() {
     marcado: op.sobrescrever, aoMudar: (v) => salvarOpcoes({ sobrescrever: v }) }).el);
   out.push(el('div', { class: 'acoes-linha' }, el('button', { class: 'btn peq', disabled: !op.saida, onclick: () => tentar(() => api('abrir', {})) }, icone('externo', 12), 'Abrir pasta de saída'),
     el('button', { class: 'btn peq', disabled: !(S.job.resumo && (S.job.resumo.pastas || []).length), onclick: () => tentar(() => api('relatorio', {})) }, icone('relatorio', 12), 'Relatório')));
+  out.push(...notaReferencias(S.referencias, referenciasFaltando));
   if (!S.ambiente.ok && S.ambiente.msg !== 'verificando…') {
     out.push(nota(esc(S.ambiente.msg), 'alerta'));
     if (S.ambiente.instalar) out.push(el('div', { class: 'acoes-linha' }, el('button', { class: 'btn-primario peq', onclick: componentesMotor }, icone('baixar', 12), 'Baixar os componentes…')));
   }
   return out;
+}
+
+async function referenciasFaltando() {
+  await importarReferencias({ aoTerminar: () => atualizar() });
 }
 
 async function componentesMotor() {
@@ -350,6 +357,7 @@ async function converter(ids = null) {
     aviso(S.ambiente.msg || 'Motor indisponível', { tipo: 'erro' });
     return;
   }
+  if (S.referencias.ok === false) { referenciasFaltando(); return; }
   const sem_saida = S.itens.some((i) => i.recebido && !S.opcoes.saida);
   if (sem_saida && !S.opcoes.saida) {
     aviso('Escolha a pasta de saída: arquivos arrastados para a janela não têm “pasta ao lado”.', { tipo: 'aviso' });
@@ -433,6 +441,7 @@ function menus() {
       { rotulo: 'Adicionar pasta…', icone: 'pastaMais', atalho: 'Ctrl+Shift+O', fn: () => adicionar('pasta') },
       '-',
       { rotulo: 'Escolher pasta de saída…', icone: 'pasta', fn: escolherSaida },
+      { rotulo: 'Importar referências…', icone: 'baixar', desabilitado: S.referencias.ok !== false, fn: referenciasFaltando },
       { rotulo: 'Abrir pasta de saída', icone: 'externo', desabilitado: !S.opcoes.saida, fn: () => tentar(() => api('abrir', {})) },
       { rotulo: 'Abrir relatório da última conversão', icone: 'relatorio', desabilitado: !(S.job.resumo && (S.job.resumo.pastas || []).length), fn: () => tentar(() => api('relatorio', {})) },
       '-',
@@ -479,6 +488,7 @@ function sobre() {
     Converte o FBX de cabeça exportado pelo FIFA Editor Tool de um jogo para o outro: FC 26 → FC 27 (morph head
     <i>headmorphpreset_&lt;id&gt;_0_0</i>, 4 LODs, head/eyes/teeth) e FC 27 → FC 26 (<i>head_&lt;id&gt;_0_0_mesh</i>, 3 LODs).
     Usa o par de referência do Messi (pasta <i>motor/referencia</i>) como correspondência; precisão típica de 0,2 mm na pele.<br><br>
+    <b>1.3</b> — sem as faces de referência (pacote leve), avisa o que falta e importa do pacote completo.<br>
     <b>1.1</b> — interface no BRFP Super Tool: lista de faces com o jogo identificado, pasta de saída, destino, layout de textura,
     copiar outros arquivos, prévia 3D da entrada e do resultado, arrastar e soltar.<br>
     <b>1.0</b> — conversor de linha de comando (arrastar para o .bat).<br><br>
@@ -543,6 +553,10 @@ async function iniciar() {
   S.ultimoResumo = r.job && r.job.fim ? r.job.fim : null;
   aplicar(r);
   if (S.itens.length) carregarPrevia();
+  if (S.referencias.ok === false) {
+    aviso('Faltam as faces de referência do jogo', { tipo: 'aviso', tempo: 10000, detalhe: 'Elas não vêm no pacote leve: importe do pacote completo para converter.',
+      acao: { rotulo: 'Importar…', fn: referenciasFaltando } });
+  }
   // componentes instalados por outra janela (página Componentes do Super Tool): o servidor reconfere o motor
   setInterval(async () => {
     if (S.ambiente.ok || !S.ambiente.instalar || S.job.rodando) return;

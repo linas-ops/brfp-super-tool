@@ -3,6 +3,7 @@ import { $, el, esc, aviso, modal, confirmar, barraMenus, abrirMenu, divisorArra
 import { icone } from './comum/icones.js';
 import { api } from './comum/api.js';
 import { instalarComponentes } from './comum/componentes.js';
+import { importarReferencias } from './comum/referencias.js';
 
 const S = {
   itens: [], opcoes: {}, export: {}, analisando: 0, motor: {}, banco: null, time: null, sel: null, item: null, foto: null,
@@ -686,7 +687,16 @@ function fundoVista(f) {
   $('#quadro-mini').className = 'quadro-mini ' + f;
   document.querySelectorAll('#seg-fundo button').forEach((b) => b.classList.toggle('ativo', b.dataset.fundo === f));
 }
-function alternarRef() { S.ref = !S.ref; $('#img-ref').hidden = !S.ref; $('#btn-referencia').classList.toggle('ativo', S.ref); }
+async function alternarRef() {
+  if (!S.ref) {   // a miniface de referência é do jogo e não vem no pacote leve
+    const r = await importarReferencias();
+    if (!r || !r.ok) return;
+    if ((r.importados || []).length) $('#img-ref').src = `referencia_p158023.png?t=${Date.now()}`;
+  }
+  S.ref = !S.ref;
+  $('#img-ref').hidden = !S.ref;
+  $('#btn-referencia').classList.toggle('ativo', S.ref);
+}
 async function desfazerTraco() {
   const t = S.item?.params.tracos || [];
   if (t.length) await enviar({ tracos: t.slice(0, -1) });

@@ -66,10 +66,19 @@ def detectar_jogo(cena):
 # ----------------------------------------------------------------------------
 # referências e mapas pré-calculados
 
+def caminho_ref(jogo):
+    c = os.path.join(PASTA_REF, REFERENCIAS[jogo])
+    if not os.path.isfile(c):
+        raise ErroConversao('falta a face de referência %s (pasta motor/referencia): ela não vem no pacote leve do '
+                            'Super Tool. Use Importar referências no Conversor de Faces, com o pacote completo.'
+                            % REFERENCIAS[jogo])
+    return c
+
+
 class Referencia:
     def __init__(self, jogo):
         self.jogo = jogo
-        self.cena = Cena(os.path.join(PASTA_REF, REFERENCIAS[jogo]))
+        self.cena = Cena(caminho_ref(jogo))
         self.campo = []
         self.offset = {}
         n = 0
@@ -671,7 +680,7 @@ def converter(caminho_entrada, caminho_saida=None, destino=None, layout_textura=
     Nr_campo[sl] = G.normais_vertice(ref_o.R[sl], Tloc)
 
     # 2. modelo do jogo de destino com as novas posições
-    cena_d = Cena(os.path.join(PASTA_REF, REFERENCIAS[destino]))
+    cena_d = Cena(caminho_ref(destino))
     if any(m.dividida for m in cena_d.malhas):
         raise ErroConversao('modelo de referência %s inválido (UV por canto)' % REFERENCIAS[destino])
     desloc_max = 0.0

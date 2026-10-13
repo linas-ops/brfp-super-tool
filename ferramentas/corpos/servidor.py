@@ -24,8 +24,9 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(AQUI)), "comum")
 
 import base  # noqa: E402
 import componentes  # noqa: E402
+import referencias  # noqa: E402
 
-VERSAO = "1.0"
+VERSAO = "1.1"
 GRUPO = "corpos"
 OUTRO = {"fc26": "fc27", "fc27": "fc26"}
 NOME = {"fc26": "FC 26", "fc27": "FC 27"}
@@ -41,6 +42,10 @@ MOTOR_PY = {"cmd": None, "ok": False, "msg": "verificando…"}
 PREVIAS = {}                           # (caminho, mtime) -> png reduzido
 MALHAS = {}                            # jogo -> {V, UV, T}
 SEM_JANELA = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+# corpos (bodyupper LOD0) exportados pelo FET de cada jogo: tirados do jogo, não vêm no pacote leve
+REF = referencias.Referencias("Conversor de Corpos", {
+    f"bodyupper_{j}.fbx": os.path.join(MOTOR, "referencia", f"bodyupper_{j}.fbx") for j in ("fc26", "fc27")},
+    "identificar e converter as texturas")
 
 
 # ------------------------------------------------------------------ ambiente (Python com numpy/SciPy/Pillow)
@@ -65,7 +70,7 @@ def preparar_mapas():
     """Primeira vez: calcula em segundo plano a correspondência FC 26 <-> FC 27 em 1024 (o tamanho do jogo), para a
     primeira conversão já sair em segundos."""
     pasta = os.path.join(CACHE, "mapas")
-    if not MOTOR_PY["ok"] or (os.path.isdir(pasta) and sum(n.startswith("mapa_") and "_1024x1024_" in n
+    if not MOTOR_PY["ok"] or REF.faltam() or (os.path.isdir(pasta) and sum(n.startswith("mapa_") and "_1024x1024_" in n
                                                          for n in os.listdir(pasta)) >= 2):
         return
     def rodar():
@@ -176,7 +181,7 @@ def estado_payload():
     with LOCK:
         itens = [item_publico(it, op) for it in ITENS.values()]
         job = {k: JOB[k] for k in ("rodando", "total", "feitos", "atual", "inicio", "fim", "resumo", "cancelado", "mensagem")}
-    return {"itens": itens, "job": job, "opcoes": op, "ambiente": dict(MOTOR_PY, cmd=None)}
+    return {"itens": itens, "job": job, "opcoes": op, "ambiente": dict(MOTOR_PY, cmd=None), "referencias": REF.estado()}
 
 
 # ------------------------------------------------------------------ rotas
@@ -210,6 +215,7 @@ def adicionar_caminhos(caminhos, recebido=False):
     for c in caminhos:
         if not os.path.exists(c):
             raise base.ErroUsuario(f"Não encontrado: {c}")
+    REF.exigir()     # a identificação do layout usa as costuras dos corpos de referência
     proc = ponte("detectar", arquivo_temp("detectar.json", caminhos))
     novos = outros = 0
     with LOCK:
@@ -299,6 +305,7 @@ def api_forcar_jogo(d):
 
 
 def api_converter(d):
+    REF.exigir()
     op = PREFS.ler()
     with LOCK:
         if JOB["rodando"]:
@@ -436,6 +443,7 @@ def api_malha(q):
     if jogo not in OUTRO:
         raise base.ErroUsuario("Jogo inválido.")
     if jogo not in MALHAS:
+        REF.exigir()
         proc = ponte("malha", jogo)
         for ev in eventos(proc):
             if ev["tipo"] == "malha":
@@ -483,9 +491,9 @@ ROTAS_GET = {"inicio": api_inicio, "estado": api_estado, "malha": api_malha, "ve
 ROTAS_POST = {"opcoes": api_opcoes, "adicionar": api_adicionar, "dialogo": api_dialogo, "receber": api_receber,
               "remover": api_remover, "forcar_jogo": api_forcar_jogo, "converter": api_converter, "cancelar": api_cancelar,
               "abrir": api_abrir, "relatorio": api_relatorio}
-_G, _P = base.rotas_componentes(GRUPO, ao_concluir=verificar_python)
-ROTAS_GET.update(_G)
-ROTAS_POST.update(_P)
+for _G, _P in (base.rotas_componentes(GRUPO, ao_concluir=verificar_python), REF.rotas(ao_importar=preparar_mapas)):
+    ROTAS_GET.update(_G)
+    ROTAS_POST.update(_P)
 
 
 def main():

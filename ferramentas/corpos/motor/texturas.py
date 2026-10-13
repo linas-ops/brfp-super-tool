@@ -53,7 +53,9 @@ def malha(jogo):
     if jogo in _MALHAS:
         return _MALHAS[jogo]
     if not os.path.isfile(REF[jogo]):
-        raise ErroConversao(f"Corpo de referência do {NOME[jogo]} não encontrado: {REF[jogo]} (não apague a pasta referencia).")
+        raise ErroConversao(f"Falta o corpo de referência do {NOME[jogo]} ({os.path.basename(REF[jogo])}, pasta motor/referencia): "
+                            "ele não vem no pacote leve do Super Tool. Use Importar referências no Conversor de Corpos, "
+                            "com o pacote completo.")
     arq = os.path.join(CACHE, f"malha_{jogo}_{_chave_ref(jogo)}.npz")
     if os.path.isfile(arq):
         with np.load(arq) as z:

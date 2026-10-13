@@ -3,9 +3,10 @@ import { $, el, esc, aviso, modal, confirmar, barraMenus, abrirMenu, divisorArra
 import { icone } from './comum/icones.js';
 import { api } from './comum/api.js';
 import { instalarComponentes } from './comum/componentes.js';
+import { importarReferencias, notaReferencias } from './comum/referencias.js';
 import { Previa } from './previa.js';
 
-const S = { itens: [], job: {}, opcoes: {}, ambiente: {}, sel: null, versao: '', qual: 'entrada', modo: '3d', previa: null, polling: null, ultimoResumo: null, malhas: {} };
+const S = { itens: [], job: {}, opcoes: {}, ambiente: {}, referencias: {}, sel: null, versao: '', qual: 'entrada', modo: '3d', previa: null, polling: null, ultimoResumo: null, malhas: {} };
 const NOME_JOGO = { fc26: 'FC 26', fc27: 'FC 27' };
 const EXT = ['.png', '.dds', '.tga', '.jpg', '.jpeg', '.bmp', '.tif', '.tiff'];
 const EST = {
@@ -27,6 +28,7 @@ function aplicar(r) {
   if (r.job) S.job = r.job;
   if (r.opcoes) S.opcoes = r.opcoes;
   if (r.ambiente) S.ambiente = r.ambiente;
+  if (r.referencias) S.referencias = r.referencias;
   if (S.sel !== null && !S.itens.some((i) => i.id === S.sel)) S.sel = null;
   if (S.sel === null && S.itens.length) S.sel = S.itens[0].id;
   desenharLista();
@@ -292,11 +294,22 @@ function opcoes() {
     marcado: op.sobrescrever, aoMudar: (v) => salvarOpcoes({ sobrescrever: v }) }).el);
   out.push(el('div', { class: 'acoes-linha' }, el('button', { class: 'btn peq', disabled: !op.saida, onclick: () => tentar(() => api('abrir', {})) }, icone('externo', 12), 'Abrir pasta de saída'),
     el('button', { class: 'btn peq', disabled: !(S.job.resumo && (S.job.resumo.pastas || []).length), onclick: () => tentar(() => api('relatorio', {})) }, icone('relatorio', 12), 'Relatório')));
+  out.push(...notaReferencias(S.referencias, referenciasFaltando));
   if (!S.ambiente.ok && S.ambiente.msg !== 'verificando…') {
     out.push(nota(esc(S.ambiente.msg), 'alerta'));
     if (S.ambiente.instalar) out.push(el('div', { class: 'acoes-linha' }, el('button', { class: 'btn-primario peq', onclick: componentesMotor }, icone('baixar', 12), 'Baixar os componentes…')));
   }
   return out;
+}
+
+async function referenciasFaltando() {
+  await importarReferencias({ aoTerminar: () => atualizar() });
+}
+// sem os corpos de referência não dá para identificar o layout nem converter
+function semReferencias() {
+  if (S.referencias.ok !== false) return false;
+  referenciasFaltando();
+  return true;
 }
 
 async function componentesMotor() {
@@ -324,6 +337,7 @@ async function escolherSaida() {
 
 // ---------------------------------------------------------------- ações
 async function adicionar(modo) {
+  if (semReferencias()) return;
   const r = await tentar(() => api('dialogo', { modo }));
   if (!r || !r.caminhos.length) return;
   await adicionarCaminhos(r.caminhos);
@@ -375,6 +389,7 @@ async function converter(ids = null) {
     aviso(S.ambiente.msg || 'Motor indisponível', { tipo: 'erro' });
     return;
   }
+  if (semReferencias()) return;
   if (S.itens.some((i) => i.recebido) && !S.opcoes.saida) {
     aviso('Escolha a pasta de saída: arquivos arrastados para a janela não têm “pasta ao lado”.', { tipo: 'aviso' });
     await escolherSaida();
@@ -465,6 +480,7 @@ function prepararSoltar() {
     e.preventDefault();
     n = 0; camada.hidden = true;
     const arqs = [...e.dataTransfer.files].filter((f) => EXT.some((x) => f.name.toLowerCase().endsWith(x)));
+    if (semReferencias()) return;
     if (!arqs.length) { aviso('Solte imagens (.png, .dds, .tga, .jpg). Para pastas inteiras, use Adicionar pasta.', { tipo: 'aviso' }); return; }
     const fim = carregando(`Recebendo ${arqs.length} arquivo(s)…`);
     try {
@@ -486,6 +502,7 @@ function menus() {
       { rotulo: 'Adicionar pasta…', icone: 'pastaMais', atalho: 'Ctrl+Shift+O', fn: () => adicionar('pasta') },
       '-',
       { rotulo: 'Escolher pasta de saída…', icone: 'pasta', fn: escolherSaida },
+      { rotulo: 'Importar referências…', icone: 'baixar', desabilitado: S.referencias.ok !== false, fn: referenciasFaltando },
       { rotulo: 'Abrir pasta de saída', icone: 'externo', desabilitado: !S.opcoes.saida, fn: () => tentar(() => api('abrir', {})) },
       { rotulo: 'Abrir relatório da última conversão', icone: 'relatorio', desabilitado: !(S.job.resumo && (S.job.resumo.pastas || []).length), fn: () => tentar(() => api('relatorio', {})) },
       '-',
@@ -535,6 +552,7 @@ function sobre() {
     Converte a textura do corpo (<i>bodyupper</i>: pele, tatuagens e mapa normal) entre os layouts de UV do FC 26 e do FC 27,
     passando cada pixel pela superfície 3D do corpo. Usa os corpos de referência exportados pelo FET de cada jogo (pasta
     <i>motor/referencia</i>).<br><br>
+    <b>1.1</b> — sem os corpos de referência (pacote leve), avisa o que falta e importa do pacote completo.<br>
     <b>1.0</b> — lista de texturas com o layout identificado sozinho, cor e mapa normal, tamanho da saída, prévia no corpo em 3D e plana,
     arrastar e soltar.<br><br>
     Ainda não testado no jogo.` });
@@ -600,6 +618,10 @@ async function iniciar() {
   S.ultimoResumo = r.job && r.job.fim ? r.job.fim : null;
   aplicar(r);
   if (S.itens.length) carregarPrevia();
+  if (S.referencias.ok === false) {
+    aviso('Faltam os corpos de referência do jogo', { tipo: 'aviso', tempo: 10000, detalhe: 'Eles não vêm no pacote leve: importe do pacote completo para converter.',
+      acao: { rotulo: 'Importar…', fn: referenciasFaltando } });
+  }
   setInterval(async () => {
     if (S.ambiente.ok || !S.ambiente.instalar || S.job.rodando) return;
     const e = await api('estado').catch(() => null);
