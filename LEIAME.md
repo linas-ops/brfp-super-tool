@@ -1,4 +1,4 @@
-# BRFP Super Tool — versão 2.6
+# BRFP Super Tool — versão 3.0
 
 Todas as ferramentas de modding do BRFP numa janela só, com a mesma interface (a do Editor de Estádios):
 menus no topo, painéis laterais, avisos, diálogos e atalhos iguais em todas.
@@ -85,7 +85,7 @@ sob demanda e guardadas em cache em `dados\cache`; o registro fica em `dados\fon
 
 | Ferramenta | Versão | O que faz |
 |---|---|---|
-| BRFP Super Tool | 2.6 | Janela única, trilho, início com versões e guias; Dados do jogo compartilhados (banco de qualquer versão, FIFA 16 … FC 27, idioma, internationals); Python embutido, Componentes (com o servidor local da Transfermarkt) e pacote para outro computador. |
+| BRFP Super Tool | 3.0 | Janela única, trilho, início com versões e guias; Dados do jogo compartilhados (banco de qualquer versão, FIFA 16 … FC 27, idioma, internationals); Python embutido, Componentes (com o servidor local da Transfermarkt) e pacote para outro computador. |
 | Editor de Estádios | 3.0 | Exports do FET em 3D: ocultar/mover peças, texturas do jogo, luzes, torcida, banco e áreas técnicas, stadiums.txt. |
 | Editor de Placares | 2.1 | Overlays APT do jogo e de mods: textos, cores, imagens, posições, animações e fontes; grava para o Live Editor. |
 | Editor de Compdata | 2.1 | Competições → estágios → grupos com renumeração automática; nomes vindos do banco e do idioma importados. |
@@ -94,6 +94,7 @@ sob demanda e guardadas em cache em `dados\cache`; o registro fica em `dados\fon
 | Criador de Minifaces | 1.2 | Foto → miniface do jogo (p&lt;ID&gt;.png 180×180): tira o fundo, enquadra o rosto e liga ao jogador pelo time; recebe as fotos do Criador de Ligas e Times já ligadas aos IDs. |
 | Editor de Banco | 1.0 | Times (elenco, escalação, formação, capitão, cobradores, tática, cores, técnico), jogadores, ligas, árbitros, técnicos e qualquer tabela; transferências, empréstimos, liberar; verificação de erros com correção; grava um banco novo. |
 | Criador de Ligas e Times | 2.2 | Ligas, times, seleções e jogadores da API-Football ou da Transfermarkt (notas calibradas no banco — pelo valor de mercado na Transfermarkt —, feminino, aparência pelas fotos, tática, técnico, estádio) e atualização do banco: elencos, empréstimos, saídas e participantes das ligas. |
+| Atualizador de Squads | 1.0 | Squad do mod + squad mais recente da EA → squad atualizado: times brasileiros inteiros do mod (sem os genéricos da EA), times, ligas e competições novos, jogadores criados pelo mod; duplicados unidos, IDs reusados trocados, escalações refeitas. |
 | Conversor de Tabelas | 1.1 | Tabelas do banco entre qualquer par de versões (FIFA 16 … FC 27): colunas novas, renomeadas e calculadas, escalas, faixas; destino pelo esquema guardado; grava .txt ou um .db novo. |
 | Conversor PES → FC | 2.0 | Estádios do PES 2021 → FC 26 sem comandos: assistente de nova conversão, configuração em formulário, etapas explicadas, lista do que importar no FET, prévias, ferramentas. |
 | RDBM 26 · Add-on FC 27 | 1.0.0 | Programa à parte: abre squads do FC 27 no RDBM 26. O Super Tool abre o add-on e passa os comandos. |
@@ -128,6 +129,7 @@ stadium conversor\
       tabelas\              Conversor de Tabelas (LEIAME.md)
       banco\                Editor de Banco (LEIAME.md; a edição em andamento fica em banco\cache)
       criador\              Criador de Ligas e Times (LEIAME.md; chave e cache da API ficam em dados\)
+      squads\               Atualizador de Squads (LEIAME.md; relatórios em squads\saida)
       conversor_pes\        interface do Conversor PES → FC (no pacote, o motor fica em conversor_pes\motor)
       rdbm\                 (só no pacote) RDBM 26 · Add-on FC 27
   conversor\                motor do Conversor PES → FC (configs, etapas, Blender) — saída em saida\ e work\

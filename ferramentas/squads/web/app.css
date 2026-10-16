@@ -1,0 +1,44 @@
+/* Atualizador de Squads — só o específico; o resto vem de comum/brfp.css. */
+#app {
+  display: grid; height: 100vh;
+  grid-template-columns: var(--esq) 4px 1fr;
+  grid-template-rows: var(--topo) 1fr var(--rodape);
+  grid-template-areas: "topo topo topo" "esq div1 conteudo" "status status status";
+  --esq: 340px;
+}
+#topo { grid-area: topo; }
+#painel-esq { grid-area: esq; overflow: auto; }
+#div-esq { grid-area: div1; }
+#conteudo { grid-area: conteudo; }
+#status { grid-area: status; }
+.marca-ic, .bv-hero-ic { background-image: url(favicon.svg); }
+.topo-acoes { display: flex; gap: 8px; }
+
+.arq { border: 1px solid var(--borda); border-radius: var(--raio); padding: 10px 12px; margin-bottom: 10px; background: var(--painel-2); }
+.arq.vazio-arq { border-style: dashed; background: none; }
+.arq .arq-cab { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+.arq .arq-cab b { font-size: 12.5px; }
+.arq .arq-cab .etiqueta { margin-left: auto; }
+.arq .arq-nome { font: 12px var(--mono); color: var(--texto); word-break: break-all; }
+.arq .arq-det { font-size: 11.5px; color: var(--texto-3); margin-top: 2px; }
+.arq .acoes-linha { margin-top: 8px; }
+.arq.erro-arq { border-color: rgba(255, 99, 99, .5); }
+
+.progresso-caixa { max-width: 560px; margin: 60px auto; text-align: center; }
+.progresso-caixa h2 { font-size: 16px; font-weight: 600; margin-bottom: 14px; }
+.progresso-caixa .barra-progresso { height: 8px; }
+.progresso-caixa p { color: var(--texto-3); margin-top: 10px; font-size: 12px; }
+
+.lista-times { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 2px 14px; max-height: 420px; overflow: auto; padding: 4px 2px; }
+.lista-times label { display: flex; align-items: center; gap: 8px; padding: 4px 6px; border-radius: 6px; cursor: pointer; min-width: 0; }
+.lista-times label:hover { background: var(--hover); }
+.lista-times input { margin: 0; accent-color: var(--acento); width: 14px; height: 14px; flex: none; }
+.lista-times .t-nome { font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lista-times .t-liga { font-size: 11px; color: var(--texto-3); display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lista-times .t-txt { min-width: 0; }
+.grupo-times { font-size: 11.5px; font-weight: 600; color: var(--texto-2); margin: 10px 0 4px; text-transform: uppercase; letter-spacing: .04em; }
+.regras li { margin: 4px 0; line-height: 1.45; }
+.regras { padding-left: 18px; margin: 6px 0; color: var(--texto-2); font-size: 12.5px; }
+.tabela td.num, .tabela th.num { text-align: right; font-variant-numeric: tabular-nums; }
+.lista-curta { max-height: 320px; overflow: auto; }
+@media (max-width: 1150px) { #app { --esq: 290px; } }

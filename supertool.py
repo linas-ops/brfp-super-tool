@@ -2,7 +2,7 @@
 
     python supertool.py [--porta 8760] [--sem-janela] [--abrir <id>]
 
-Cada ferramenta web (Estádios, Placares, Compdata, Faces, Corpos, Minifaces, Tabelas, Criador, Conversor PES) é um servidor local próprio, iniciado
+Cada ferramenta web (Estádios, Placares, Compdata, Faces, Corpos, Minifaces, Tabelas, Criador, Squads, Conversor PES) é um servidor local próprio, iniciado
 sob demanda e mostrado dentro da janela do Super Tool. Fechar o Super Tool encerra todas elas (Job Object do Windows).
 O RDBM 26 · Add-on FC 27 é um programa nativo: o Super Tool só o abre e passa os comandos de linha.
 Banco de dados e idioma do jogo são importados uma vez aqui (página "Dados do jogo") e valem para todas as ferramentas
@@ -30,7 +30,7 @@ import componentes  # noqa: E402
 import dados  # noqa: E402
 import pacote  # noqa: E402
 
-VERSAO = "2.9"
+VERSAO = "3.0"
 NOME = "BRFP Super Tool"
 RAIZ = base.raiz_trabalho()
 SEM_JANELA = getattr(subprocess, "CREATE_NO_WINDOW", 0)
@@ -73,6 +73,10 @@ FERRAMENTAS = [
      "pasta": os.path.join(AQUI, "ferramentas", "criador"), "guia": "LEIAME.md",
      "descricao": "Cria ligas, times, seleções e jogadores a partir da API-Football ou da Transfermarkt (notas calibradas no "
                   "banco do jogo) e atualiza o banco: elencos, empréstimos, saídas, participantes das ligas e seleções."},
+    {"id": "squads", "nome": "Atualizador de Squads", "icone": "camadas", "tipo": "web", "porta": 8778,
+     "pasta": os.path.join(AQUI, "ferramentas", "squads"), "guia": "LEIAME.md",
+     "descricao": "Coloca no squad mais recente da EA o que o mod acrescentou: times brasileiros inteiros do mod (sem os "
+                  "genéricos da EA), times, ligas e competições novos e jogadores criados, sem jogadores duplicados."},
     {"id": "conversor_pes", "nome": "Conversor PES → FC", "icone": "converter", "tipo": "web", "porta": 8772,
      "pasta": os.path.join(AQUI, "ferramentas", "conversor_pes"), "guia": os.path.join(base.pasta_conversor(), "LEIAME.md"),
      "descricao": "Converte estádios do PES 2021 para um estádio base do FC 26 (Blender + texconv), sem comandos: assistente "

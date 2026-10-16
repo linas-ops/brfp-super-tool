@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Atualizador de Squads</title>
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="comum/brfp.css">
+  <link rel="stylesheet" href="app.css">
+</head>
+<body>
+  <div id="app">
+    <header id="topo">
+      <div class="marca" title="Atualizador de Squads">
+        <span class="marca-ic"></span>
+        <span class="marca-txt">Atualizador de Squads</span>
+        <span class="marca-versao" id="versao"></span>
+      </div>
+      <nav id="menus" aria-label="Menu principal"></nav>
+      <div class="titulo-centro" id="titulo"></div>
+      <div class="topo-acoes">
+        <button id="btn-analisar" class="btn" title="Ler os dois squads e mostrar o que vai mudar">
+          <span id="btn-analisar-ic"></span><span>Analisar</span>
+        </button>
+        <button id="btn-gerar" class="btn-primario" title="Gravar o squad atualizado (Ctrl+Enter)" disabled>
+          <span id="btn-gerar-ic"></span><span id="btn-gerar-txt">Gerar squad atualizado</span>
+        </button>
+      </div>
+    </header>
+
+    <aside id="painel-esq" class="painel" aria-label="Squads">
+      <div id="propriedades" class="propriedades"></div>
+    </aside>
+    <div class="divisor" id="div-esq"></div>
+
+    <main id="conteudo" class="conteudo">
+      <div class="conteudo-interno" id="principal"></div>
+    </main>
+
+    <footer id="status">
+      <span class="status-esq contagem" id="status-esq"></span>
+      <span class="status-dir" id="status-dir"></span>
+    </footer>
+  </div>
+  <div id="camada-modal"></div>
+  <div id="menu-contexto" class="menu-flutuante" hidden></div>
+  <div id="toasts" aria-live="polite"></div>
+  <script type="module" src="app.js"></script>
+</body>
+</html>

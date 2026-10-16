@@ -1,6 +1,6 @@
 # BRFP Super Tool
 
-Ferramentas de modding do BRFP (EA SPORTS FC 26 / FC 27) numa janela só: estádios, placares, compdata, faces, corpos (tatuagens), minifaces, banco, tabelas, Criador de Ligas e Times e o conversor de estádios do PES.
+Ferramentas de modding do BRFP (EA SPORTS FC 26 / FC 27) numa janela só: estádios, placares, compdata, faces, corpos (tatuagens), minifaces, banco, tabelas, Criador de Ligas e Times, Atualizador de Squads e o conversor de estádios do PES.
 
 ## Baixar
 
