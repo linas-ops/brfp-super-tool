@@ -42,7 +42,7 @@ def ligas_do_banco(banco, idioma, ligas_db):
         if l["leagueid"] in LIGAS_ESPECIAIS or not l.get("times"):
             continue
         n = nac.get(str(l.get("pais")), {})
-        sem_pais = bool(l.get("internacional")) or str(l.get("pais")) in ("211", "0", "None")
+        sem_pais = bool(l.get("internacional")) or _pseudo_nacao(nac, l.get("pais"))
         out.append({**l, "pais_en": "Sem país" if sem_pais else n.get("nationname"), "iso": None if sem_pais else n.get("isocountrycode"),
                     "sem_pais": sem_pais})
     return sorted(out, key=lambda x: (x.get("pais_en") or "", x["divisao"], x["nome"]))
@@ -244,10 +244,17 @@ _GRAFIA = {"moskva": "moscow", "moscou": "moscow", "praga": "prague", "praha": "
            "copenhague": "copenhagen", "estocolmo": "stockholm", "istambul": "istanbul", "cairo": "cairo", "tunis": "tunis"}
 
 
+def _pseudo_nacao(nacoes, nid):
+    """Nação que não é um país de verdade: Resto do Mundo, International, CONMEBOL, AFC, Free Agents… (sem código ISO)."""
+    n = nacoes.get(str(nid)) if nid not in (None, "") else None
+    return str(nid) in ("0", "211", "None") or not n or not (n.get("isocountrycode") or "").strip()
+
+
 def liga_sem_pais(banco, leagueid):
-    """Liga que não é de um país (Resto do Mundo, Libertadores…): os times dela são casados um a um."""
+    """Liga que não é de um país (Resto do Mundo, Libertadores, Sul-Americana…): os times dela são casados um a um."""
     lg = next((d for d in banco.tabela("leagues").dicts() if d["leagueid"] == str(leagueid)), None)
-    return bool(lg) and (lg.get("isinternationalleague") == "1" or str(lg.get("countryid")) in ("211", "0"))
+    nac = {d["nationid"]: d for d in banco.tabela("nations").dicts()}
+    return bool(lg) and (lg.get("isinternationalleague") == "1" or _pseudo_nacao(nac, lg.get("countryid")))
 
 
 def preparar_individual(fonte, cliente, banco, idioma, leagueid, temporada=None, progresso=None):
@@ -865,10 +872,10 @@ def _avisos_elenco(banco, idioma, mud):
     nomes = _nomes_times(banco, idioma)
     out = []
     for tid, d in delta.items():
-        if d < 0 and cont[tid] + d < 11:
+        if d < 0 and cont[tid] + d < 18:
             nome = (nomes.get(tid) or {}).get("nome") or tid
-            out.append(f"{nome} ficaria com {cont[tid] + d} jogador(es): ao Gerar, o elenco é completado com jogadores sem "
-                       "contrato (ou desmarque saídas dele).")
+            out.append(f"{nome} ficaria com {cont[tid] + d} jogador(es): ao Gerar, o elenco é completado até 18 (com 2 goleiros) "
+                       "com jogadores sem contrato (ou desmarque saídas dele).")
     return out
 
 
@@ -1332,18 +1339,18 @@ def reescalar(pj, teamid):
     mudanças do projeto): ninguém que saiu fica na escalação."""
     import gerador as G
     vincs = pj.atuais("teamplayerlinks", teamid=teamid) + pj.novas_de("teamplayerlinks", teamid=teamid)
-    if len(vincs) < 11:
-        # antes a escalação ficava como estava, apontando para quem saiu, e a conferência final barrava o banco:
-        # agora o elenco é completado com jogadores sem contrato (nota perto da média do time, mesma nação)
-        nome = pj.nome_time(teamid) or f"time {teamid}"
-        antes = len(vincs)
-        entraram = pj.completar_clube(teamid)
+    # elenco sem jogadores suficientes (menos de 18 ou de 2 goleiros): completado com jogadores sem contrato (nota perto
+    # da média do time, mesma nação). Antes, com menos de 11 a escalação ficava apontando para quem saiu.
+    nome = pj.nome_time(teamid) or f"time {teamid}"
+    antes = len(vincs)
+    entraram = pj.completar_clube(teamid)
+    if entraram:
         vincs = pj.atuais("teamplayerlinks", teamid=teamid) + pj.novas_de("teamplayerlinks", teamid=teamid)
-        if len(vincs) < 11:
-            raise ValueError(f"{nome} ({teamid}) ficaria com {len(vincs)} jogador(es) depois das mudanças marcadas e não há "
-                             "jogadores sem contrato para completar 11. Desmarque saídas dele em Atualizar banco.")
-        pj.avisos.append(f"{nome} ({teamid}): ficou com {antes} jogador(es); completado com {len(entraram)} sem contrato — "
-                         + ", ".join(entraram) + ".")
+        pj.avisos.append(f"{nome} ({teamid}): ficou com {antes} jogador(es); completado com {len(entraram)} sem contrato "
+                         f"(mínimo de 18, com 2 goleiros) — " + ", ".join(entraram) + ".")
+    if len(vincs) < 11:
+        raise ValueError(f"{nome} ({teamid}) ficaria com {len(vincs)} jogador(es) depois das mudanças marcadas e não há "
+                         "jogadores sem contrato para completar 11. Desmarque saídas dele em Atualizar banco.")
     jogs = []
     for v in vincs:
         ns = pj.indices("players", playerid=v["playerid"])

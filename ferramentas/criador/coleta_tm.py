@@ -76,7 +76,18 @@ def _liga(c, fonte="transfermarkt"):
     return {"id": c["id"], "nome": c["nome"], "tipo": _tipo(c["nome"]), "logo": T.logo_competicao(c["id"]), "pais": pais,
             "codigo_pais": None, "temporadas": None, "atual": None, "clubes": c.get("clubes"), "valor": c.get("valor"),
             "jogadores": True, "escalacoes": True, "estatisticas": True, "fonte": fonte,
-            "selecoes": not c.get("pais") and bool(re.search(r"world cup|euro\b|copa am|nations|qualif|friendl|africa cup|asian cup|gold cup|olymp", c["nome"].lower()))}
+            "selecoes": not c.get("pais") and _de_selecoes(c["nome"])}
+
+
+_CLUBES = re.compile(r"\b(club|clubs|clubes|interclub|intercontinental|champions|libertadores|sudamericana|sul-americana|"
+                     r"recopa|super ?cup|supercopa|league cup)\b", re.I)
+
+
+def _de_selecoes(nome):
+    """Competição de seleções pelo nome (Copa do Mundo, Eurocopa…); a Copa do Mundo de Clubes, a Intercontinental e as
+    copas continentais de clubes não são."""
+    n = (nome or "").lower()
+    return not _CLUBES.search(n) and bool(re.search(r"world cup|euro\b|copa am|nations|qualif|friendl|africa cup|asian cup|gold cup|olymp", n))
 
 
 def paises(tm):
@@ -361,12 +372,19 @@ def _escalacoes(tm, cid, jogadores, temporada, liga_id, n, passo, nome):
 
 
 # ------------------------------------------------------------------ seleções e elencos atuais (atualizar banco)
-def coletar_selecao(tm, time, progresso=None):
-    """Convocação atual (com nascimento e nacionalidade: o casamento com o banco fica exato) + técnico."""
+def coletar_selecao(tm, time, progresso=None, temporada=None):
+    """Convocação (com nascimento e nacionalidade: o casamento com o banco fica exato) + técnico. temporada: o id da
+    temporada na Transfermarkt ("2013" = 2013/14, a da Copa de 2014) para uma convocação antiga; sem ela, a atual.
+    Numa convocação antiga o técnico fica o do banco (a Transfermarkt só dá o de hoje)."""
     passo = progresso or (lambda m: None)
-    passo(f"{time['nome']}: convocação")
-    d = coletar_time(tm, time, None, "atual", {"estatisticas": False}, None, progresso)
+    passo(f"{time['nome']}: convocação" + (f" de {temporada}/{(int(temporada) + 1) % 100:02d}" if temporada else ""))
+    d = coletar_time(tm, time, str(temporada) if temporada else None, "temporada" if temporada else "atual",
+                     {"estatisticas": False, "temporada_nome": f"{str(temporada)[2:]}/{(int(temporada) + 1) % 100:02d}" if temporada else None},
+                     None, progresso)
     d["selecao"] = True
+    if temporada:
+        d["tecnico"] = None
+        d["convocacao"] = str(temporada)
     return d
 
 

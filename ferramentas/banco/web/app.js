@@ -408,7 +408,7 @@ async function desenharPrincipal() {
 
 function telaSemBanco(p) {
   p.append(el('div', { class: 'tela-vazia' }, el('div', { class: 'ic-grande', html: icone('bancoDados', 64) }), el('h2', {}, 'Nenhum banco importado'),
-    el('p', {}, 'Importe o fifa_ng_db.db (ou a pasta de tabelas .txt) em Dados do jogo, no Super Tool. Vale qualquer versão: FIFA 16, 21, 22, 23, FC 24, 26 e 27.')));
+    el('p', {}, 'Importe o fifa_ng_db.db (ou a pasta de tabelas .txt) em Dados do jogo, no Super Tool. Vale qualquer versão: FIFA 16, 21, 22, 23, FC 24, 25, 26 e 27.')));
 }
 
 function telaInicial(p) {
@@ -1005,7 +1005,7 @@ function menus() {
     ]],
     ['Ajuda', () => [
       { rotulo: 'Sobre o Editor de Banco', icone: 'info', fn: () => dialogoSobre({ nome: 'Editor de Banco', versao: S.ini.versao, html: `
-        Edita o banco importado em Dados do jogo (FIFA 16, 21, 22, 23, FC 24, 26 e 27): times (elenco, escalação, formação, capitão,
+        Edita o banco importado em Dados do jogo (FIFA 16, 21, 22, 23, FC 24, 25, 26 e 27): times (elenco, escalação, formação, capitão,
         cobradores, tática, cores, dados do clube, técnico), jogadores (nomes, posições, notas, atributos, contrato, aparência),
         transferências, empréstimos, liberar, números, ligas (mover times, Resto do Mundo com a nação), árbitros, técnicos e qualquer
         tabela numa grade. A verificação acha vínculos quebrados, jogadores em dois clubes, números repetidos, escalações e

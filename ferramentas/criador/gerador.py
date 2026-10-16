@@ -24,6 +24,7 @@ import casamento as K
 import notas as N
 
 MAX_JOGADORES = 40
+MINIMO_ELENCO, MINIMO_GOLEIROS = 18, 2            # elenco "suficiente": 18 jogadores, 2 goleiros
 MENOS_DE_11 = "[menos11] "                     # começo da mensagem de erro de elenco com menos de 11 (a prévia oferece as opções)
 TIME_SEM_CONTRATO = "111592"
 LIGA_RDM = {0: "76", 1: "2226"}                 # Resto do Mundo (masculino, feminino)
@@ -574,7 +575,8 @@ class Projeto:
         jogs = self._preparar_jogadores(dados, None if auto_tm else nivel_time, genero, ajustes, ex.get("fotos") or {})
         fo_mod = self.copiar("formations", "teamid", mod_form)[0]
         vagas = [int(fo_mod[f"position{i}"]) for i in range(11)]
-        menos11 = self._menos_de_11(jogs, ex.get("menos11"), tm["nome"], nivel_time, nacao_time, genero) if len(jogs) < 11 else None
+        insuficiente = len(jogs) < MINIMO_ELENCO or sum(1 for j in jogs if j["pos"] == 0) < MINIMO_GOLEIROS
+        menos11 = self._menos_de_11(jogs, ex.get("menos11"), tm["nome"], nivel_time, nacao_time, genero) if insuficiente else None
         titulares, reservas, ordem = self._escalacao(jogs, vagas, parcial=menos11 == "assim")
         escolha = self.ultima_escolha
         vagas_tit = [v for v, j in zip(vagas, escolha) if j]
@@ -661,6 +663,7 @@ class Projeto:
                "jogadores": [self._publico(j) for j in ordem], "cores": cores, "tecnico": tec,
                "estadio": est, "avisos": list(dados.get("avisos") or []), "excluidos": list(self.excluidos),
                "clubes_afetados": afetados, "menos11": menos11,
+               "goleiros": sum(1 for j in ordem if j["pos"] == 0),
                "livres": sum(1 for j in ordem if j.get("origem") == "livre"),
                "usar_db_todos": bool(ajustes.get("_usar_db_todos"))}
         if menos11 == "assim":
@@ -671,18 +674,24 @@ class Projeto:
 
     # ---- partes do time
     def _menos_de_11(self, jogs, modo, nome, nivel, nacao_time, genero):
-        """Elenco da fonte com menos de 11: "livres" completa com jogadores sem contrato (nota perto da média do
-        elenco, a nação mais comum dele); "assim" cria mesmo assim; sem escolha, para com a explicação."""
+        """Elenco da fonte sem jogadores suficientes (menos de 18 ou de 2 goleiros): "livres" completa até 18 e 2
+        goleiros com jogadores sem contrato (nota perto da média do elenco, a nação mais comum dele); "assim" cria
+        como está. Sem escolha: com menos de 11 para com a explicação; com 11 ou mais cria como está (a prévia oferece
+        completar)."""
+        gks = sum(1 for j in jogs if j["pos"] == 0)
         if modo == "livres":
             nacs = collections.Counter(str(j.get("nacao") or self.nacao_jogador(j)) for j in jogs)
             nacs.pop("211", None)
             nacao = nacs.most_common(1)[0][0] if nacs else nacao_time
             alvo = sum(j["overall"] for j in jogs) / len(jogs) if jogs else float(nivel) - 3
-            for pid in self.livres(11 - len(jogs), alvo, nacao, genero, [j["pos"] for j in jogs]):
+            falta = max(MINIMO_ELENCO - len(jogs), MINIMO_GOLEIROS - gks)
+            for pid in self.livres(falta, alvo, nacao, genero, [j["pos"] for j in jogs]):
                 jogs.append(self.jogador_livre(pid))
             if len(jogs) < 11:
                 raise ValueError(f"{nome}: não há jogadores sem contrato suficientes para chegar a 11 ({len(jogs)}).")
             return "livres"
+        if len(jogs) >= 11:
+            return "incompleto"
         if modo == "assim" and jogs:
             return "assim"
         raise ValueError(f"{MENOS_DE_11}{nome} tem só {len(jogs)} jogador(es) no elenco da fonte. Escolha na prévia: completar com "
@@ -1121,9 +1130,9 @@ class Projeto:
         cand.sort()
         linha = lambda p: "G" if p == 0 else "D" if p in (2, 3, 5, 7, 8) else "M" if p in (10, 12, 14, 16, 18) else "A"  # noqa: E731
         tem = collections.Counter(linha(int(p)) for p in posicoes)
-        precisa = {"G": 1, "D": 4, "M": 3, "A": 2}
+        precisa = {"G": MINIMO_GOLEIROS, "D": 6, "M": 6, "A": 4}  # um elenco de 18: 2 goleiros, 6 + 6 + 4 na linha
         escolha = []
-        for g, q in precisa.items():                       # primeiro o que falta para escalar 11
+        for g, q in precisa.items():                       # primeiro o que falta em cada setor (goleiros antes)
             for _, pid, p in cand:
                 if len(escolha) >= n or tem[g] >= q:
                     break
@@ -1152,14 +1161,16 @@ class Projeto:
         j["capitao_manual"] = False
         return j
 
-    def completar_clube(self, teamid, minimo=11):
-        """Time do banco que ficou com menos de `minimo`: entram jogadores sem contrato (nota perto da média do elenco,
-        mesma nação do time). Devolve os nomes de quem entrou."""
+    def completar_clube(self, teamid, minimo=MINIMO_ELENCO, goleiros=MINIMO_GOLEIROS):
+        """Time do banco com menos de `minimo` jogadores ou de `goleiros` goleiros: entram jogadores sem contrato (nota
+        perto da média do elenco, mesma nação do time). Devolve os nomes de quem entrou."""
         vincs = self.atuais("teamplayerlinks", teamid=teamid) + self.novas_de("teamplayerlinks", teamid=teamid)
-        falta = minimo - len(vincs)
+        idx = self.indice_jogadores()
+        gks = sum(1 for v in vincs if (idx.info.get(v["playerid"]) or {}).get("pos") == 0
+                  or any(p.get("preferredposition1") == "0" for p in self.novas_de("players", playerid=v["playerid"])))
+        falta = max(minimo - len(vincs), goleiros - gks)
         if falta <= 0:
             return []
-        idx = self.indice_jogadores()
         ovs, poss, nacs = [], [], collections.Counter()
         for v in vincs:
             i = idx.info.get(v["playerid"])

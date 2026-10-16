@@ -88,7 +88,16 @@ class Tm:
     def local_instalado():
         try:
             import componentes
-            return componentes.estado_grupo("transfermarkt")["ok"]
+            e = componentes.estado_grupo("transfermarkt")
+            if not e["ok"] and e["python"] and not e["faltam"] and e["faltam_projetos"] \
+                    and all(componentes.projetos_instalados().get(p) for p in e["faltam_projetos"]):
+                # versão nova da transfermarkt-api no manifesto (o código só, ≈1 MB): atualiza sozinho
+                try:
+                    componentes.instalar(["transfermarkt"])
+                    e = componentes.estado_grupo("transfermarkt")
+                except Exception:  # noqa: BLE001 — sem internet etc.: usa a instância pública desta vez
+                    return False
+            return e["ok"]
         except Exception:  # noqa: BLE001
             return False
 

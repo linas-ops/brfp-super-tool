@@ -274,23 +274,40 @@ def estimar_selecao(api, time_id, temporada, escalacoes=0):
     return n
 
 
-def coletar_selecao(api, time, temporada, escalacoes=0, progresso=None):
+def coletar_selecao(api, time, temporada, escalacoes=0, progresso=None, convocacao=None):
     """Convocação atual (players/squads), técnico e, se pedido, as últimas escalações (formação e cores). Os jogadores
-    são casados com o banco na geração (gerador.criar_selecao): a API só dá nome, idade, número e posição."""
+    são casados com o banco na geração (gerador.criar_selecao): a API só dá nome, idade, número e posição.
+    convocacao (ano): uma convocação antiga — quem jogou pela seleção naquela temporada (players?team=&season=, com o
+    nascimento: o casamento fica exato) e as escalações dela; o técnico fica o do banco."""
     tid = time["id"]
     avisos = []
     passo = (lambda m: progresso(m)) if progresso else (lambda m: None)
-    passo(f"{time['nome']}: convocação")
-    sq = api.get("players/squads", team=tid)
     jogadores = []
-    for p in (sq[0]["players"] if sq else []):
-        jogadores.append({"id": p["id"], "nome": p.get("name") or "", "primeiro": "", "sobrenome": "", "idade": p.get("age"),
-                          "nascimento": None, "numero": p.get("number"), "posicao_api": POS_API.get(p.get("position") or ""),
-                          "foto": p.get("photo"), "stats": {}})
-    if not jogadores:
-        avisos.append("A API não tem a convocação atual desta seleção: o elenco vem só do banco.")
+    if convocacao:
+        passo(f"{time['nome']}: quem jogou em {convocacao}")
+        for r in api.todas("players", team=tid, season=int(convocacao)):
+            st, numero, posicao = _stats_time(r, tid)
+            if not st.get("jogos"):
+                continue
+            j = _perfil(r["player"])
+            j.update(stats=st, numero=numero, posicao_api=POS_API.get(posicao or ""))
+            jogadores.append(j)
+        if not jogadores:
+            avisos.append(f"A API não tem jogadores desta seleção em {convocacao}: o elenco vem só do banco.")
+        temporada = int(convocacao)
+    else:
+        passo(f"{time['nome']}: convocação")
+        sq = api.get("players/squads", team=tid)
+        for p in (sq[0]["players"] if sq else []):
+            jogadores.append({"id": p["id"], "nome": p.get("name") or "", "primeiro": "", "sobrenome": "", "idade": p.get("age"),
+                              "nascimento": None, "numero": p.get("number"), "posicao_api": POS_API.get(p.get("position") or ""),
+                              "foto": p.get("photo"), "stats": {}})
+        if not jogadores:
+            avisos.append("A API não tem a convocação atual desta seleção: o elenco vem só do banco.")
     tecnico = None
     try:
+        if convocacao:
+            raise StopIteration                            # convocação antiga: o técnico fica o do banco
         cs = api.get("coachs", team=tid)
         atuais = [c for c in cs if any((x.get("team") or {}).get("id") == tid and not x.get("end") for x in c.get("career") or [])]
         c = (atuais or cs or [None])[0]
@@ -299,6 +316,8 @@ def coletar_selecao(api, time, temporada, escalacoes=0, progresso=None):
             tecnico = {"id": c["id"], "nome": c.get("name") or "", "primeiro": c.get("firstname") or "",
                        "sobrenome": c.get("lastname") or "", "nascimento": b.get("date"), "nacionalidade": c.get("nationality"),
                        "foto": c.get("photo")}
+    except StopIteration:
+        pass
     except Exception as ex:  # noqa: BLE001
         avisos.append(f"Técnico: {ex}")
     formacoes = collections.Counter()
@@ -323,7 +342,8 @@ def coletar_selecao(api, time, temporada, escalacoes=0, progresso=None):
                         cores["goleiro"][(cs["goalkeeper"].get("primary"), cs["goalkeeper"].get("number"))] += 1
         except Exception as ex:  # noqa: BLE001
             avisos.append(f"Escalações: {ex}")
-    return {"time": time, "selecao": True, "temporada": temporada, "modo": "atual", "tecnico": tecnico, "jogadores": jogadores,
+    return {"time": time, "selecao": True, "temporada": temporada, "modo": "temporada" if convocacao else "atual",
+            "convocacao": convocacao, "tecnico": tecnico, "jogadores": jogadores,
             "formacao": formacoes.most_common(1)[0][0] if formacoes else None, "formacoes": dict(formacoes),
             "cores": {k: [list(c) for c, _ in v.most_common(2)] for k, v in cores.items()}, "avisos": avisos}
 

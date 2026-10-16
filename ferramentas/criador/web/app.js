@@ -134,9 +134,10 @@ async function desenharApi() {
   const caixaPais = el('div', { class: 'nav-pais' }, el('div', { class: 'linha' }, el('span', { html: icone('mundo', 14) }), sel));
   p.append(caixaPais);
   if (nv.liga) return desenharLigaApi(p);
-  if (tm && nv.pais !== intl) {
-    caixaPais.append(el('div', { class: 'acoes-linha' }, el('button', { class: 'btn peq', title: 'A seleção principal do país, com a convocação atual', onclick: () => adicionarSelecaoTm(nv.pais) }, icone('mais', 12), `Seleção: ${nv.pais}`)));
-  }
+  const acoesPais = el('div', { class: 'acoes-linha' });
+  if (tm && nv.pais !== intl) acoesPais.append(el('button', { class: 'btn peq', title: 'A seleção principal do país, com a convocação atual', onclick: () => adicionarSelecaoTm(nv.pais) }, icone('mais', 12), `Seleção: ${nv.pais}`));
+  acoesPais.append(el('button', { class: 'btn-fantasma peq', title: `Procura um time pelo nome em toda a ${tm ? 'Transfermarkt' : 'API-Football'}, sem passar por país e competição`, onclick: () => buscarTimesFonte({ fonte: f, titulo: 'Buscar time', aoEscolher: adicionarTimeBuscado }) }, icone('busca', 12), 'Buscar time…'));
+  caixaPais.append(acoesPais);
   if (!nv.ligas) {
     const carregando = el('div', { class: 'arvore-vazia' }, 'Carregando as competições…');
     p.append(carregando);
@@ -190,6 +191,37 @@ async function desenharApi() {
   p.append(el('div', { class: 'busca-linha' }, el('label', { class: 'campo-busca' }, el('span', { html: icone('busca', 14) }), busca)), lista);
   if (nv.pais === intl) p.append(el('div', { class: 'painel-rodape' }, el('span', { class: 'mudo peq-txt' }, tm ? 'Seleções: abra a Copa do Mundo, a Eurocopa, a Copa América… e escolha as seleções — ou escolha um país e use “Seleção”.' : 'Seleções: abra uma competição de seleções (Copa do Mundo, Copa América, Eurocopa…) e escolha as seleções.')));
   desenhar();
+}
+
+// busca de times em toda a fonte (fora das listas de país e competição)
+function buscarTimesFonte({ fonte, titulo, valor = '', aoEscolher }) {
+  const tm = fonte === TM;
+  const busca = el('input', { type: 'search', class: 'entrada', placeholder: 'Nome do time e Enter…', value: valor, autofocus: true, style: { width: '100%' } });
+  const lista = el('div', { class: 'lista-busca' });
+  let m;
+  const buscar = async () => {
+    if (busca.value.trim().length < 3) return;
+    lista.innerHTML = '';
+    lista.append(el('div', { class: 'vazio' }, `Buscando na ${tm ? 'Transfermarkt' : 'API-Football'}…`));
+    const r = await tentar(() => api(`buscar_times?q=${encodeURIComponent(busca.value.trim())}${tm ? '&fonte=transfermarkt' : ''}`));
+    lista.innerHTML = '';
+    for (const t of r?.times || []) {
+      lista.append(el('button', { class: 'it-busca', onclick: async () => { m.fechar(true); await aoEscolher(t, r.temporada, fonte); } },
+        el('img', { src: im(t.logo), alt: '', style: { width: '20px', height: '20px', objectFit: 'contain' }, onerror: (e) => { e.target.style.visibility = 'hidden'; } }),
+        el('b', {}, t.nome), el('span', { class: 'mudo' }, [t.selecao ? 'seleção' : null, t.pais, t.valor ? euros(t.valor) : null, `ID ${t.id}`].filter(Boolean).join(' · '))));
+    }
+    if (!r?.times?.length) lista.append(el('div', { class: 'vazio' }, 'Nada encontrado com esse nome.'));
+  };
+  busca.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); buscar(); } };
+  m = modal({ titulo, corpo: el('div', { class: 'col-gap' }, busca, nota(tm ? 'Busca em toda a Transfermarkt (1 pedido).' : 'Busca em toda a API-Football (1 chamada; depois fica no cache).', 'info'), lista), botoes: [{ rotulo: 'Fechar', valor: null }] });
+  if (valor) buscar();
+}
+async function adicionarTimeBuscado(t, temporada, fonte) {
+  const liga = { id: null, nome: t.selecao ? `Seleção de ${t.pais || t.nome}` : 'Busca', fonte, pais: t.pais };
+  const x = await tentar(() => api('adicionar_times', { times: [t], liga, temporada }));
+  if (!x) return;
+  aplicar(x);
+  aviso(`${t.nome} no projeto`, { tipo: 'sucesso', detalhe: 'Avulso (sem liga): escolha o destino no painel da direita e colete os dados.' });
 }
 
 async function adicionarSelecaoTm(pais) {
@@ -487,7 +519,7 @@ async function desenharTime(i) {
     corpo.append(el('div', { class: 'cartao' }, el('header', {}, el('div', {}, el('h3', {}, 'Elenco com menos de 11'), el('p', { class: 'dica' }, r.menos11.msg))),
       el('div', { class: 'cartao-corpo col-gap' },
         el('div', { class: 'acoes-linha' },
-          el('button', { class: 'btn-primario peq', title: 'Entram jogadores do Sem Contrato com nota e nacionalidade parecidas com as do elenco (primeiro o que falta para escalar 11: goleiro, defesa, meio e ataque)', onclick: async () => { await setItem(i, { menos11: 'livres' }); desenharPrincipal(); } }, icone('mais', 12), 'Completar com jogadores sem contrato'),
+          el('button', { class: 'btn-primario peq', title: 'Entram jogadores do Sem Contrato com nota e nacionalidade parecidas com as do elenco até 18, com 2 goleiros (goleiros, defesa, meio e ataque nessa ordem)', onclick: async () => { await setItem(i, { menos11: 'livres' }); desenharPrincipal(); } }, icone('mais', 12), 'Completar até 18 com jogadores sem contrato'),
           el('button', { class: 'btn peq', title: 'As vagas que faltam ficam vazias na escalação', onclick: async () => { await setItem(i, { menos11: 'assim' }); desenharPrincipal(); } }, 'Criar assim mesmo')),
         nota('Criar com menos de 11 pode travar o jogo quando esse time entrar em campo; complete o elenco antes de jogar com ele.', 'alerta'))));
     return;
@@ -545,8 +577,11 @@ function desenharPrevia(i, t, corpo) {
       el('div', { class: 'cartao-corpo' }, el('span', { class: 'cores', title: 'casa · fora · goleiro' }, cor(t.cores.casa[0]), cor(t.cores.casa[1]), el('span', { style: { width: '8px' } }), cor(t.cores.fora[0]), cor(t.cores.fora[1]), el('span', { style: { width: '8px' } }), cor(t.cores.goleiro[0]))))));
   for (const a of t.avisos || []) corpo.append(nota(esc(a), 'alerta'));
   if (t.menos11) {
-    corpo.append(el('div', { class: 'barra-banco' }, el('span', {}, t.menos11 === 'livres' ? `O elenco da fonte tinha menos de 11: ${t.livres} jogador(es) sem contrato completam o time (selo SEM CONTRATO).` : 'O elenco da fonte tem menos de 11 e será criado assim mesmo.'),
-      el('div', { class: 'acoes-linha' }, el('button', { class: 'btn-fantasma peq', onclick: async () => { await setItem(i, { menos11: t.menos11 === 'livres' ? 'assim' : 'livres' }); desenharPrincipal(); } }, t.menos11 === 'livres' ? 'Criar sem completar' : 'Completar com sem contrato'))));
+    const txt = t.menos11 === 'livres' ? `O elenco da fonte não tinha jogadores suficientes: ${t.livres} jogador(es) sem contrato completam o time até ${t.jogadores.length}, com ${t.goleiros} goleiros (selo SEM CONTRATO).`
+      : t.menos11 === 'assim' ? 'O elenco da fonte tem menos de 11 e será criado assim mesmo.'
+        : `O elenco tem ${t.jogadores.length} jogador(es) e ${t.goleiros} goleiro(s) — o mínimo recomendado é 18, com 2 goleiros.`;
+    corpo.append(el('div', { class: 'barra-banco' }, el('span', {}, txt),
+      el('div', { class: 'acoes-linha' }, el('button', { class: 'btn-fantasma peq', onclick: async () => { await setItem(i, { menos11: t.menos11 === 'livres' ? 'assim' : 'livres' }); desenharPrincipal(); } }, t.menos11 === 'livres' ? 'Criar sem completar' : 'Completar até 18 com sem contrato'))));
   }
   if (t.selecao) return desenharPreviaSelecao(i, t, corpo);
   const aj = t.ajustes || {};
@@ -1060,7 +1095,15 @@ async function desenharConferencia(id) {
   p.append(el('div', { class: 'cartao' }, el('header', {}, el('div', {}, el('h3', {}, 'O que conferir'), el('p', { class: 'dica' }, a.conferido ? `Última conferência: ${a.conferido}` : 'Ainda não conferida.')), btn),
     el('div', { class: 'cartao-corpo grade-2' }, ...ints.map(([k, t, d]) => interruptor({ titulo: t, descricao: d, marcado: op[k], aoMudar: (v) => { op[k] = v; rotBtn(); } }).el)),
     camposDelta(op, tm)));
-  if (a.individual) p.append(nota(`Liga sem país: cada time do banco foi procurado sozinho na ${tm ? 'Transfermarkt' : 'API-Football'} (sem lista de participantes).${(a.nao_casados || []).length ? ` Não achei: ${a.nao_casados.map((x) => esc(x.nome)).join(', ')}.` : ''}`, 'info'));
+  if (a.individual) {
+    p.append(nota(`Liga sem país: cada time do banco foi procurado sozinho na ${tm ? 'Transfermarkt' : 'API-Football'} (sem lista de participantes).`, 'info'));
+    if ((a.nao_casados || []).length) {
+      p.append(el('div', { class: 'cartao' }, el('header', {}, el('div', {}, el('h3', {}, `Times do banco que não achei (${a.nao_casados.length})`), el('p', { class: 'dica' }, 'Procure cada um na fonte pelo nome que ela usa (ex.: "LDU Quito").'))),
+        el('div', { class: 'cartao-corpo' }, ...a.nao_casados.map((x) => el('div', { class: 'linha-faltante' }, el('span', {}, `${x.nome} · teamid ${x.teamid}`),
+          el('button', { class: 'btn peq', onclick: () => buscarTimesFonte({ fonte: tm ? TM : 'apifootball', titulo: `Na fonte, quem é ${x.nome}?`, valor: x.nome,
+            aoEscolher: async (t) => { const r = await tentar(() => api('atualizar_casar_individual', { id: a.id, teamid: x.teamid, api: t })); if (r) desenharConferencia(a.id); } }) }, icone('busca', 12), 'Procurar na fonte…'))))));
+    }
+  }
   // mudanças
   if (!a.mudancas.length) { if (a.conferido) p.append(nota(`Nenhuma mudança: o banco já está igual à ${tm ? 'Transfermarkt' : 'API'}.`, 'info')); return; }
   const tipos = { liga: 'Participantes', transferencia: 'Transferências', emprestimo: 'Empréstimos', fim_emprestimo: 'Fim de empréstimo', saida: 'Saídas', numero: 'Números', nota: 'Notas', novo: 'Novos', tatica: 'Tática', tecnico: 'Técnicos' };
@@ -1355,6 +1398,15 @@ function propsItem(i) {
   if (i.tipo === 'time' && !i.selecao) {
     out.push(campo('Elenco', seg(i.modo || 'temporada', [['temporada', `Temporada ${tempNome(i)}`, ehTm(i) ? 'O elenco do clube nessa temporada (valor de mercado da época)' : 'Quem jogou pelo time nessa temporada'],
       ['atual', 'Atual', ehTm(i) ? 'O elenco de hoje, com o valor de mercado de hoje' : 'O elenco de hoje, com estatísticas da última temporada liberada']], (v) => set({ modo: v }))));
+  }
+  if (i.tipo === 'time' && i.selecao) {                 // convocação de hoje ou de uma temporada passada
+    const ano = new Date().getFullYear();
+    const tm = ehTm(i);
+    const anos = Array.from({ length: ano - 1990 }, (_, k) => ano - 1 - k);
+    const s = el('select', { class: 'seletor', onchange: (e) => set({ convocacao: e.target.value || null }) }, opt('', 'Atual', i.convocacao || ''),
+      ...anos.map((y) => opt(y, tm ? `${y}/${String((y + 1) % 100).padStart(2, '0')}` : String(y), i.convocacao || '')));
+    out.push(campo('Convocação', s, tm ? 'Uma temporada passada traz a convocação daquele ano na Transfermarkt (ex.: 2013/14, a da Copa de 2014). O técnico fica o do banco.'
+      : `Uma temporada passada traz quem jogou pela seleção naquele ano (1 chamada por página de 20 jogadores; o plano grátis libera ${S.e.api.temporadas ? S.e.api.temporadas.join('–') : 'poucas temporadas'}). O técnico fica o do banco.`));
   }
   if (i.tipo === 'time') {
     out.push(campo('Escalações', el('input', { type: 'number', class: 'entrada', min: 0, max: 20, value: i.escalacoes ?? 5, style: { width: '80px' }, onchange: (e) => set({ escalacoes: e.target.value }) }),

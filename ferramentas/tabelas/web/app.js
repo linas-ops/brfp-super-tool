@@ -283,7 +283,7 @@ function telaInicial() {
   if (S.foco) return;
   p.innerHTML = '';
   p.append(el('div', { class: 'tela-vazia' }, el('div', { class: 'ic-grande', html: icone('tabela', 64) }), el('h2', {}, 'Converter tabelas entre jogos'),
-    el('p', {}, 'Marque à esquerda as tabelas de origem e escolha à direita o banco do jogo de destino. Clique numa tabela para ver de onde vem cada coluna final — colunas novas, renomeadas (marking → defensiveawareness), calculadas (pacdiv…phypos), escalas que mudaram (tom de pele ×10 no FC 27) e valores fora da faixa. Funciona entre FIFA 16, 21, 22, 23, FC 24, 26 e 27.'),
+    el('p', {}, 'Marque à esquerda as tabelas de origem e escolha à direita o banco do jogo de destino. Clique numa tabela para ver de onde vem cada coluna final — colunas novas, renomeadas (marking → defensiveawareness), calculadas (pacdiv…phypos), escalas que mudaram (tom de pele ×10 no FC 27) e valores fora da faixa. Funciona entre FIFA 16, 21, 22, 23, FC 24, 25, 26 e 27.'),
     el('div', { class: 'acoes' }, el('button', { class: 'btn', onclick: () => destino('arquivo') }, icone('tabela', 14), 'Escolher o destino…'),
       el('button', { class: 'btn', onclick: () => { $('#busca').focus(); } }, icone('busca', 14), 'Buscar tabela'))));
 }

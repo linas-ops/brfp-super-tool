@@ -62,7 +62,7 @@ def exige_motor():
         raise base.ErroUsuario(MOTOR["msg"])
 
 
-VERSAO = "2.3"
+VERSAO = "2.4"
 PREFS = base.Prefs(os.path.join(AQUI, "preferencias.json"), {
     "saida": "", "espalhamento": 1.25, "escalacoes": 5, "modo": "temporada", "perfis_faltantes": 10, "baixar_imagens": True,
     "classificacao": True, "jogador_inicio": 460000, "time_inicio": 150000, "liga_inicio": 3000, "visual": "proprio",
@@ -291,7 +291,7 @@ def resumo_item(it):
     d = {k: it.get(k) for k in ("id", "tipo", "nome", "temporada", "modo", "escalacoes", "nivel", "nivel_auto", "nivel_motivo",
                                 "destino", "divisao", "estado", "erro", "liga_item", "modelo", "nacao", "nivel_manual",
                                 "posicao_tabela", "nivel_offset", "feminino", "selecao", "teamid", "leagueid", "tatica",
-                                "tecnico", "estadio", "sel_opcoes", "temporada_nome", "nivel_valor", "menos11")}
+                                "tecnico", "estadio", "sel_opcoes", "temporada_nome", "nivel_valor", "menos11", "convocacao")}
     d["api"] = it.get("api")
     d["fonte"] = fonte_de(it)
     if it["tipo"] == "liga":
@@ -408,6 +408,30 @@ def api_ligas(q):
 
 def api_buscar_ligas(q):
     return {"ligas": _tmc(CT.buscar_ligas, TM, q["q"])}
+
+
+def api_buscar_times(q):
+    """Times (clubes ou seleções) pelo nome em toda a fonte: Transfermarkt (busca de clubes) ou API-Football
+    (teams?search, 1 chamada; depois cache). No formato da lista de times de uma liga."""
+    termo = re.sub(r"[/?#%]+", " ", (q.get("q") or "")).strip()
+    if len(termo) < 3:
+        raise base.ErroUsuario("Digite pelo menos 3 letras.")
+    if q.get("fonte") == "transfermarkt":
+        r = _tmc(TM.get, f"clubs/search/{termo}")
+        paises = {p["name"].lower() for p in _tmc(CT.paises, TM)}
+        out = [{"id": str(c["id"]), "nome": c.get("name"), "sigla": None, "pais": c.get("country"), "fundacao": None,
+                "logo": T.escudo(c["id"]), "selecao": (c.get("name") or "").lower() in paises, "fonte": "transfermarkt",
+                "valor": c.get("marketValue"), "estadio": {"id": None, "nome": None, "cidade": None, "capacidade": None}}
+               for c in r.get("results") or [] if c.get("id")]
+        return {"times": out, "temporada": None}
+    r = _api(API.get, "teams", search=re.sub(r"[^\w ]+", " ", termo)[:40].strip()) or []
+    out = []
+    for t in r:
+        tm, v = t.get("team") or {}, t.get("venue") or {}
+        out.append({"id": tm.get("id"), "nome": tm.get("name"), "sigla": tm.get("code"), "pais": tm.get("country"),
+                    "fundacao": tm.get("founded"), "logo": tm.get("logo"), "selecao": bool(tm.get("national")), "fonte": "apifootball",
+                    "estadio": {"id": v.get("id"), "nome": v.get("name"), "cidade": v.get("city"), "capacidade": v.get("capacity")}})
+    return {"times": out, "temporada": int((API.cfg.get("temporadas") or [None, datetime.date.today().year])[1])}
 
 
 def api_temporadas(q):
@@ -592,7 +616,7 @@ def api_selecionar(d):
 
 
 EDITAVEIS = {"nome", "nivel", "destino", "modo", "temporada", "escalacoes", "modelo", "divisao", "feminino", "teamid", "leagueid",
-             "tatica", "tecnico", "estadio", "sel_opcoes", "menos11"}
+             "tatica", "tecnico", "estadio", "sel_opcoes", "menos11", "convocacao"}
 
 
 def _id_livre(campo, valor, it):
@@ -657,7 +681,9 @@ def api_item(d):
                 v = atual
             if k == "feminino":
                 v = bool(v)
-            if k in ("modo", "temporada", "escalacoes") and it.get(k) != v:
+            if k == "convocacao":
+                v = str(v) if v not in (None, "") else None
+            if k in ("modo", "temporada", "escalacoes", "convocacao") and it.get(k) != v:
                 mudou_coleta = True
             it[k] = v
         filhos = [x for x in P["itens"] if x.get("liga_item") == it["id"]] if it["tipo"] == "liga" else []
@@ -856,7 +882,7 @@ def _coletar(ids, refazer):
                 if eh_tm(it):
                     prog = lambda m: TAREFA.update(msg=m)  # noqa: E731
                     if it.get("selecao"):
-                        dd = CT.coletar_selecao(TM, it["api"], progresso=prog)
+                        dd = CT.coletar_selecao(TM, it["api"], progresso=prog, temporada=it.get("convocacao"))
                     else:
                         dd = CT.coletar_time(TM, it["api"], it.get("temporada"), it.get("modo") or "temporada",
                                              {"estatisticas": op.get("tm_estatisticas"), "escalacoes": int(it.get("escalacoes") or 0),
@@ -874,7 +900,7 @@ def _coletar(ids, refazer):
                     continue
                 if it.get("selecao"):
                     dd = C.coletar_selecao(API, it["api"], C.ultima_temporada(API, it["temporada"]), int(it.get("escalacoes") or 0),
-                                           progresso=lambda m: TAREFA.update(msg=m))
+                                           progresso=lambda m: TAREFA.update(msg=m), convocacao=it.get("convocacao"))
                 else:
                     dd = C.coletar_time(API, it["api"], it["temporada"], it.get("modo") or "temporada", int(it.get("escalacoes") or 0),
                                         int(op.get("perfis_faltantes") or 0), liga.get("id"),
@@ -1569,6 +1595,23 @@ def api_atualizar_conferir(d):
     return estado_payload()
 
 
+def api_atualizar_casar_individual(d):
+    """Liga sem país: casa à mão um time do banco que a busca automática não achou com um time achado na fonte."""
+    U = _atualizar_mod()
+    with LOCK:
+        a = next((x for x in P["atualizacoes"] if x["id"] == d["id"]), None)
+        if not a:
+            raise base.ErroUsuario("Atualização não encontrada.")
+        t = d["api"]
+        U.casar_manual(a, t["id"], d["teamid"], banco(), dados.idioma_atual())
+        par = next((p for p in a["pares"] if str(p["api_id"]) == str(t["id"])), None)
+        if par:
+            par.update(api_nome=t.get("nome") or par["api_nome"], api_logo=t.get("logo"))
+        a["nao_casados"] = [x for x in a.get("nao_casados") or [] if x["teamid"] != str(d["teamid"])]
+    gravar_projeto()
+    return {"atualizacao": a}
+
+
 def api_atualizar_marcar(d):
     with LOCK:
         a = next((x for x in P["atualizacoes"] if x["id"] == d["id"]), None)
@@ -1696,7 +1739,8 @@ ROTAS_GET = {k: _protegido(v) for k, v in {
     "status_api": api_status_api, "previa": api_previa, "versao": lambda _: {"versao": VERSAO},
     "jogadores_db": api_jogadores_db, "atualizar_ligas": api_atualizar_ligas, "atualizacao": api_atualizacao,
     "atualizar_sugestao": api_atualizar_sugestao, "times_db": api_times_db, "buscar_ligas": api_buscar_ligas,
-    "temporadas": api_temporadas, "selecao_tm": api_selecao_tm, "atualizar_selecoes": api_atualizar_selecoes}.items()}
+    "temporadas": api_temporadas, "selecao_tm": api_selecao_tm, "atualizar_selecoes": api_atualizar_selecoes,
+    "buscar_times": api_buscar_times}.items()}
 ROTAS_POST = {k: _protegido(v) for k, v in {
     "chave": api_chave, "adicionar_liga": api_adicionar_liga, "adicionar_time": api_adicionar_time,
     "adicionar_times": api_adicionar_times, "remover": api_remover, "limpar": api_limpar, "selecionar": api_selecionar,
@@ -1707,7 +1751,7 @@ ROTAS_POST = {k: _protegido(v) for k, v in {
     "atualizar_remover": api_atualizar_remover, "atualizar_criar": api_atualizar_criar, "tm_config": api_tm_config,
     "tm_testar": api_tm_testar, "atualizar_preparar_varias": api_atualizar_preparar_varias,
     "atualizar_conferir_varias": api_atualizar_conferir_varias, "atualizar_casar_selecoes": api_atualizar_casar_selecoes,
-    "atualizar_selecoes_projeto": api_atualizar_selecoes_projeto}.items()}
+    "atualizar_selecoes_projeto": api_atualizar_selecoes_projeto, "atualizar_casar_individual": api_atualizar_casar_individual}.items()}
 _G, _P = base.rotas_componentes("criador", ao_concluir=carregar_motor)
 ROTAS_GET.update(_G)
 ROTAS_POST.update(_P)

@@ -33,7 +33,7 @@ REGRAS = {
 }
 
 
-SKINTYPE_LARGO = {"fifa21", "fifa22", "fifa23", "fc24"}     # skintypecode até ~151
+SKINTYPE_LARGO = {"fifa21", "fifa22", "fifa23", "fc24", "fc25"}     # skintypecode até ~151
 SKINTYPE_CURTO = {"fifa16", "fc26", "fc27"}                # 0..7
 RENOMES = {"defensiveawareness": "marking", "marking": "defensiveawareness"}
 RESUMO = ("pacdiv", "shohan", "paskic", "driref", "defspe", "phypos")

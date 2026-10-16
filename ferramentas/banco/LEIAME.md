@@ -1,6 +1,6 @@
 # Editor de Banco — versão 1.1
 
-Edita o banco do jogo importado em **Dados do jogo** (Super Tool) — qualquer versão: FIFA 16, 21, 22, 23, FC 24, 26 e 27.
+Edita o banco do jogo importado em **Dados do jogo** (Super Tool) — qualquer versão: FIFA 16, 21, 22, 23, FC 24, 25, 26 e 27.
 O banco original **nunca é alterado**: as mudanças ficam numa edição (salva sozinha, com desfazer) e **Gravar banco**
 escreve um banco novo numa pasta escolhida.
 

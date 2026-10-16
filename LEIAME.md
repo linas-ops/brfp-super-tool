@@ -46,7 +46,7 @@ O pacote leva o motor do Conversor PES → FC e o RDBM 26 · Add-on FC 27 (ficam
   Pillow e numpy (Criador de Minifaces). Versões
   fixas do PyPI, conferidas pelo SHA-256 (`comum\componentes.json`), instaladas em `runtime\python\Lib\site-packages`.
 - **Transfermarkt API (servidor local)** (novo na 2.4, opcional): a [transfermarkt-api](https://github.com/felipeall/transfermarkt-api)
-  4.2.0 (felipeall, licença MIT) + FastAPI, uvicorn, httpx, pydantic e mais 20 bibliotecas, ≈4 MB. O projeto fica em
+  5.0.0 (felipeall, licença MIT) + FastAPI, uvicorn, httpx, pydantic e mais 20 bibliotecas, ≈4 MB. O projeto fica em
   `runtime\apps\transfermarkt-api`; o Criador de Ligas e Times liga o servidor sozinho (porta 8790, só neste computador)
   quando usa a fonte Transfermarkt. Sem ele, o Criador usa a instância pública (lenta, só para testes). Vai no pacote
   completo só se estiver instalado.

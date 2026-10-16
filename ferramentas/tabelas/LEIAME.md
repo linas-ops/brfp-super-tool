@@ -1,6 +1,6 @@
 # Conversor de Tabelas — versão 1.1
 
-Converte tabelas do banco do jogo (fifa_ng_db) entre versões: **FIFA 16, 21, 22, 23, FC 24, 26 e 27**, em qualquer
+Converte tabelas do banco do jogo (fifa_ng_db) entre versões: **FIFA 16, 21, 22, 23, FC 24, 25, 26 e 27**, em qualquer
 direção.
 
 ## Usar

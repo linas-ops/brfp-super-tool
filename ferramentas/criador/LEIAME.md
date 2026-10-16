@@ -1,4 +1,4 @@
-# Criador de Ligas e Times — versão 2.3
+# Criador de Ligas e Times — versão 2.4
 
 Cria ligas, times, seleções e jogadores no banco do jogo (FC 26 / FC 27) a partir da **API-Football** (api-sports.io) —
 mais de 1.200 ligas e copas no mundo; só no Brasil, 109 competições — ou da **Transfermarkt** (pela transfermarkt-api) e
@@ -27,7 +27,7 @@ um mesmo projeto pode ter times de uma e de outra (os da Transfermarkt têm o se
 - **Automático** (padrão): usa o servidor local se estiver instalado; senão, a instância pública.
 - **Local**: a [transfermarkt-api](https://github.com/felipeall/transfermarkt-api) (felipeall, licença MIT) roda no próprio
   computador, no Python do Super Tool. Instale em **Instalar o servidor local…** (ou em *Super Tool › Componentes*,
-  grupo *Transfermarkt API*): ≈4 MB, a versão 4.2.0 do projeto + FastAPI, uvicorn, httpx, pydantic e mais 20 bibliotecas,
+  grupo *Transfermarkt API*): ≈4 MB, a versão 5.0.0 do projeto + FastAPI, uvicorn, httpx, pydantic e mais 20 bibliotecas,
   todas com versão fixa e conferidas pelo SHA-256. Ele liga sozinho quando o Criador precisa (porta 8790) e desliga junto.
 - **Pública**: `transfermarkt-api.fly.dev`, mantida pelo autor do projeto **só para testes** — lenta e às vezes recusa
   pedidos (o Criador espera e tenta de novo).
@@ -78,6 +78,10 @@ sempre; elencos atuais, 1 dia). A barra embaixo mostra as chamadas que restam ho
    no plano; na Transfermarkt, a atual — dá para escolher qualquer uma).
    - Marque os times que quiser: **Liga com N marcados** cria uma liga nova só com eles; **N avulsos** põe cada um como
      time avulso; sem marcar nada, **Liga inteira**.
+   - **Buscar time…** (embaixo do país): procura um clube ou seleção pelo nome em toda a fonte (Transfermarkt: 1 pedido;
+     API-Football: 1 chamada) e põe no projeto como avulso.
+   - A Copa do Mundo de Clubes (e a Intercontinental, as copas continentais de clubes) não são tratadas como competições de
+     seleções.
    - **Seleções**: país **Mundo** (*Internacional* na Transfermarkt) › uma competição de seleções (Copa do Mundo, Copa
      América, Eurocopa…) › marque as seleções. Na Transfermarkt também há o botão **Seleção: <país>** em cada país.
    - Na Transfermarkt, a lista de cada país vem de um catálogo com 1.496 competições (ligas primeiro, pelo valor de mercado;
@@ -120,10 +124,11 @@ sempre; elencos atuais, 1 dia). A barra embaixo mostra as chamadas que restam ho
    nascimento iguais) põe o jogador do banco no time novo em vez de criar outro igual: ele **é transferido** — sai do clube
    atual (e do Sem Contrato), que tem a escalação refeita — e mantém nota, atributos e aparência; só o número muda. Se um
    clube do banco ficar com menos de 11, ao Gerar ele é completado com jogadores sem contrato (veja abaixo).
-   **Elenco com menos de 11** (a fonte trouxe poucos jogadores): a prévia oferece **Completar com jogadores sem contrato**
-   (do time Sem Contrato — no feminino, das jogadoras sem clube —, com nota perto da média do elenco e a nação mais comum
-   dele; primeiro o que falta para escalar: goleiro, defesa, meio e ataque; selo SEM CONTRATO) ou **Criar assim mesmo**
-   (as vagas que faltam ficam vazias na escalação; o jogo pode travar quando esse time entrar em campo).
+   **Elenco sem jogadores suficientes** (menos de 18 ou de 2 goleiros): a prévia oferece **Completar até 18 com jogadores
+   sem contrato** (do time Sem Contrato — no feminino, das jogadoras sem clube —, com nota perto da média do elenco e a nação
+   mais comum dele; primeiro os 2 goleiros, depois defesa, meio e ataque; selo SEM CONTRATO). Com menos de 11 a prévia para
+   e pede a escolha (ou **Criar assim mesmo**: as vagas que faltam ficam vazias na escalação e o jogo pode travar); com 11 a
+   17 o time é criado como está, com o aviso e o botão de completar.
 5. **Analisar as fotos** (botão na prévia): baixa as fotos e lê de cada jogador (e do técnico) o tom de pele, a cor e o
    tamanho do cabelo e se tem barba. A aparência passa a vir de um jogador genérico do banco parecido com a foto, com a
    pele, a cor do cabelo, o penteado e a barba da foto. Fotos genéricas da API ("sem foto") são ignoradas.
@@ -141,6 +146,9 @@ sempre; elencos atuais, 1 dia). A barra embaixo mostra as chamadas que restam ho
   ter esse dado), senão para os Passes Livres (Sem Contrato).
   **Pôr jogador do banco…** inclui qualquer um; o **×** tira (os completados são trocados pelo próximo da posição). Número
   e capitão editáveis.
+- **Convocação antiga** (painel da direita, *Convocação*): uma temporada passada em vez da atual — na Transfermarkt, a
+  convocação daquele ano (ex.: 2013/14, a da Copa de 2014); na API-Football, quem jogou pela seleção naquele ano (com o
+  nascimento). O técnico fica o do banco. Colete de novo depois de trocar.
 - **Seleção que já existe** (pela nação na liga de seleções): o elenco, a escalação, os cobradores e o técnico (se a API
   tiver outro) são substituídos; o resto do time fica.
 - **Seleção nova**: copia uma seleção do banco da mesma confederação e nível parecido, entra na liga de seleções
@@ -160,10 +168,12 @@ Quando dois times do banco têm nome parecido com o da fonte ("Botafogo FC" na T
 (nascimentos na Transfermarkt, nomes na API-Football; 1 pedido a mais só nesses casos). Esses pares aparecem como
 "% · elenco".
 
-**Ligas sem país** (Resto do Mundo, ou uma Libertadores/Sul-Americana com clubes de vários países): não há uma liga
+**Ligas sem país** (Resto do Mundo, ou uma Libertadores/Sul-Americana com clubes de vários países — no banco, ligas de uma
+"nação" que não é país, como CONMEBOL ou International): não há uma liga
 correspondente na fonte, então **Casar os N times** procura cada time do banco sozinho (1 pedido/chamada por time) pelo nome,
 pela nação dele e pelas grafias em inglês ("Sparta Praga" → Sparta Prague); o que já foi casado antes vem do mapa. Depois a
-conferência é igual, sem a lista de participantes. No Resto do Mundo do BRFP 27, 68 de 74 times foram achados.
+conferência é igual, sem a lista de participantes. No Resto do Mundo do BRFP 27, 68 de 74 times foram achados; na
+Libertadores do BRFP 25, 18 de 19. Os que não forem achados aparecem com **Procurar na fonte…** para casar à mão.
 
 **Sem par**: no lápis de um par, *Sem par (não está no banco)* põe o time da fonte na lista dos sem par com o nome e o escudo
 (antes ficava só o id) e tira o par guardado no mapa.
@@ -204,8 +214,9 @@ mínimo de cada posição), a escalação, os cobradores e o técnico são troca
    - **Novos** (opcional): jogadores do elenco atual que não existem no banco, criados com nota estimada pelo nível.
 4. Cada mudança tem uma caixa; as duvidosas (nome de uma palavra só em outro clube) vêm desmarcadas. As marcadas entram
    ao **Gerar**, junto com o projeto. Times que perdem ou ganham jogadores têm a escalação padrão, os cobradores e o
-   capitão refeitos — ninguém que saiu fica escalado. Um time que **ficaria com menos de 11** aparece num aviso na
-   conferência e, ao Gerar, é completado com jogadores sem contrato (nota perto da média do time, mesma nação). Antes da
+   capitão refeitos — ninguém que saiu fica escalado. Um time que **ficaria com menos de 18 jogadores ou de 2 goleiros**
+   aparece num aviso na conferência e, ao Gerar, é completado com jogadores sem contrato (nota perto da média do time, mesma
+   nação). Antes da
    2.3, esse time ficava com a escalação antiga, apontando para quem saiu, e a conferência final barrava o banco com o erro
    "default_mentalities do time …: jogador … escalado fora do elenco".
 

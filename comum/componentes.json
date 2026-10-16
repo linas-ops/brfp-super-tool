@@ -361,7 +361,7 @@
    "projetos": [
     "transfermarkt_api"
    ],
-   "resumo": "transfermarkt-api 4.2.0 (felipeall, MIT) + FastAPI, uvicorn, httpx, pydantic e mais 20 bibliotecas",
+   "resumo": "transfermarkt-api 5.0.0 (felipeall, MIT) + FastAPI, uvicorn, httpx, pydantic e mais 20 bibliotecas",
    "usado_por": "Criador de Ligas e Times (fonte Transfermarkt sem o limite da instância pública)",
    "opcional": true
   }
@@ -369,14 +369,15 @@
  "projetos": {
   "transfermarkt_api": {
    "nome": "transfermarkt-api",
-   "versao": "4.2.0+brfp1",
-   "arquivo": "transfermarkt-api-4.2.0.zip",
-   "url": "https://codeload.github.com/felipeall/transfermarkt-api/zip/refs/tags/v4.2.0",
-   "sha256": "ebaebf9a640d9124a8520bcf5609301beffcce07775832e8fef9a1fcb40d76a7",
-   "tamanho": 884321,
+   "versao": "5.0.0+brfp1",
+   "arquivo": "transfermarkt-api-5.0.0.zip",
+   "url": "https://codeload.github.com/felipeall/transfermarkt-api/zip/refs/tags/v5.0.0",
+   "sha256": "40d3f3070c9e9c53f8ea527dd779613251948563fdd791659b39f49b2faab82b",
+   "tamanho": 921582,
    "pasta": "apps/transfermarkt-api",
    "incluir": [
     "app/",
+    "transfermarkt_api/",
     "pyproject.toml",
     "LICENSE",
     "README.md"
@@ -384,19 +385,19 @@
    "origem": "github.com/felipeall/transfermarkt-api (MIT)",
    "remendos": [
     {
-     "arquivo": "app/schemas/clubs/players.py",
+     "arquivo": "transfermarkt_api/schemas/clubs/players.py",
      "de": "Optional[HttpUrl]",
      "para": "Optional[str]",
      "motivo": "jogador sem foto (imageUrl vazio) derrubava o elenco inteiro com erro 500"
     },
     {
-     "arquivo": "app/schemas/coaches/__init__.py",
+     "arquivo": "transfermarkt_api/schemas/coaches/__init__.py",
      "de": "Optional[HttpUrl]",
      "para": "Optional[str]",
      "motivo": "idem"
     },
     {
-     "arquivo": "app/schemas/players/profile.py",
+     "arquivo": "transfermarkt_api/schemas/players/profile.py",
      "de": "Optional[HttpUrl]",
      "para": "Optional[str]",
      "motivo": "idem"
