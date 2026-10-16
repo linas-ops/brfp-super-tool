@@ -128,7 +128,7 @@ function analise(a) {
       el('li', { html: '<b>Base:</b> o squad da EA. Tudo que não está abaixo fica como a EA mandou (times, jogadores e escalações de fora do Brasil).' }),
       el('li', { html: '<b>Times brasileiros</b> (marcados abaixo): vêm inteiros do mod — dados do time, liga, uniformes, estádio, técnico, formação, tática, escalação, rivais e o elenco. Os jogadores que a EA tinha neles saem (genéricos e reais).' }),
       el('li', { html: '<b>Times, ligas, competições, árbitros e patrocinadores que só existem no mod</b> entram como estão no mod.' }),
-      el('li', { html: '<b>Jogadores duplicados:</b> o mesmo jogador nos dois squads (mesmo ID, ou nome + nascimento + nacionalidade) vira um só, com o ID da EA. Se ele está num time brasileiro no mod, ficam os dados do mod e ele sai do clube que tinha na EA; senão, ficam os dados da EA. Um ID que a EA passou a usar para outro jogador dá um ID novo ao do mod.' }),
+      el('li', { html: '<b>Jogadores duplicados:</b> o mesmo jogador nos dois squads (mesmo ID, ou nome + nascimento + nacionalidade) vira um só, com o ID da EA. Se ele está num time brasileiro no mod e na EA também (ou sem clube na EA), ficam os dados do mod; se na EA ele está num clube de fora, fica o jogador da EA e ele sai do time brasileiro do mod. Um ID que a EA passou a usar para outro jogador dá um ID novo ao do mod.' }),
       el('li', { html: '<b>Jogadores criados pelo mod</b> em times da EA entram; jogadores que a EA tirou depois que o mod foi feito não voltam.' }),
       el('li', { html: '<b>Escalações</b> dos times que perderam ou ganharam jogadores são refeitas (titulares pela posição, banco, capitão e cobradores).' })))));
   // times brasileiros
@@ -178,7 +178,7 @@ function relatorio(r) {
         el('thead', {}, el('tr', {}, ...['Jogador', 'ID no mod', 'Fica', 'Dados'].map((h) => el('th', {}, h)))),
         el('tbody', {}, ...r.duplicados.map((d) => el('tr', {}, el('td', {}, d.nome), el('td', { class: 'mono' }, d.mod),
           el('td', { class: 'mono' }, d.tipo === 'ea' ? `${d.ea} (EA)` : `${d.fica} (mod)`),
-          el('td', {}, d.tipo === 'ea' ? (d.dados === 'mod' ? 'do mod — sai do clube da EA' : 'da EA') : 'estava duas vezes no mod'))))))));
+          el('td', {}, d.tipo === 'ea' ? (d.dados === 'mod' ? 'do mod' : d.clube_ea ? `da EA — fica no ${d.clube_ea} e sai do time brasileiro do mod` : 'da EA') : 'estava duas vezes no mod'))))))));
   }
   if (r.ids_trocados.length) {
     out.push(el('div', { class: 'cartao' }, el('header', {}, el('div', {}, el('h3', {}, 'IDs trocados'), el('p', { class: 'dica' }, 'A EA passou a usar o ID para outro jogador: o do mod ganhou um ID livre.'))),
@@ -255,7 +255,7 @@ function menus() {
         competições, árbitros e patrocinadores que só existem no mod entram; jogadores repetidos (mesmo ID, ou nome, nascimento
         e nacionalidade) viram um só; escalações que mudaram são refeitas.<br><br>
         O squad gravado é conferido relendo o arquivo (cabeçalho, CRC e todas as tabelas). Os squads de entrada nunca são alterados.<br><br>
-        <b>1.0</b> — primeira versão (FC 27; o formato do squad é o mesmo do FC 26).` }) },
+        <b>1.1</b> — jogador em time brasileiro no mod e em clube de fora na EA: fica o da EA.<br><b>1.0</b> — primeira versão (FC 27; o formato do squad é o mesmo do FC 26).` }) },
     ]],
   ]);
 }

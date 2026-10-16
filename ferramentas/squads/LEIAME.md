@@ -1,4 +1,4 @@
-# Atualizador de Squads — versão 1.0
+# Atualizador de Squads — versão 1.1
 
 Quando a EA solta uma atualização de elencos, o squad do mod fica velho. O Atualizador pega o **squad oficial mais
 recente da EA** e coloca nele o que o **mod** acrescentou, sem jogadores duplicados. Os squads de entrada nunca são
@@ -36,8 +36,9 @@ jogo (tabela `playernames`): ela usa o banco do FC 27 importado em **Dados do jo
   - IDs diferentes: nascimento até 1 dia de diferença, mesma nacionalidade (ou mesmo nome comum) e nome parecido — o
     mesmo sobrenome com o primeiro nome parecido, ou o nome completo quase igual. Gêmeos (Anton e Aleksey Miranchuk)
     não passam.
-  - Se no mod ele está num time brasileiro, ficam os **dados do mod** e ele sai do clube que tinha na EA; senão ficam os
-    **dados da EA** (e o vínculo com o clube novo do mod só é usado se ele não tiver clube na EA).
+  - Se no mod ele está num time brasileiro e na EA também (ou na EA está sem clube), ficam os **dados do mod**. Se na
+    EA ele está num clube de fora do Brasil, fica o **jogador da EA** (dados e clube) e ele sai do time brasileiro do mod.
+  - Nos outros casos ficam os **dados da EA** (e o vínculo com o clube novo do mod só é usado se ele não tiver clube na EA).
   - O mesmo jogador duas vezes no mod também vira um só (fica o primeiro, no clube dele).
 - **ID reusado**: se a EA passou a usar o ID de um jogador do mod para outro jogador, o do mod ganha um ID livre (os nomes,
   vínculos, escalações e empréstimos dele acompanham).
@@ -62,4 +63,5 @@ arquivo com a mesma biblioteca do RDBM e faz um teste de gravação.
 
 ## Versões
 
+- **1.1** — jogador em time brasileiro no mod e em clube de fora na EA: fica o da EA (antes ficava o do mod).
 - **1.0** — primeira versão (FC 27; o formato do squad é o mesmo do FC 26).

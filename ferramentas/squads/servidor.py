@@ -23,7 +23,7 @@ import dados  # noqa: E402
 import mesclar  # noqa: E402
 import squad  # noqa: E402
 
-VERSAO = "1.0"
+VERSAO = "1.1"
 PREFS = base.Prefs(os.path.join(AQUI, "preferencias.json"), {"ea": None, "mod": None, "base": None, "nomes": None, "ultimo": None})
 SAIDA = os.path.join(AQUI, "saida")
 PASTA_FC27 = os.path.expandvars(r"%LOCALAPPDATA%\EA SPORTS FC 27\settings")
@@ -331,7 +331,7 @@ def escrever_relatorio(rel, p, obj):
         for d in rel["duplicados"]:
             if d["tipo"] == "ea":
                 L.append(f"  {d['nome']}: mod {d['mod']} = EA {d['ea']} ({d['nome_ea']}) — ficou o ID da EA com os dados "
-                         + ("do mod (time brasileiro no mod)" if d["dados"] == "mod" else "da EA"))
+                         + ("do mod (time brasileiro no mod)" if d["dados"] == "mod" else f"da EA (fica no {d['clube_ea']}, sai do time brasileiro do mod)" if d.get("clube_ea") else "da EA"))
             else:
                 L.append(f"  {d['nome']}: duas vezes no mod ({d['mod']} e {d['fica']}) — ficou o {d['fica']}")
         L.append("")

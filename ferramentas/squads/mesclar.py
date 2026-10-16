@@ -260,6 +260,7 @@ class Atualizador:
         self.relato_dups = []
         self.relato_ids = []
         ja_casado = {}
+        prio_mod = set()
         imp_por_nasc = collections.defaultdict(list)
         for prio, pid in candidatos:
             m = self.pes_mod[pid]
@@ -284,9 +285,19 @@ class Atualizador:
                     continue
                 ja_casado[e] = pid
                 self.casado[pid] = e
+                # dados do mod só se na EA ele também está em time brasileiro (ou sem clube); com clube de fora na
+                # EA, fica o jogador da EA e ele sai do time brasileiro do mod
+                fora = [l[ct] for l in self.vinc_ea.get(e, []) if l[ct] not in self.selecoes and l[ct] not in self.times_livres
+                        and l[ct] not in B]
+                if prio == 0 and not fora:
+                    prio_mod.add(e)
                 if e != pid:
                     self.relato_dups.append({"tipo": "ea", "nome": m.nome, "mod": pid, "ea": e, "nome_ea": self.pes_ea[e].nome,
-                                             "dados": "mod" if prio == 0 else "ea"})
+                                             "dados": "mod" if e in prio_mod else "ea",
+                                             "clube_ea": self.nome_time(fora[0]) if prio == 0 and fora else None})
+                elif prio == 0 and fora:
+                    self.relato_dups.append({"tipo": "ea", "nome": m.nome, "mod": pid, "ea": e, "nome_ea": self.pes_ea[e].nome,
+                                             "dados": "ea", "clube_ea": self.nome_time(fora[0])})
                 continue
             if pid in self.pes_ea:
                 self.relato_ids.append({"mod": pid, "nome": m.nome, "nome_ea": self.pes_ea[pid].nome})
@@ -305,7 +316,7 @@ class Atualizador:
                 continue
             self.importar.append(pid)
             imp_por_nasc[m.nasc].append(pid)
-        self.prio_mod = {self.casado[pid] for prio, pid in candidatos if prio == 0 and pid in self.casado}
+        self.prio_mod = prio_mod
 
     # ------------------------------------------------------------------ execução
     def executar(self, brasileiros=None):
