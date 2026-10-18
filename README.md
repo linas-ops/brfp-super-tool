@@ -1,6 +1,6 @@
 # BRFP Super Tool
 
-Ferramentas de modding do BRFP (EA SPORTS FC 26 / FC 27) numa janela só: estádios, placares, compdata, faces, corpos (tatuagens), minifaces, banco, tabelas, Criador de Ligas e Times, Atualizador de Squads e o conversor de estádios do PES.
+Ferramentas de modding do BRFP (EA SPORTS FC 26 / FC 27) numa janela só: estádios, placares, compdata, faces, corpos (tatuagens), kits (uniformes), minifaces, banco, tabelas, Criador de Ligas e Times, Atualizador de Squads e o conversor de estádios do PES.
 
 ## Baixar
 
@@ -12,6 +12,6 @@ Ferramentas de modding do BRFP (EA SPORTS FC 26 / FC 27) numa janela só: estád
 
 Quando sai uma versão nova, o Início do Super Tool mostra **Versão X disponível**. Clique em **Atualizar** e reabra o Super Tool. Banco e idioma importados, preferências, saídas e o Python ficam como estão.
 
-Os modelos de referência tirados do jogo (Conversor de Faces e de Corpos) e a foto de exemplo do Criador de Minifaces não vão neste repositório: peça a quem te passou a ferramenta.
+Os modelos de referência tirados do jogo (Conversor de Faces e de Corpos, malhas do Criador de Kits) e a foto de exemplo do Criador de Minifaces não vão neste repositório: peça a quem te passou a ferramenta.
 
 Guia completo: [LEIAME.md](LEIAME.md).

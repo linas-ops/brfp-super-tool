@@ -330,6 +330,15 @@
     "numpy"
    ]
   },
+  "kits": {
+   "nome": "Criador de Kits",
+   "pacotes": [
+    "numpy",
+    "scipy",
+    "opencv",
+    "pillow"
+   ]
+  },
   "transfermarkt": {
    "nome": "Transfermarkt API (servidor local)",
    "pacotes": [

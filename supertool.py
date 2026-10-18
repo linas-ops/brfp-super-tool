@@ -57,6 +57,10 @@ FERRAMENTAS = [
      "pasta": os.path.join(AQUI, "ferramentas", "corpos"), "guia": "LEIAME.md",
      "descricao": "Converte a textura do corpo (pele e tatuagens do bodyupper) entre FC 26 e FC 27: identifica o layout de "
                   "cada imagem, refaz a UV do outro jogo e mostra a entrada e o resultado no corpo em 3D."},
+    {"id": "kits", "nome": "Criador de Kits", "icone": "camisa", "tipo": "web", "porta": 8779,
+     "pasta": os.path.join(AQUI, "ferramentas", "kits"), "guia": "LEIAME.md",
+     "descricao": "Monta um uniforme do FC 27 a partir de um kit doador do FET: troca as cores, desenha listras e faixas e "
+                  "coloca patrocinadores, escudo e marca. Uma foto da camisa preenche tudo sozinha; sai a pasta do kit com o hotspot."},
     {"id": "minifaces", "nome": "Criador de Minifaces", "icone": "miniface", "tipo": "web", "porta": 8773,
      "pasta": os.path.join(AQUI, "ferramentas", "minifaces"), "guia": "LEIAME.md",
      "descricao": "Transforma fotos de jogadores em minifaces do jogo: tira o fundo, enquadra o rosto como as originais "
@@ -589,7 +593,7 @@ def main():
     ap = argparse.ArgumentParser(description=NOME)
     ap.add_argument("--porta", type=int, default=8760)
     ap.add_argument("--sem-janela", action="store_true", help="não abre a janela automaticamente")
-    ap.add_argument("--abrir", help="id da ferramenta para abrir direto (estadios, placares, compdata, faces, corpos, conversor_pes)")
+    ap.add_argument("--abrir", help="id da ferramenta para abrir direto (estadios, placares, compdata, faces, corpos, kits, conversor_pes)")
     a = ap.parse_args()
     url_extra = f"#{a.abrir}" if a.abrir else ""
     if not a.sem_janela and ja_aberto(a.porta):

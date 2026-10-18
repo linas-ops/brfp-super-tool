@@ -42,8 +42,8 @@ O pacote leva o motor do Conversor PES → FC e o RDBM 26 · Add-on FC 27 (ficam
 ## Componentes (novo na 2.1)
 
 - **Python embutido**: versão, pasta e se está em uso (o .bat sempre usa ele quando existe).
-- **Pacotes das ferramentas**: numpy e SciPy (Conversor de Faces), numpy, SciPy e Pillow (Conversor de Corpos), OpenCV,
-  Pillow e numpy (Criador de Minifaces). Versões
+- **Pacotes das ferramentas**: numpy e SciPy (Conversor de Faces), numpy, SciPy e Pillow (Conversor de Corpos), numpy,
+  SciPy, OpenCV e Pillow (Criador de Kits), OpenCV, Pillow e numpy (Criador de Minifaces). Versões
   fixas do PyPI, conferidas pelo SHA-256 (`comum\componentes.json`), instaladas em `runtime\python\Lib\site-packages`.
 - **Transfermarkt API (servidor local)** (novo na 2.4, opcional): a [transfermarkt-api](https://github.com/felipeall/transfermarkt-api)
   5.0.0 (felipeall, licença MIT) + FastAPI, uvicorn, httpx, pydantic e mais 20 bibliotecas, ≈4 MB. O projeto fica em
@@ -91,6 +91,7 @@ sob demanda e guardadas em cache em `dados\cache`; o registro fica em `dados\fon
 | Editor de Compdata | 2.1 | Competições → estágios → grupos com renumeração automática; nomes vindos do banco e do idioma importados. |
 | Conversor de Faces | 1.2 | Cabeças (FBX do FET) FC 26 ↔ FC 27: identifica o jogo, pasta de saída, prévia 3D; roda no Python embutido e baixa numpy/SciPy se faltarem. |
 | Conversor de Corpos | 1.0 | Textura do corpo (bodyupper: pele, tatuagens, normal) FC 26 ↔ FC 27: identifica o layout de cada imagem, refaz a UV do outro jogo com cada tatuagem no mesmo lugar do corpo, prévia no corpo em 3D e plana. |
+| Criador de Kits | 1.0 | Uniforme do FC 27 a partir de um kit doador do FET: recolore camisa, calção e meião, desenha o padrão do tronco, coloca patrocinadores, escudo e marca (com o hotspot); uma foto da camisa preenche cores, listras e logos; prévia 3D com as malhas do FET. |
 | Criador de Minifaces | 1.2 | Foto → miniface do jogo (p&lt;ID&gt;.png 180×180): tira o fundo, enquadra o rosto e liga ao jogador pelo time; recebe as fotos do Criador de Ligas e Times já ligadas aos IDs. |
 | Editor de Banco | 1.0 | Times (elenco, escalação, formação, capitão, cobradores, tática, cores, técnico), jogadores, ligas, árbitros, técnicos e qualquer tabela; transferências, empréstimos, liberar; verificação de erros com correção; grava um banco novo. |
 | Criador de Ligas e Times | 2.2 | Ligas, times, seleções e jogadores da API-Football ou da Transfermarkt (notas calibradas no banco — pelo valor de mercado na Transfermarkt —, feminino, aparência pelas fotos, tática, técnico, estádio) e atualização do banco: elencos, empréstimos, saídas e participantes das ligas. |
@@ -125,6 +126,7 @@ stadium conversor\
       compdata\             Editor de Compdata (README.md)
       faces\                Conversor de Faces (LEIAME.md; motor\ = conversor em numpy e as faces de referência)
       corpos\               Conversor de Corpos (LEIAME.md; motor\ = conversor e os corpos de referência; cache\mapas)
+      kits\                 Criador de Kits (LEIAME.md; motor\ = recolorir, foto e molde; motoreferencia = malhas do 3D)
       minifaces\            Criador de Minifaces (LEIAME.md; motor\ = OpenCV)
       tabelas\              Conversor de Tabelas (LEIAME.md)
       banco\                Editor de Banco (LEIAME.md; a edição em andamento fica em banco\cache)
