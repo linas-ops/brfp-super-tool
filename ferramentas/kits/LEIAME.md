@@ -47,7 +47,7 @@ A aba **3D** mostra a peça no corpo com a textura do editor. Ela precisa das ma
 FC 27 (FBX), que não vêm no Super Tool:
 
 - `content/character/body/body_simhigh_0/jersey_0_round_short_noband_untucked_regular_male/jersey_0_0_0_0_1_0_0_mesh`
-- `content/character/body/body_simhigh_0/shorts_adidas2021_male/shorts_0_6_0_mesh`
+- `content/character/body/body_simhigh_0/shorts_regular_male/shorts_0_0_0_mesh`
 - `content/character/body/body_simhigh_0/socks_regular_medium_male/sock_0_0_1_0_0_mesh`
 
 Exporte as três e use `Arquivo › Importar malhas para o 3D…` (vão para `motor/referencia`). As golas são malhas diferentes

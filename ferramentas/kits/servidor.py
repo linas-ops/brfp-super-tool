@@ -47,7 +47,7 @@ MALHAS = {}
 ARQ_PROJETO = os.path.join(CACHE, "projeto.json")
 ARQ_ANALISE = os.path.join(CACHE, "analise.json")
 # malhas dos uniformes (LOD0) exportadas pelo FET do FC 27: só para a prévia 3D (não vêm no pacote leve)
-MALHA_ARQ = {"jersey": "jersey_0_0_0_0_1_0_0_mesh.fbx", "shorts": "shorts_0_6_0_mesh.fbx", "socks": "sock_0_0_1_0_0_mesh.fbx"}
+MALHA_ARQ = {"jersey": "jersey_0_0_0_0_1_0_0_mesh.fbx", "shorts": "shorts_0_0_0_mesh.fbx", "socks": "sock_0_0_1_0_0_mesh.fbx"}
 REF = referencias.Referencias("Criador de Kits", {n: os.path.join(MOTOR, "referencia", n) for n in MALHA_ARQ.values()},
                               "mostrar o kit em 3D")
 

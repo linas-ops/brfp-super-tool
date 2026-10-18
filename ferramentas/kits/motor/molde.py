@@ -20,7 +20,7 @@ AQUI = os.path.dirname(os.path.abspath(__file__))
 REF_DIR = os.path.join(AQUI, "referencia")
 CACHE_MALHAS = os.path.join(os.path.dirname(AQUI), "cache", "malhas")
 # malhas LOD0 exportadas pelo FET (opcionais): com elas as partes vêm das ilhas da UV e o padrão segue o corpo em 3D
-MALHAS = {"jersey": "jersey_0_0_0_0_1_0_0_mesh.fbx", "shorts": "shorts_0_6_0_mesh.fbx", "socks": "sock_0_0_1_0_0_mesh.fbx"}
+MALHAS = {"jersey": "jersey_0_0_0_0_1_0_0_mesh.fbx", "shorts": "shorts_0_0_0_mesh.fbx", "socks": "sock_0_0_1_0_0_mesh.fbx"}
 LARGURA_TRONCO = 0.36       # metros, de um lado a outro do tronco da camisa de referência (x = -0,5 … 0,5)
 
 TAMANHOS = {"jersey": (2048, 2048), "shorts": (1024, 512), "socks": (512, 256)}
