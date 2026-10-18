@@ -110,6 +110,8 @@ def projeto_inicial(doador, base="#ffffff", padrao="#0a6d4a", manga=None, gola=N
             cores.update(manga=manga or base, gola=gola or padrao, punho=None)
         if peca == "shorts":
             cores.update(cos=None)
+        if peca == "socks":
+            cores.update(cano=None)
         p["pecas"][peca] = {"camadas": cam, "cores": cores, "detalhe": 1.0, "logos": [],
                             "padrao": {"tipo": "lisa", "periodo": 0.2, "largura": 0.5, "fase": 0.0, "angulo": 35.0}}
     hs = d["hotspot"]
@@ -183,6 +185,8 @@ def _campos_regiao(peca, cfg, mas, x, d, frente, px):
         aplicar("gola", cores.get("gola"))
     elif peca == "shorts":
         aplicar("cos", cores.get("cos"))
+    elif peca == "socks":
+        aplicar("cano", cores.get("cano"))
     return campo
 
 

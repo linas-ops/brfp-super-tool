@@ -47,12 +47,17 @@ A aba **3D** mostra a peça no corpo com a textura do editor. Ela precisa das ma
 FC 27 (FBX), que não vêm no Super Tool:
 
 - `content/character/body/body_simhigh_0/jersey_0_round_short_noband_untucked_regular_male/jersey_0_0_0_0_1_0_0_mesh`
-- `content/character/body/body_simhigh_0/shorts_regular_male/shorts_0_0_0_mesh`
+- `content/character/body/body_simhigh_0/shorts_adidas2021_male/shorts_0_6_0_mesh`
 - `content/character/body/body_simhigh_0/socks_regular_medium_male/sock_0_0_1_0_0_mesh`
 
 Exporte as três e use `Arquivo › Importar malhas para o 3D…` (vão para `motor/referencia`). As golas são malhas diferentes
 (27 no FC 27, escolhidas por `jerseycollargeometrytype` no `teamkits`: round = 0, vneck = 7, polo = 11…), todas com o mesmo
 molde de textura.
+
+Com as malhas, a ferramenta também fica mais precisa fora do 3D: as mangas e os punhos da camisa e o cano do meião saem das
+ilhas da UV da malha (em vez do traçado), as listras ficam com a mesma largura no tecido na frente e nas costas e os aros
+ficam na mesma altura do corpo, e os logos da foto são levados à textura pelo corpo em 3D (a frente do molde não é esticada
+por igual). Sem as malhas vale o molde traçado.
 
 ## Como funciona
 
@@ -69,7 +74,8 @@ molde de textura.
 
 ## Limitações
 
-- O molde foi traçado das texturas, sem a malha: as divisas entre tronco e mangas podem errar alguns pixels perto da axila.
+- Sem as malhas, o molde é o traçado das texturas: as divisas entre tronco e mangas podem errar alguns pixels perto da axila.
+- As mangas longas (faixas laterais) continuam pelo traçado: a malha exportada é a de manga curta.
 - Padrões que não são listras/faixas/metades (desenhos, degradês complexos) não são recriados da foto: escolha o mais
   parecido ou use um doador com desenho parecido (o desenho tom sobre tom dele é mantido).
 - Logos pequenos na foto saem borrados; troque pelo arquivo original quando tiver. A foto só mostra a frente: costas,

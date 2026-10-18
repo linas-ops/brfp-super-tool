@@ -190,7 +190,7 @@ function modalMalhas() {
   const corpo = el('div', { class: 'mudo', style: { lineHeight: '1.6' }, html: `
     A prévia 3D precisa das malhas dos uniformes exportadas pelo FET do FC 27 (FBX), que não vêm no Super Tool:<br>
     <span class="mono" style="font-size:11.5px">content/character/body/body_simhigh_0/jersey_0_round_short_noband_untucked_regular_male/jersey_0_0_0_0_1_0_0_mesh<br>
-    content/character/body/body_simhigh_0/shorts_regular_male/shorts_0_0_0_mesh<br>
+    content/character/body/body_simhigh_0/shorts_adidas2021_male/shorts_0_6_0_mesh<br>
     content/character/body/body_simhigh_0/socks_regular_medium_male/sock_0_0_1_0_0_mesh</span><br><br>
     Exporte as três e use <b>Importar referências</b> apontando a pasta onde elas ficaram. O resto da ferramenta funciona sem elas.` });
   modal({ titulo: 'Malhas para a prévia 3D', corpo, largo: true, botoes: [
@@ -435,6 +435,7 @@ function secaoCores(c) {
     aoLigar: (on) => { antes(); cores[k] = on ? (cores.padrao || cores.base) : null; depois(); } });
   if (S.peca === 'jersey') { grade.append(opc('manga', 'Mangas'), opc('gola', 'Gola'), opc('punho', 'Punhos')); }
   if (S.peca === 'shorts') grade.append(opc('cos', 'Cós'));
+  if (S.peca === 'socks' && S.malhas.socks) grade.append(opc('cano', 'Cano (faixa de cima)'));
   return secao(`Cores · ${NOME_PECA[S.peca]}`, 'pincel', [grade,
     deslizante('Detalhe do tecido', c.detalhe ?? 1, 0, 1.5, 0.05, (v) => { c.detalhe = v; }),
     el('div', { class: 'ajuda' }, S.peca === 'jersey' ? 'Mangas, gola e punhos desligados ficam com a cor base. O detalhe mantém dobras, costuras e a trama do doador.' : 'O detalhe mantém dobras, costuras e a trama do doador.')], 'cores');

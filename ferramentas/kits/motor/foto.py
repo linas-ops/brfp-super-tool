@@ -392,9 +392,7 @@ def _logos(rgb, lab, mask, cx, padrao, cor_base, cor_pad, pasta):
         Image.fromarray(rgb[by0:by1, bx0:bx1].astype(np.uint8)).save(os.path.join(pasta, f"logo_{k + 1}_foto.png"))
         Image.fromarray((cheio * 255).astype(np.uint8)).save(os.path.join(pasta, f"logo_{k + 1}_bloco.png"))
         Image.fromarray((nd.binary_dilation(reg_c, iterations=1) * 255).astype(np.uint8)).save(os.path.join(pasta, f"logo_{k + 1}_cor.png"))
-        u, v = M.foto_para_uv_frente(fx, fy)
-        lu = fw * (M.FRENTE["u1"] - M.FRENTE["u0"])
-        lv = fh * (M.FRENTE["v1"] - M.FRENTE["v0"])
+        u, v, lu, lv = M.foto_para_uv(fx, fy, fw, fh)
         saida.append({"id": f"foto{k + 1}", "nome": f"Logo {k + 1}", "arquivo": caminho, "papel": "patrocinador", "modo": modo,
                       "u": round(u, 5), "v": round(v, 5), "largura": round(lu, 5), "altura": round(lv, 5),
                       "foto": [int(bx0), int(by0), int(bx1), int(by1)], "solidez": round(solidez, 3),
