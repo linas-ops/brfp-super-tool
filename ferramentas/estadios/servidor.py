@@ -24,14 +24,14 @@ sys.path.insert(0, AQUI)
 
 import hashlib  # noqa: E402
 
-from nucleo import edicao, jogo, renomear, torcida  # noqa: E402
+from nucleo import edicao, jogo, meshzero, renomear, torcida  # noqa: E402
 from nucleo import xmlfet as X  # noqa: E402
 from nucleo.cena import Cena, catalogo_texturas  # noqa: E402
 from nucleo.indice import Indice, detectar_exports  # noqa: E402
 
 WEB = os.path.join(AQUI, "web")
 PREFS = os.path.join(AQUI, "preferencias.json")
-VERSAO = "3.0"
+VERSAO = "3.1"
 AUTOSALVO = os.path.join(AQUI, "cache", "autosalvo")
 
 
@@ -233,6 +233,46 @@ def api_substituir(d):
     return {"id": f"0:{rel}", "caminho": caminho}
 
 
+def api_mvdb_entrada(d):
+    """Cria no MVDB do sub-mundo a entrada de uma malha que não tem (asset novo), copiando shader/texturas de
+    variações existentes; devolve a entrada lida de novo, no formato da cena."""
+    ix = exige_indice()
+    if not ESTADO.cena:
+        raise ValueError("Nenhum estádio aberto.")
+    chave = d["malha"]
+    info = ESTADO.cena.malhas.get(chave)
+    mvdb = ESTADO.cena.mvdbs.get(d["mvdb"])
+    if not info or not mvdb or not mvdb.get("arq"):
+        raise ValueError("MeshVariationDb deste sub-mundo não está no export.")
+    with ESTADO.lock:
+        edicao.criar_entrada_mvdb(ix, mvdb["arq"], info["asset"], d.get("origens") or [])
+        nova = Cena(ix)
+        nova.ler_mvdb(d["mvdb"], {chave})
+    mats = nova.mvdbs[d["mvdb"]]["entradas"].get(chave)
+    if not mats:
+        raise ValueError("A entrada foi gravada, mas não consegui lê-la de volta.")
+    mvdb["entradas"][chave] = mats
+    ESTADO.cena.texturas.update({k: v for k, v in nova.texturas.items() if k not in ESTADO.cena.texturas})
+    return {"materiais": mats, "texturas": nova.texturas, "arq": mvdb["arq"]}
+
+
+def api_mesh_zero(d):
+    """Troca o FBX de cada malha por um "mesh zero" (um triângulo minúsculo por seção), guardando o original."""
+    ix = exige_indice()
+    feitos, erros = [], []
+    for ident in d.get("ids", []):
+        if not ident.lower().endswith(".fbx"):
+            erros.append(f"{ident}: não é um FBX")
+            continue
+        try:
+            caminho = edicao.garantir_backup(ix, ident)
+            antes, depois = meshzero.zerar(X.longo(caminho))
+            feitos.append({"id": ident, "antes": antes, "depois": depois})
+        except (OSError, ValueError, RuntimeError) as ex:
+            erros.append(f"{ident.split(':', 1)[-1]}: {ex}")
+    return {"feitos": feitos, "erros": erros}
+
+
 # ------------------------------------------------------------------ jogo (texturas direto do FC 26)
 
 def jogo_atual(iniciar=True):
@@ -387,7 +427,7 @@ def api_renomear_exportar(d):
 ROTAS = {"versao": api_versao, "inicio": api_inicio, "navegar": api_navegar, "dialogo_pasta": api_dialogo_pasta, "abrir": api_abrir,
          "cena": api_cena, "texturas": api_texturas, "torcida": api_torcida, "torcida_remover": api_torcida_remover,
          "salvar": api_salvar, "alteracoes": api_alteracoes, "restaurar": api_restaurar, "exportar": api_exportar,
-         "explorer": api_explorer, "substituir": api_substituir, "jogo": api_jogo, "jogo_config": api_jogo_config,
+         "explorer": api_explorer, "substituir": api_substituir, "mesh_zero": api_mesh_zero, "mvdb_entrada": api_mvdb_entrada,"jogo": api_jogo, "jogo_config": api_jogo_config,
          "jogo_texturas": api_jogo_texturas, "jogo_guids": api_jogo_guids, "jogo_detalhes": api_jogo_detalhes,
          "dialogo_arquivo": api_dialogo_arquivo, "projeto_salvar": api_projeto_salvar, "projeto_ler": api_projeto_ler,
          "autosalvar": api_autosalvar, "autosalvo": api_autosalvo, "renomear_previa": api_renomear_previa,

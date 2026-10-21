@@ -54,6 +54,7 @@ class App {
     this.materiais.definirTexturasLigadas(PREF('texturas', true));
     v.mostrarOcultosJogo = PREF('ocultosJogo', true);
     v.mostrarFaltando = PREF('faltando', true);
+    v.mostrarInvisiveis = PREF('invisiveis', true);
     v.mostrarGrade = PREF('grade', true);
     v.mostrarLuzes = PREF('luzes', false);
     v.mostrarPessoas = PREF('pessoas', false);
@@ -878,6 +879,43 @@ class App {
     aviso('Material copiado', { tipo: 'sucesso', detalhe: 'Agora dá para trocar a textura dele. Salve (Ctrl+S) para gravar no MVDB.' });
   }
 
+  // malha sem entrada no MVDB do próprio sub-mundo (asset novo): cria a entrada, com o shader e as texturas
+  // da mesma malha em outro MVDB do export (se houver) ou de um material escolhido
+  async criarEntradaMvdb(n, chave) {
+    const md = this.modelo;
+    const ent = md.mvdbs[n.mvdb];
+    if (!ent?.arq) { aviso('O MeshVariationDb deste sub-mundo não está no export', { tipo: 'erro' }); return; }
+    const info = md.malhas[chave] || {};
+    const { lista, mvdb } = md.materiaisDe(n, chave);
+    let origens;
+    if (lista && mvdb !== n.mvdb && md.mvdbs[mvdb]?.arq) {
+      const ok = await confirmar('Criar entrada no MVDB deste sub-mundo?',
+        `<b>${esc(info.nome || chave)}</b> ganha uma entrada própria no MeshVariationDb de <b>${esc(n.mvdb.split('/').slice(-2, -1)[0] || '')}</b>, com os mesmos shaders e texturas que ela tem em <i>${esc(mvdb.split('/').slice(-2, -1)[0] || '')}</i>. Depois dá para trocar textura e shader de cada seção. O arquivo é gravado na hora (o original fica em <i>_editor_originais</i>).`,
+        { rotulo: 'Criar entrada' });
+      if (!ok) return;
+      origens = lista.map((m) => ({ arq: md.mvdbs[mvdb].arq, variacao: m.variacao }));
+    } else {
+      aviso('Escolha o material de partida', { detalhe: 'Todas as seções da malha começam com o shader e as texturas dele; depois dá para trocar cada uma.', tempo: 5000 });
+      const origem = await D.escolherMaterialOrigem(this, null, ent.arq);
+      if (!origem) return;
+      const o = md.materiais.get(origem);
+      origens = [{ arq: o.arq, variacao: origem }];
+    }
+    this.carregando('Criando a entrada no MeshVariationDb…', info.nome || chave, -1);
+    try {
+      const r = await api('mvdb_entrada', { mvdb: n.mvdb, malha: chave, origens });
+      md.adicionarEntradaMvdb(n.mvdb, chave, r.materiais, r.texturas);
+      await this.viewport.recarregarMalha(chave);
+      this.carregando(null);
+      this.props.agendar();
+      aviso('Entrada criada no MeshVariationDb', { tipo: 'sucesso', tempo: 7000,
+        detalhe: `${r.materiais.length} material(is) de ${info.nome || chave}. Troque texturas/shader nas seções e importe o ${r.arq.split('/').pop()} no FET.` });
+    } catch (e) {
+      this.carregando(null);
+      aviso('Não consegui criar a entrada', { tipo: 'erro', detalhe: e.message });
+    }
+  }
+
   async adicionarParametroTextura(variacao) {
     const param = await D.escolherParametro(this, variacao);
     if (!param) return;
@@ -1010,6 +1048,102 @@ class App {
       this.props.agendar();
       aviso('FBX substituído', { tipo: 'sucesso', detalhe: `${info.fbx.split('/').pop()} gravado (original em _editor_originais). Importe-o no FET sobre a malha.` });
     } catch (e) { aviso('Falha ao substituir o FBX', { tipo: 'erro', detalhe: e.message }); }
+  }
+
+  // ------------------------------------------------------------------ mesh zero (malhas removidas do jogo)
+  // Malha "zerada": um triângulo de 1 mm por seção. O objeto continua removido (Excluded / 150 m abaixo) e o 3D
+  // original deixa de pesar no estádio depois de importado no FET.
+  malhaZerada(chave) {
+    const geo = this.viewport.geos.get(chave);
+    return !!geo?.secoes?.length && geo.secoes.every((s) => s.triangulos <= 1);
+  }
+
+  candidatosMeshZero() {
+    const md = this.modelo;
+    const usos = new Map();
+    for (const n of md.nos) {
+      for (const p of n.malhas || []) {
+        if (!usos.has(p.m)) usos.set(p.m, { total: 0, ocultos: 0 });
+        const u = usos.get(p.m);
+        u.total++;
+        if (n.removido || md.ocultoNoJogo(n)) u.ocultos++;
+      }
+    }
+    // malha "deste estádio": o caminho tem o nome do mundo (sem o número), ex.: components/stadiums/pro_stadium_tier1/
+    const mundo = (md.mundo || '').toLowerCase().split('/').pop();
+    const base = mundo.replace(/_\d+$/, '');
+    const out = [];
+    for (const [chave, u] of usos) {
+      if (u.ocultos !== u.total) continue;
+      const info = md.malhas[chave] || {};
+      const asset = (info.asset || chave).toLowerCase();
+      const geo = this.viewport.geos.get(chave);
+      out.push({
+        chave, info, copias: u.total, fbx: info.fbx || null, zerada: this.malhaZerada(chave),
+        proprio: !!base && (asset.includes(`/${base}/`) || asset.includes(`/${mundo}/`)),
+        triangulos: geo ? geo.secoes.reduce((a, s) => a + s.triangulos, 0) : null,
+      });
+    }
+    out.sort((a, b) => (b.triangulos || 0) - (a.triangulos || 0));
+    const parciais = [...usos.values()].filter((u) => u.ocultos && u.ocultos < u.total).length;
+    return { lista: out, parciais };
+  }
+
+  async dialogoMeshZero(chaves = null) {
+    const { lista: todos, parciais } = this.candidatosMeshZero();
+    const lista = chaves ? todos.filter((c) => chaves.includes(c.chave)) : todos;
+    if (!lista.length) {
+      aviso(chaves ? 'Esta malha ainda aparece no jogo' : 'Nenhuma malha removida do jogo', { tipo: 'aviso',
+        detalhe: chaves ? 'O mesh zero só vale para malhas que estão ocultas no jogo em todas as cópias deste estádio.'
+          : 'Oculte objetos no jogo (Del) e depois aplique o mesh zero neles.' });
+      return;
+    }
+    const marcados = new Set(lista.filter((c) => c.fbx && !c.zerada && (c.proprio || chaves)).map((c) => c.chave));
+    const corpo = el('div', { style: { display: 'flex', flexDirection: 'column', gap: '10px' } });
+    corpo.append(nota('Troca o FBX de cada malha por um <b>mesh zero</b> (um triângulo de 1 mm por seção, mesmas seções, partes e materiais). O objeto continua removido do jogo e o 3D original deixa de pesar no estádio. O FBX original fica em <i>_editor_originais</i> e volta em <b>Alterações</b>.'));
+    const lst = el('div', { class: 'lista', style: { maxHeight: '380px' } });
+    const botao = () => mm.caixa.querySelector('.btn-primario');
+    const atualizar = () => { const b = botao(); if (b) { b.disabled = !marcados.size; b.textContent = `Aplicar mesh zero (${marcados.size})`; } };
+    for (const c of lista) {
+      const pode = c.fbx && !c.zerada;
+      const cx = el('input', { type: 'checkbox', disabled: !pode });
+      cx.checked = marcados.has(c.chave);
+      cx.onchange = () => { cx.checked ? marcados.add(c.chave) : marcados.delete(c.chave); atualizar(); };
+      const det = [`${fmtInt(c.copias)} cópia${c.copias > 1 ? 's' : ''}`];
+      if (c.triangulos !== null) det.push(`${fmtInt(c.triangulos)} triângulos`);
+      if (c.zerada) det.push('já zerada');
+      else if (!c.fbx) det.push('FBX não exportado');
+      else if (!c.proprio) det.push('pode ser usada por outros estádios (o FBX é o mesmo em todos)');
+      const it = el('label', { class: 'lista-item', style: { opacity: pode ? '' : '0.55' } }, cx,
+        el('div', { class: 'txt' }, el('b', {}, c.info.nome || c.chave.split('/').pop()), el('small', { title: c.info.asset || '' }, det.join(' · '))));
+      lst.append(it);
+    }
+    corpo.append(lst);
+    if (lista.some((c) => c.fbx && !c.zerada && !c.proprio)) corpo.append(nota('Malhas fora da pasta deste estádio podem ser usadas por outros mundos: zerar o FBX delas some com o objeto em todos. Por isso vêm desmarcadas.', 'alerta'));
+    if (!chaves && parciais) corpo.append(nota(`${fmtInt(parciais)} malha(s) ficaram de fora porque ainda têm cópias visíveis no jogo.`));
+    if (this.modelo.pendentes().length) corpo.append(nota('Há alterações não salvas: salve também (<kbd>Ctrl+S</kbd>) para gravar a remoção dos objetos.', 'alerta'));
+    const mm = modal({ titulo: 'Mesh zero nos removidos do jogo', corpo, largo: true,
+      botoes: [{ rotulo: 'Cancelar', valor: null }, { rotulo: 'Aplicar mesh zero', classe: 'btn-primario', padrao: true, fn: () => [...marcados] }] });
+    atualizar();
+    const escolhidas = await mm.promessa;
+    if (!escolhidas?.length) return;
+    const porId = new Map(lista.map((c) => [c.fbx, c]));
+    this.carregando('Aplicando mesh zero…', `${escolhidas.length} malha(s)`, -1);
+    let r;
+    try { r = await api('mesh_zero', { ids: escolhidas.map((k) => this.modelo.malhas[k].fbx) }); } catch (e) { this.carregando(null); aviso('Falha no mesh zero', { tipo: 'erro', detalhe: e.message }); return; }
+    for (const f of r.feitos) {
+      const c = porId.get(f.id);
+      if (c) { try { await this.viewport.recarregarMalha(c.chave); } catch { /* a malha recarrega ao abrir de novo */ } }
+    }
+    this.carregando(null);
+    this.props.agendar();
+    const antes = r.feitos.reduce((a, f) => a + f.antes, 0), depois = r.feitos.reduce((a, f) => a + f.depois, 0);
+    if (r.feitos.length) {
+      aviso(`Mesh zero em ${r.feitos.length} malha${r.feitos.length > 1 ? 's' : ''}`, { tipo: 'sucesso', tempo: 8000,
+        detalhe: `FBX de ${(antes / 1048576).toFixed(1)} MB para ${(depois / 1048576).toFixed(1)} MB. Importe os FBX no FET sobre as malhas.`,
+        acao: { rotulo: 'Ver lista', fn: () => this.abrirAlteracoes() } });
+    }
+    if (r.erros.length) aviso('Algumas malhas não foram zeradas', { tipo: 'erro', detalhe: r.erros.slice(0, 5).join(' · ') });
   }
 
   async substituirImagem(asset) {
@@ -1473,6 +1607,7 @@ class App {
       { rotulo: 'Itens não exportados', marcado: v.mostrarFaltando, fn: () => this.alternarOpcao('mostrarFaltando', 'faltando') },
       { rotulo: 'Ocultos no jogo (em vermelho)', marcado: v.mostrarOcultosJogo, fn: () => this.alternarOpcao('mostrarOcultosJogo', 'ocultosJogo') },
       { rotulo: 'Malhas de sombra (_Shadow)', marcado: v.mostrarMalhasSombra, fn: () => this.alternarOpcao('mostrarMalhasSombra', 'malhasSombra') },
+      { rotulo: 'Malhas invisíveis no jogo (shadow seat, em ciano)', marcado: v.mostrarInvisiveis, fn: () => this.alternarOpcao('mostrarInvisiveis', 'invisiveis') },
       { rotulo: 'Assentos da torcida', marcado: !!this.estadoTorcida?.visivel, desabilitado: !this.modelo.nuvens?.length, fn: () => this.alternarTorcida(!this.estadoTorcida?.visivel) },
       '-',
       { rotulo: 'Enquadrar tudo', icone: 'maximizar', atalho: 'Home', desabilitado: !c, fn: () => v.enquadrarTudo() },
@@ -1497,6 +1632,7 @@ class App {
       { rotulo: 'Torcida: marcar e colorir…', icone: 'torcida', desabilitado: !c || !this.modelo.nuvens?.length, fn: () => this.abrirPainelTorcida() },
       { rotulo: 'Gerar assentos a partir de malha…', icone: 'torcida', desabilitado: !c || !this.modelo.nuvens?.length, fn: () => this.ferramentaGerarAssentos() },
       '-',
+      { rotulo: 'Mesh zero nos removidos do jogo…', icone: 'apagar', desabilitado: !c, fn: () => this.dialogoMeshZero() },
       { rotulo: 'Linhas do campo', icone: 'campo', marcado: this.viewport.mostrarCampo, desabilitado: !c, fn: () => this.alternarCampo() },
       { rotulo: 'Exportar com outro nome (batch import)…', icone: 'externo', desabilitado: !c, fn: () => this.dialogoRenomear() },
       { rotulo: 'Configurações (jogo e texturas)…', icone: 'pincel', fn: () => this.abrirConfiguracoes() },
