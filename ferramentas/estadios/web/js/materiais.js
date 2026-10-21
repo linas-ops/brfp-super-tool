@@ -57,6 +57,7 @@ export class Materiais {
     this.arame = new THREE.MeshBasicMaterial({ color: 0x8fa3bf, wireframe: true, transparent: true, opacity: 0.55 });
     this.raiox = new THREE.MeshBasicMaterial({ color: 0x86a8e8, transparent: true, opacity: 0.08, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending });
     this.fantasma = new THREE.MeshBasicMaterial({ color: 0xf0565a, transparent: true, opacity: 0.18, depthWrite: false, side: THREE.DoubleSide });
+    this.invisivel = new THREE.MeshBasicMaterial({ color: 0x3fc6d8, transparent: true, opacity: 0.32, depthWrite: false, side: THREE.DoubleSide });
     this.faltando = new THREE.MeshBasicMaterial({ color: 0x9d8be8, transparent: true, opacity: 0.18, depthWrite: false, side: THREE.DoubleSide });
     this.faltandoLinha = new THREE.LineBasicMaterial({ color: 0x9d8be8, transparent: true, opacity: 0.8 });
     this.selecao = new THREE.MeshBasicMaterial({ color: 0xff9233, transparent: true, opacity: 0.38, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2, side: THREE.DoubleSide });

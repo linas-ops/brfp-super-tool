@@ -59,6 +59,7 @@ export class Viewport extends EventTarget {
     this.mostrarSombras = false;
     this.mostrarFaltando = true;
     this.mostrarMalhasSombra = false;
+    this.mostrarInvisiveis = true;      // peças com Visible=false no blueprint (shadow_seat, proxies de iluminação)
     this.velocidadeVoo = 25;
     this.mostrarLuzes = false;
     this.mostrarCampo = false;
@@ -384,7 +385,8 @@ export class Viewport extends EventTarget {
 
   // material de exibição de cada seção: MVDB do sub-mundo (pelo GUID do material da malha) ou o do XML da malha
   registroSecoes(n, chave, geo) {
-    const { lista, xml } = this.modelo.materiaisDe(n, chave);
+    const { lista, xml, mvdb } = this.modelo.materiaisDe(n, chave);
+    const outroMvdb = !!lista && mvdb !== n.mvdb;
     const out = [];
     let k = 0;
     for (const s of geo.secoes) {
@@ -392,7 +394,7 @@ export class Viewport extends EventTarget {
       const xg = xml[k]?.guid;
       let mv = lista ? (lista.find((m) => xg && m.material === xg) || lista[k]) : null;
       const reg = mv?.variacao ? this.modelo.materiais.get(mv.variacao) : null;
-      out.push({ indice: k, chave: mv?.variacao || `${chave}|${k}`, reg: reg || { info: mv || xml[k] || {} }, editavel: !!reg });
+      out.push({ indice: k, chave: mv?.variacao || `${chave}|${k}`, reg: reg || { info: mv || xml[k] || {} }, editavel: !!reg, outroMvdb });
       k++;
     }
     return out;
@@ -410,7 +412,8 @@ export class Viewport extends EventTarget {
       const mat = reg ? this.mats.material(reg.chave, reg.reg, s.nome) : this.mats.solido;
       const m = new THREE.Mesh(s.geometria, mat);
       m.matrixAutoUpdate = false;
-      m.userData = { no: n.id, peca: i, malha: p.m, secao: si, sombra: s.sombra, chaveMat: reg?.chave, reg: reg?.reg, nomeSecao: s.nome };
+      m.userData = { no: n.id, peca: i, malha: p.m, secao: si, sombra: s.sombra, chaveMat: reg?.chave, reg: reg?.reg, nomeSecao: s.nome,
+        invisivel: !!p.oculta };
       m.userData.matReal = mat;
       m.visible = !s.sombra || this.mostrarMalhasSombra;
       pg.add(m);
@@ -481,6 +484,7 @@ export class Viewport extends EventTarget {
       if (u.marcador || u.substituto || u.luz || u.pessoa) return;
       let m;
       if (fantasmas.has(u.no)) m = this.mats.fantasma;
+      else if (u.invisivel && this.modo !== 'arame') m = this.mats.invisivel;
       else if (this.modo === 'solido') m = (u.matReal?.userData?.classe === 'vidro' || u.matReal?.userData?.classe === 'recorte') ? this.mats.solidoVidro : this.mats.solido;
       else if (this.modo === 'arame') m = this.mats.arame;
       else if (this.modo === 'raiox') m = this.mats.raiox;
@@ -536,7 +540,7 @@ export class Viewport extends EventTarget {
       pecas.visible = !iso || iso.manter.has(n.id);
       for (const pg of pecas.children) {
         if (pg.userData.substituto || pg.userData.marcador) pg.visible = this.mostrarFaltando;
-        else if (pg.userData.ocultaBlueprint) pg.visible = false;
+        else if (pg.userData.ocultaBlueprint) pg.visible = this.mostrarInvisiveis;
       }
     }
     this.raiz.traverse((o) => {

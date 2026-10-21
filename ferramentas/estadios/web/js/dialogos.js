@@ -371,9 +371,9 @@ export async function dialogoConfiguracoes(app) {
 }
 
 // ------------------------------------------------------------------ copiar material de outra seção
-export function escolherMaterialOrigem(app, destino) {
+export function escolherMaterialOrigem(app, destino, arqDestino = null) {
   const md = app.modelo;
-  const d = md.materiais.get(destino);
+  const d = md.materiais.get(destino) || { arq: arqDestino };
   const corpo = el('div', { style: { display: 'flex', flexDirection: 'column', gap: '10px' } });
   const busca = el('input', { type: 'search', placeholder: 'Buscar por malha, shader ou textura…', autofocus: true });
   const filtro = el('select', { class: 'seletor', style: { maxWidth: '240px' } });

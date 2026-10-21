@@ -120,19 +120,29 @@ export class Modelo extends EventTarget {
     }
     // materiais editáveis (MVDB)
     for (const [mvdb, ent] of Object.entries(this.mvdbs)) {
-      for (const [malha, mats] of Object.entries(ent.entradas)) {
-        mats.forEach((m, i) => {
-          if (!m.variacao || this.materiais.has(m.variacao)) return;
-          const base = { shader: m.shader, texturas: { ...(m.texturas || {}) }, vetores: copia(m.vetores || {}) };
-          this.materiais.set(m.variacao, {
-            variacao: m.variacao, mvdb, arq: ent.arq, malha, indice: i, info: m, base, copiadoDe: null,
-            texturas: { ...base.texturas }, vetores: Object.fromEntries(Object.entries(base.vetores).map(([k, v]) => [k, v.v.slice()])),
-            texOcultas: new Set(),
-          });
-        });
-      }
+      for (const [malha, mats] of Object.entries(ent.entradas)) this.registrarMateriais(mvdb, ent.arq, malha, mats);
     }
     this.emitir('carregado');
+  }
+
+  registrarMateriais(mvdb, arq, malha, mats) {
+    mats.forEach((m, i) => {
+      if (!m.variacao || this.materiais.has(m.variacao)) return;
+      const base = { shader: m.shader, texturas: { ...(m.texturas || {}) }, vetores: copia(m.vetores || {}) };
+      this.materiais.set(m.variacao, {
+        variacao: m.variacao, mvdb, arq, malha, indice: i, info: m, base, copiadoDe: null,
+        texturas: { ...base.texturas }, vetores: Object.fromEntries(Object.entries(base.vetores).map(([k, v]) => [k, v.v.slice()])),
+        texOcultas: new Set(),
+      });
+    });
+  }
+
+  // entrada nova no MVDB do sub-mundo (malha que não tinha): passa a valer para os materiais desta malha
+  adicionarEntradaMvdb(mvdb, malha, mats, texturas = {}) {
+    const ent = this.mvdbs[mvdb];
+    ent.entradas[malha] = mats;
+    for (const [a, t] of Object.entries(texturas)) if (!this.texturas[a]) this.texturas[a] = t;
+    this.registrarMateriais(mvdb, ent.arq, malha, mats);
   }
 
   rotuloNo(n) {

@@ -9,6 +9,7 @@ import random
 import re
 import shutil
 import time
+import uuid
 from collections import defaultdict
 
 from . import estadios_txt
@@ -432,6 +433,78 @@ def aplicar(indice, alteracoes):
         gravados += g
         erros += e
     return {"arquivos": gravados, "lightmap": n_lm, "erros": erros, "novas": novas}
+
+
+def _malha_do_xml(indice, malha_asset):
+    """(partitionGuid, guid da malha, [guids dos MeshMaterial na ordem]) do XML da malha exportado pelo FET."""
+    item = indice.achar(malha_asset, ".xml")
+    if not item:
+        raise ErroEdicao(f"XML da malha não exportado: {malha_asset}")
+    raiz = X.analisar(X.ler(indice.absoluto(item)))
+    prim = raiz.find("instance")
+    if prim is None:
+        raise ErroEdicao("XML da malha sem instância")
+    arr = prim.find("array[@name='Materials']")
+    mats = [it.get("ref") for it in (arr if arr is not None else [])]
+    if not mats:
+        raise ErroEdicao("malha sem materiais")
+    nome = prim.findtext("field[@name='Name']") or malha_asset
+    return raiz.get("guid"), prim.get("guid"), mats, nome
+
+
+def criar_entrada_mvdb(indice, mvdb_ident, malha_asset, origens):
+    """Acrescenta ao MeshVariationDb (mvdb_ident) uma entrada para a malha, com uma MeshMaterialVariation nova por
+    material. O shader, os parâmetros e o SurfaceShaderId de cada material vêm de uma variação que já existe
+    (origens[i] = {arq, variacao}; se faltar, usa a primeira). Grava na hora, com backup."""
+    if not origens:
+        raise ErroEdicao("escolha o material de origem")
+    pguid, mguid, mats, nome = _malha_do_xml(indice, malha_asset)
+    texto = X.ler(indice.de_id(mvdb_ident))
+    if f'{nome}{X.BS}{X.BS}{mguid}"'.lower() in texto.lower():
+        raise ErroEdicao("esta malha já tem entrada neste MeshVariationDb")
+    textos = {}
+    blocos = []
+    for i in range(len(mats)):
+        o = origens[i] if i < len(origens) and origens[i] else origens[0]
+        arq = o.get("arq") or mvdb_ident
+        if arq not in textos:
+            textos[arq] = texto if arq == mvdb_ident else X.ler(indice.de_id(arq))
+        blocos.append(_shader_de(textos[arq], o["variacao"]))
+    nl = "\r\n" if "\r\n" in texto else "\n"
+    novas = [str(uuid.uuid4()) for _ in mats]
+    itens_mat = ""
+    for mat, var, (_, sid, sguid) in zip(mats, novas, blocos):
+        itens_mat += (f'\t\t\t\t\t\t<item>{nl}\t\t\t\t\t\t\t<complex type="MeshVariationDatabaseMaterial">{nl}'
+                      f'\t\t\t\t\t\t\t\t<field name="Material" ref="{nome}{X.BS}{X.BS}{mat}" partitionGuid="{pguid}" />{nl}'
+                      f'\t\t\t\t\t\t\t\t<field name="MaterialVariation" ref="{var}" />{nl}'
+                      f'\t\t\t\t\t\t\t\t<field name="SurfaceShaderId">{sid or 0}</field>{nl}'
+                      f'\t\t\t\t\t\t\t\t<field name="SurfaceShaderGuid">{sguid or "00000000-0000-0000-0000-000000000000"}</field>{nl}'
+                      f'\t\t\t\t\t\t\t</complex>{nl}\t\t\t\t\t\t</item>{nl}')
+    entrada = (f'\t\t\t<item>{nl}\t\t\t\t<complex type="MeshVariationDatabaseEntry">{nl}'
+               f'\t\t\t\t\t<field name="Mesh" ref="{nome}{X.BS}{X.BS}{mguid}" partitionGuid="{pguid}" />{nl}'
+               f'\t\t\t\t\t<field name="VariationAssetNameHash">0</field>{nl}\t\t\t\t\t<field name="SubVariationNameHash">0</field>{nl}'
+               f'\t\t\t\t\t<field name="DisableOccluder">false</field>{nl}\t\t\t\t\t<field name="HasSsMaterial">false</field>{nl}'
+               f'\t\t\t\t\t<field name="HasEsMaterial">false</field>{nl}'
+               f'\t\t\t\t\t<array name="Materials" type="MeshVariationDatabaseMaterial">{nl}{itens_mat}\t\t\t\t\t</array>{nl}'
+               f'\t\t\t\t\t<array name="RadiosityMaterials" type="ref(RadiosityMaterial)" />{nl}'
+               f'\t\t\t\t</complex>{nl}\t\t\t</item>{nl}')
+    m = re.search(r'<array name="Entries" type="MeshVariationDatabaseEntry"\s*(/>|>)', texto)
+    if not m:
+        raise ErroEdicao("MeshVariationDb sem lista Entries")
+    if m.group(1) == "/>":
+        texto = texto[:m.start()] + f'<array name="Entries" type="MeshVariationDatabaseEntry">{nl}{entrada}\t\t</array>' + texto[m.end():]
+    else:
+        fecha = texto.rfind("</array>", m.start(), X._fim_elemento(texto, m.start(), "array"))
+        ini_linha = texto.rfind("\n", 0, fecha) + 1
+        texto = texto[:ini_linha] + entrada + texto[ini_linha:]
+    instancias = "".join(f'\t<instance guid="{var}" type="MeshMaterialVariation" exported="true">{nl}'
+                         f'\t\t<field name="OriginalObjectVariation">00000000-0000-0000-0000-000000000000</field>{nl}'
+                         f'\t\t{bloco.strip()}{nl}\t</instance>{nl}' for var, (bloco, _, _) in zip(novas, blocos))
+    fim = texto.rfind("</partition>")
+    texto = texto[:fim] + instancias + texto[fim:]
+    garantir_backup(indice, mvdb_ident)
+    X.gravar(indice.de_id(mvdb_ident), texto)
+    return novas
 
 
 def gravar_binario(indice, ident, dados_b64):

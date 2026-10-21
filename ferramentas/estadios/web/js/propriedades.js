@@ -180,6 +180,7 @@ export class Propriedades {
     if (md.ocultoNoJogoProprio(n)) tags.append(el('span', { class: 'etiqueta vermelha' }, n.jogo.rebaixado ? 'Oculto no jogo (150 m abaixo)' : 'Oculto no jogo'));
     else if (md.ocultoNoJogo(n)) tags.append(el('span', { class: 'etiqueta vermelha' }, 'Oculto pelo grupo'));
     if (n.ligado) tags.append(el('span', { class: 'etiqueta amarela', html: icone('ligado', 11) + 'Ligado à lógica' }));
+    if (n.malhas?.some((p) => p.oculta)) tags.append(el('span', { class: 'etiqueta', title: 'Visible=false no blueprint: o jogo não desenha, só usa para sombra/iluminação (ex.: shadow seat). No editor aparece em ciano.' }, 'Malha invisível no jogo'));
     if (n.faltando) tags.append(el('span', { class: 'etiqueta' }, n.faltando === 'blueprint' ? 'Blueprint não exportado' : 'XML não exportado'));
     if (n.compartilhado > 1) tags.append(el('span', { class: 'etiqueta laranja' }, `Prefab usado ${n.compartilhado}×`));
     if (grupo && n.nGeo) tags.append(el('span', { class: 'etiqueta' }, `${fmtInt(n.nGeo)} itens`));
@@ -377,8 +378,14 @@ export class Propriedades {
       if (info.fbx) {
         acoes.append(el('button', { class: 'btn peq', onclick: () => app.explorer(info.fbx) }, icone('pasta', 14), 'FBX'));
         acoes.append(el('button', { class: 'btn peq', title: 'Trocar o modelo 3D por outro FBX (ex.: editado no Blender)', onclick: () => app.substituirFBX(p.m) }, icone('upload', 14), 'Substituir FBX…'));
+        const removida = md.nos.every((x) => !(x.malhas || []).some((q) => q.m === p.m) || md.ocultoNoJogo(x));
+        if (removida && !app.malhaZerada(p.m)) {
+          acoes.append(el('button', { class: 'btn peq', title: 'Trocar o FBX por um triângulo minúsculo por seção: o objeto já está fora do jogo e o 3D deixa de pesar no estádio',
+            onclick: () => app.dialogoMeshZero([p.m]) }, icone('apagar', 14), 'Mesh zero…'));
+        }
       }
       corpo.push(acoes);
+      if (info.fbx && app.malhaZerada(p.m)) corpo.push(nota('FBX com <b>mesh zero</b> (um triângulo por seção). O original está em <i>_editor_originais</i>; volte em <b>Alterações</b>.'));
       if (!info.fbx) corpo.push(nota('O FBX desta malha não está no export. No FET, exporte o asset da malha (<i>' + esc(info.asset || '') + '</i>) para a mesma pasta.'));
     }
     return secao('malha', n.malhas.length > 1 ? `Malhas (${n.malhas.length})` : 'Malha', corpo, { aberta: false });
@@ -387,11 +394,22 @@ export class Propriedades {
   secaoMateriais(n) {
     const md = this.md, app = this.app;
     const corpo = [];
-    let algum = false;
+    let algum = false, semEntrada = false;
     for (const p of n.malhas) {
       const geo = app.viewport.geos.get(p.m);
       if (!geo) continue;
       const regs = app.viewport.registroSecoes(n, p.m, geo);
+      // asset novo: a malha não tem entrada no MVDB do próprio sub-mundo
+      if (regs.some((r) => r && (!r.editavel || r.outroMvdb)) && md.mvdbs[n.mvdb]?.arq) {
+        semEntrada = true;
+        const outro = regs.some((r) => r?.outroMvdb);
+        const nomeMvdb = (a) => esc(String(a || '').split('/').slice(-2, -1)[0] || '');
+        corpo.push(nota(outro
+          ? `<b>${esc(md.malhas[p.m]?.nome || p.m)}</b> não tem entrada no MeshVariationDb deste sub-mundo (<i>${nomeMvdb(n.mvdb)}</i>); o editor está mostrando a de <i>${nomeMvdb(md.materiaisDe(n, p.m).mvdb)}</i>. Crie a entrada aqui para o jogo usar shader e texturas próprios neste estádio.`
+          : `<b>${esc(md.malhas[p.m]?.nome || p.m)}</b> não tem entrada no MeshVariationDb deste sub-mundo (<i>${nomeMvdb(n.mvdb)}</i>), então o jogo não sabe que shader e texturas usar. Crie a entrada a partir de um material que já existe e depois troque as texturas.`, 'alerta'));
+        corpo.push(el('div', { class: 'acoes-linha' }, el('button', { class: 'btn-primario peq', title: 'Acrescenta a malha ao MeshVariationDb deste sub-mundo, com shader e texturas copiados de um material existente',
+          onclick: () => app.criarEntradaMvdb(n, p.m) }, icone('mais', 13), 'Criar entrada no MVDB deste sub-mundo')));
+      }
       geo.secoes.forEach((s, si) => {
         const r = regs[si];
         if (!r) return;
@@ -401,7 +419,7 @@ export class Propriedades {
     }
     if (!algum) corpo.push(el('div', { class: 'vazio-prop' }, 'Sem materiais (malha não carregada).'));
     const usosMvdb = md.nos.filter((x) => x.mvdb === n.mvdb && (x.malhas || []).some((q) => n.malhas.some((pp) => pp.m === q.m))).length;
-    if (algum) corpo.unshift(nota(`Materiais vêm do <b>MeshVariationDb</b> do sub-mundo. Trocar textura ou cor aqui vale para ${usosMvdb > 1 ? `as ${usosMvdb} cópias desta malha` : 'esta malha'} neste sub-mundo.`));
+    if (algum && !semEntrada) corpo.unshift(nota(`Materiais vêm do <b>MeshVariationDb</b> do sub-mundo. Trocar textura ou cor aqui vale para ${usosMvdb > 1 ? `as ${usosMvdb} cópias desta malha` : 'esta malha'} neste sub-mundo.`));
     return secao('materiais', 'Materiais e texturas', corpo);
   }
 
@@ -506,7 +524,8 @@ export class Propriedades {
       }
       corpo.append(lista);
     }
-    if (!r.editavel) corpo.append(nota('Este material não tem entrada no MeshVariationDb exportado; mostrando os valores do XML da malha (o jogo ignora edições ali).'));
+    if (!r.editavel) corpo.append(nota('Sem entrada no MeshVariationDb deste sub-mundo: mostrando os valores do XML da malha, que o jogo não usa para o material.'));
+    else if (r.outroMvdb) corpo.append(nota('Valores de outro MeshVariationDb: editar aqui muda aquele arquivo, não o deste sub-mundo.', 'alerta'));
     card.append(corpo);
     return card;
   }
