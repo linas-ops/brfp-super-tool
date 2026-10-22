@@ -9,6 +9,7 @@ rem ---- primeira vez neste computador: o Super Tool usa um Python proprio (runt
 rem      BRFP_BAIXAR=1, 2 ou 3 responde a pergunta abaixo sem esperar (instalacao automatica)
 set "OPCAO=%BRFP_BAIXAR%"
 if defined OPCAO goto :opcao
+if exist "%~dp0edicao.json" goto :edicao
 echo.
 echo  ===================================================================
 echo    BRFP Super Tool - primeira vez neste computador
@@ -33,6 +34,17 @@ powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0comum\instalar_python.
 if exist "%RT%" goto :rodar
 echo.
 echo  Nao foi possivel baixar o Python agora. Procurando um Python instalado no computador...
+goto :sistema
+
+rem ---- edicao (ex.: so o Editor de Placares): nao usa os pacotes, so o Python
+:edicao
+echo.
+echo    Primeira vez neste computador: o editor usa um Python proprio,
+echo    que fica dentro desta pasta (runtime\python). Nada e instalado no Windows.
+echo.
+choice /c SN /n /m "   Baixar o Python agora (11 MB, de python.org)? [S/N] "
+if errorlevel 2 (set "OPCAO=3") else (set "OPCAO=1")
+goto :opcao
 
 :sistema
 set "PY="

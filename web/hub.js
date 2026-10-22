@@ -88,6 +88,7 @@ function mostrar(id) {
 }
 
 async function abrir(id) {
+  if (S.edicao && (id === 'dados' || id === 'componentes')) id = 'inicio';
   if (id === 'inicio') { desenharInicio(); mostrar('inicio'); return; }
   if (id === 'dados') { await paginaDados(); mostrar('dados'); return; }
   if (id === 'componentes') { await paginaComponentes(); mostrar('componentes'); return; }
@@ -224,9 +225,10 @@ function desenharInicio() {
   const t = $('#tela-inicio');
   t.innerHTML = '';
   const i = el('div', { class: 'inicio' });
+  const ed = S.edicao;
   i.append(el('div', { class: 'bv-hero' }, el('div', { class: 'bv-hero-ic' }), el('div', {},
-    el('h1', {}, 'BRFP Super Tool', el('span', { class: 'marca-versao' }, S.versao)),
-    el('p', {}, 'Todas as ferramentas de modding do BRFP numa janela só, com a mesma interface: estádios, placares, competições, faces, corpos (tatuagens), kits (uniformes), minifaces, tabelas do banco, squads e o conversor de estádios do PES. O banco e o idioma do jogo são importados uma vez em Dados do jogo e valem para todas.'))));
+    el('h1', {}, ed ? `BRFP Super Tool · ${ed.nome}` : 'BRFP Super Tool', el('span', { class: 'marca-versao' }, S.versao)),
+    el('p', {}, ed ? ed.descricao : 'Todas as ferramentas de modding do BRFP numa janela só, com a mesma interface: estádios, placares, competições, faces, corpos (tatuagens), kits (uniformes), minifaces, tabelas do banco, squads e o conversor de estádios do PES. O banco e o idioma do jogo são importados uma vez em Dados do jogo e valem para todas.'))));
   i.append(faixaAtualizacao());
   const grade = el('div', { class: 'grade-ferramentas' });
   S.ferramentas.forEach((f, n) => {
@@ -243,7 +245,7 @@ function desenharInicio() {
         el('button', { class: 'btn-fantasma peq', onclick: () => guia(f.id, f.nome) }, icone('ajuda', 13), 'Guia'),
         el('button', { class: 'btn-icone peq', title: 'Mais opções', onclick: (e) => { const r = e.currentTarget.getBoundingClientRect(); menuFerramenta(f, r.left, r.bottom + 4); } }, icone('lista', 14)))));
   });
-  i.append(faixaDados());
+  if (!ed) i.append(faixaDados());
   i.append(el('div', { class: 'bv-bloco' }, el('h3', {}, 'Ferramentas'), grade));
   i.append(el('div', { class: 'bv-bloco' }, el('h3', {}, 'Versões'), tabelaVersoes()));
   i.append(el('div', { class: 'rodape-inicio' },
@@ -293,7 +295,8 @@ function faixaAtualizacao() {
 
 function tabelaVersoes() {
   const tb = el('tbody');
-  tb.append(el('tr', {}, el('td', {}, 'BRFP Super Tool'), el('td', { class: 'v' }, S.versao), el('td', {}, NOVIDADES_ST)));
+  // na edição, as novidades do Super Tool falam das outras ferramentas
+  tb.append(el('tr', {}, el('td', {}, 'BRFP Super Tool'), el('td', { class: 'v' }, S.versao), el('td', {}, S.edicao ? '' : NOVIDADES_ST)));
   for (const f of S.ferramentas) tb.append(el('tr', {}, el('td', {}, f.nome), el('td', { class: 'v' }, f.versao), el('td', {}, NOVIDADES[f.id] || '')));
   return el('table', { class: 'tabela-versoes' }, el('thead', {}, el('tr', {}, el('th', {}, 'Ferramenta'), el('th', {}, 'Versão'), el('th', {}, 'Novidades da versão'))), tb);
 }
@@ -671,6 +674,22 @@ async function paginaComponentes() {
   resumo.append(opcao('completo', 'Completo', 'Com o Python embutido e todos os pacotes: abre sem internet.', 'calculando o tamanho…'),
     opcao('leve', 'Leve', 'Sem o Python: na primeira vez o .bat baixa o Python (11 MB) e cada ferramenta baixa os pacotes quando precisar.', 'calculando o tamanho…'));
   corpoZip.append(resumo);
+  for (const ed of S.edicoes || []) {
+    const tam = el('small', { class: 'mudo' }, 'calculando o tamanho…');
+    const gerar = (tipo) => el('button', { class: tipo === 'completo' ? 'btn-primario peq' : 'btn peq', disabled: !!pk.ativo, onclick: async () => {
+      const r = await tentar(() => api('pacote_gerar', { tipo, edicao: ed.id }));
+      if (!r || r.cancelado) return;
+      await paginaComponentes();
+      acompanharPacote();
+    } }, icone('maleta', 13), `Gerar ${tipo}…`);
+    const op = el('div', { class: 'pacote-op' }, el('b', {}, `Só o ${ed.nome}`),
+      el('p', {}, `O Super Tool com só o ${ed.nome}, para compartilhar: as outras ferramentas, Dados do jogo e Componentes não vão. O completo leva só o Python (sem os pacotes), o leve baixa o Python na primeira vez.`),
+      tam, el('div', { class: 'acoes-linha' }, gerar('completo'), gerar('leve')));
+    corpoZip.append(el('div', { class: 'pacote-opcoes' }, op));
+    api('pacote_resumo?edicao=' + encodeURIComponent(ed.id)).then((r) => {
+      tam.textContent = (r.completo ? `completo ≈ ${mb(r.completo * 0.45)} compactado · ` : '') + `leve ≈ ${mb(r.leve * 0.6)} compactado`;
+    }).catch(() => { tam.textContent = ''; });
+  }
   const caixaProg = el('div', { id: 'pacote-prog' });
   if (pk.ativo || pk.fase === 'pronto' || pk.fase === 'erro') {
     const prog = barraTarefa();
@@ -732,6 +751,13 @@ async function iniciar() {
   dica($('#btn-inicio'), 'Início', 'Ctrl+0');
   dica($('#btn-sobre'), 'Versões e guias');
   const r = await api('inicio');
+  S.edicao = r.edicao || null;
+  S.edicoes = r.edicao ? [] : r.edicoes || [];
+  if (S.edicao) {
+    // edição (ex.: só o Editor de Placares): sem Dados do jogo e Componentes
+    $('#btn-dados').style.display = 'none';
+    $('#btn-componentes').style.display = 'none';
+  }
   S.versao = r.versao;
   S.raiz = r.raiz;
   S.pasta = r.pasta;
@@ -742,6 +768,12 @@ async function iniciar() {
   const alvo = location.hash.slice(1);
   if (alvo && alvo !== 'inicio' && (porId(alvo) || alvo === 'dados' || alvo === 'componentes')) abrir(alvo);
   else mostrar('inicio');
+  // a edição abre direto na ferramenta: a versão nova é avisada aqui, já que o Início quase não aparece
+  if (S.edicao) {
+    api('atualizacao').then((x) => {
+      if (x.nova) aviso(`Versão ${x.ultima} disponível`, { tipo: 'info', tempo: 15000, detalhe: 'Atualize pelo Início.', acao: { rotulo: 'Ir ao Início', fn: () => abrir('inicio') } });
+    }).catch(() => {});
+  }
   setInterval(atualizar, 3000);
 }
 
