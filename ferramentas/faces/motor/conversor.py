@@ -526,8 +526,38 @@ def correspondencia(ref, ent, avisos, nome):
     return P, metodo, uv
 
 
+def _olho_pela_uv(Xr, uvr, ent, me):
+    """olho trocado pelo facemaker: a calota do olho é (quase) uma esfera, então a geometria sozinha não fixa
+    a rotação (o ICP deixa o olho girar e a íris fica torta). A rotação vem da UV: cada vértice da referência
+    aponta, a partir do centro da esfera, para onde a entrada desenha a mesma UV da textura do olho; centro e
+    raio vêm da esfera da entrada. Devolve (posições, escala) ou None se a UV não servir."""
+    if ent.uv0 is None:
+        return None
+    idx = np.where(me)[0]
+    Te = ent.T[np.isin(ent.T[:, 0], idx)]
+    if len(Te) == 0:
+        return None
+    _, _, dentro = G.LocalizadorUV(ent.uv0, Te).consulta(uvr)
+    if dentro.mean() < 0.6:
+        return None
+    t, b, _ = G.LocalizadorUV(ent.uv0, Te).consulta(uvr[dentro])
+    Pe = (b[:, :, None] * ent.V[Te[t]]).sum(1)
+    cr, rr, er = G.esfera(Xr)
+    ce, re, ee = G.esfera(ent.V[idx])
+    if er > 0.15 * rr or ee > 0.15 * re or not 0.5 < re / rr < 2:
+        return None
+    dr = Xr[dentro] - cr
+    de = Pe - ce
+    dr /= np.linalg.norm(dr, axis=1)[:, None]
+    de /= np.maximum(np.linalg.norm(de, axis=1), 1e-12)[:, None]
+    R = G.kabsch(dr, de)
+    s = re / rr
+    return ce + s * (Xr - cr) @ R.T, s
+
+
 def correspondencia_olhos(ref, ent, avisos):
-    """olhos: casa pela UV; se o facemaker trocou os olhos, ajusta cada olho por similaridade (ICP)"""
+    """olhos: casa pela UV; se o facemaker trocou os olhos, ajusta cada olho pela esfera e pela UV
+    (ou, sem UV utilizável, por similaridade/ICP)"""
     if len(ref.V) == len(ent.V) and np.array_equal(ref.T, ent.T):
         return ent.V.copy(), 'mesma topologia'
     mpc = _por_conectividade(ref, ent)
@@ -548,6 +578,11 @@ def correspondencia_olhos(ref, ent, avisos):
             continue
         me = le == max(cand, key=lambda j: (le == j).sum())
         Xr, Xe = ref.V[mr], ent.V[me]
+        r = _olho_pela_uv(Xr, ref.uv0[mr], ent, me) if ref.uv0 is not None else None
+        if r is not None:
+            P[mr], s = r
+            partes.append('escala %.3f, pela UV' % s)
+            continue
         # chute inicial: centróide + escala pela caixa
         s = np.ptp(Xe, 0).mean() / max(np.ptp(Xr, 0).mean(), 1e-9)
         R, t = np.eye(3), Xe.mean(0) - s * Xr.mean(0)

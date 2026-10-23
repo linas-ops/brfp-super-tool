@@ -281,6 +281,22 @@ def umeyama(X, Y, escala=True):
     return s, R, my - s * R @ mx
 
 
+def kabsch(X, Y):
+    """rotação R (sem translação nem escala) que leva as direções X nas direções Y (mínimos quadrados)"""
+    U, _, Vt = np.linalg.svd(Y.T @ X)
+    D = np.diag([1, 1, np.sign(np.linalg.det(U @ Vt))])
+    return U @ D @ Vt
+
+
+def esfera(P):
+    """esfera que melhor passa pelos pontos: (centro, raio, maior desvio)"""
+    A = np.c_[2 * P, np.ones(len(P))]
+    x = np.linalg.lstsq(A, (P ** 2).sum(1), rcond=None)[0]
+    c = x[:3]
+    r = np.sqrt(max(x[3] + c @ c, 0.0))
+    return c, r, np.abs(np.linalg.norm(P - c, axis=1) - r).max()
+
+
 def phong(P, N, idx, bary, alfa=0.75):
     """ponto na superfície de Phong tessellation (Boubekeur & Alexa 2008) do triângulo idx(n,3)
     com coordenadas baricêntricas bary(n,3); P/N = posições e normais dos vértices"""

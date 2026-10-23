@@ -26,7 +26,7 @@ import base  # noqa: E402
 import componentes  # noqa: E402
 import referencias  # noqa: E402
 
-VERSAO = "1.3"
+VERSAO = "1.4"
 OUTRO = {"fc26": "fc27", "fc27": "fc26"}
 PREFS = base.Prefs(os.path.join(AQUI, "preferencias.json"), {
     "saida": "", "destino": "auto", "textura": "fc26", "copiar_outros": False, "sobrescrever": False, "ultima_pasta": ""})

@@ -1,4 +1,4 @@
-# Conversor de Faces FC 26 ↔ FC 27 — versão 1.2
+# Conversor de Faces FC 26 ↔ FC 27 — versão 1.4
 
 Converte o FBX da cabeça exportado pelo FIFA Editor Tool (FET) de um jogo para o outro:
 
@@ -33,7 +33,8 @@ Esqueleto, pesos, LODs e nomes vêm de uma face real de cada jogo (Messi, pasta 
 ## O que o conversor faz com cada parte
 
 - Pele: segue a superfície da face de entrada (precisão típica de 0,2 mm). Detalhes finos do Messi não passam adiante.
-- Olhos: seguem os da entrada; se o facemaker trocou a malha dos olhos, cada olho é ajustado por posição, escala e rotação.
+- Olhos: seguem os da entrada; se o facemaker trocou a malha dos olhos, cada olho é encaixado na esfera do olho da
+  entrada (posição e tamanho) e girado pela UV da textura, para a íris olhar para o mesmo lado que na face original.
 - Boca por dentro e dentes: acompanham a boca da entrada; cada dente se move sem deformar.
 - Base do pescoço: fica fixa para encaixar no corpo do jogo de destino.
 - LODs: todos gerados a partir do LOD0 da entrada.
