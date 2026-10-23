@@ -31,7 +31,7 @@ from nucleo.indice import Indice, detectar_exports  # noqa: E402
 
 WEB = os.path.join(AQUI, "web")
 PREFS = os.path.join(AQUI, "preferencias.json")
-VERSAO = "3.1"
+VERSAO = "3.2"
 AUTOSALVO = os.path.join(AQUI, "cache", "autosalvo")
 
 
@@ -234,8 +234,9 @@ def api_substituir(d):
 
 
 def api_mvdb_entrada(d):
-    """Cria no MVDB do sub-mundo a entrada de uma malha que não tem (asset novo), copiando shader/texturas de
-    variações existentes; devolve a entrada lida de novo, no formato da cena."""
+    """Cria no MVDB do sub-mundo a entrada de uma malha que não tem (asset novo), ou o material das partições que
+    faltam numa entrada que já existe, copiando shader/texturas de variações existentes; devolve a entrada lida de
+    novo, no formato da cena."""
     ix = exige_indice()
     if not ESTADO.cena:
         raise ValueError("Nenhum estádio aberto.")
@@ -245,7 +246,7 @@ def api_mvdb_entrada(d):
     if not info or not mvdb or not mvdb.get("arq"):
         raise ValueError("MeshVariationDb deste sub-mundo não está no export.")
     with ESTADO.lock:
-        edicao.criar_entrada_mvdb(ix, mvdb["arq"], info["asset"], d.get("origens") or [])
+        edicao.entrada_mvdb(ix, mvdb["arq"], info["asset"], d.get("origens"), d.get("padrao"))
         nova = Cena(ix)
         nova.ler_mvdb(d["mvdb"], {chave})
     mats = nova.mvdbs[d["mvdb"]]["entradas"].get(chave)

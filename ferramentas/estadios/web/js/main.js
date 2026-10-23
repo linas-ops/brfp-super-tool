@@ -887,32 +887,56 @@ class App {
     if (!ent?.arq) { aviso('O MeshVariationDb deste sub-mundo não está no export', { tipo: 'erro' }); return; }
     const info = md.malhas[chave] || {};
     const { lista, mvdb } = md.materiaisDe(n, chave);
-    let origens;
+    let origens = null, padrao = null;
     if (lista && mvdb !== n.mvdb && md.mvdbs[mvdb]?.arq) {
       const ok = await confirmar('Criar entrada no MVDB deste sub-mundo?',
         `<b>${esc(info.nome || chave)}</b> ganha uma entrada própria no MeshVariationDb de <b>${esc(n.mvdb.split('/').slice(-2, -1)[0] || '')}</b>, com os mesmos shaders e texturas que ela tem em <i>${esc(mvdb.split('/').slice(-2, -1)[0] || '')}</i>. Depois dá para trocar textura e shader de cada seção. O arquivo é gravado na hora (o original fica em <i>_editor_originais</i>).`,
         { rotulo: 'Criar entrada' });
       if (!ok) return;
-      origens = lista.map((m) => ({ arq: md.mvdbs[mvdb].arq, variacao: m.variacao }));
+      origens = Object.fromEntries(lista.filter((m) => m.material).map((m) => [m.material, { arq: md.mvdbs[mvdb].arq, variacao: m.variacao }]));
+      padrao = { arq: md.mvdbs[mvdb].arq, variacao: lista[0].variacao };
     } else {
       aviso('Escolha o material de partida', { detalhe: 'Todas as seções da malha começam com o shader e as texturas dele; depois dá para trocar cada uma.', tempo: 5000 });
       const origem = await D.escolherMaterialOrigem(this, null, ent.arq);
       if (!origem) return;
-      const o = md.materiais.get(origem);
-      origens = [{ arq: o.arq, variacao: origem }];
+      padrao = { arq: md.materiais.get(origem).arq, variacao: origem };
     }
-    this.carregando('Criando a entrada no MeshVariationDb…', info.nome || chave, -1);
+    await this.gravarEntradaMvdb(n, chave, { origens, padrao }, 'Entrada criada no MeshVariationDb');
+  }
+
+  // seção acrescentada ao FBX (partição nova, já importada no FET): a entrada da malha existe, mas sem material
+  // para ela. O servidor copia o material da partição de cima (ou um escolhido) com GUID novo.
+  async completarEntradaMvdb(n, chave) {
+    const md = this.modelo;
+    const info = md.malhas[chave] || {};
+    const corpo = el('div', {}, nota(`Cada partição nova de <b>${esc(info.nome || chave)}</b> ganha um material no MeshVariationDb deste sub-mundo, ligado ao GUID dela, com o shader e as texturas da <b>partição de cima</b>. Depois dá para trocar as texturas como nas outras. O arquivo é gravado na hora (o original fica em <i>_editor_originais</i>).`));
+    const r = await modal({ titulo: 'Criar material das partições novas', corpo,
+      botoes: [{ rotulo: 'Cancelar', valor: null }, { rotulo: 'Escolher outro material…', valor: 'escolher' }, { rotulo: 'Copiar da partição de cima', classe: 'btn-primario', padrao: true, valor: 'cima' }] }).promessa;
+    if (!r) return;
+    let padrao = null;
+    if (r === 'escolher') {
+      const origem = await D.escolherMaterialOrigem(this, null, md.mvdbs[n.mvdb]?.arq);
+      if (!origem) return;
+      padrao = { arq: md.materiais.get(origem).arq, variacao: origem };
+    }
+    await this.gravarEntradaMvdb(n, chave, { padrao }, 'Material criado para as partições novas');
+  }
+
+  async gravarEntradaMvdb(n, chave, { origens = null, padrao = null }, titulo) {
+    const md = this.modelo;
+    const info = md.malhas[chave] || {};
+    this.carregando('Gravando no MeshVariationDb…', info.nome || chave, -1);
     try {
-      const r = await api('mvdb_entrada', { mvdb: n.mvdb, malha: chave, origens });
+      const r = await api('mvdb_entrada', { mvdb: n.mvdb, malha: chave, origens, padrao });
       md.adicionarEntradaMvdb(n.mvdb, chave, r.materiais, r.texturas);
       await this.viewport.recarregarMalha(chave);
       this.carregando(null);
       this.props.agendar();
-      aviso('Entrada criada no MeshVariationDb', { tipo: 'sucesso', tempo: 7000,
+      aviso(titulo, { tipo: 'sucesso', tempo: 7000,
         detalhe: `${r.materiais.length} material(is) de ${info.nome || chave}. Troque texturas/shader nas seções e importe o ${r.arq.split('/').pop()} no FET.` });
     } catch (e) {
       this.carregando(null);
-      aviso('Não consegui criar a entrada', { tipo: 'erro', detalhe: e.message });
+      aviso('Não consegui gravar no MeshVariationDb', { tipo: 'erro', detalhe: e.message });
     }
   }
 

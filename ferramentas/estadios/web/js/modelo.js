@@ -5,9 +5,10 @@ import * as THREE from 'three';
 export const NOMES_AMIGAVEIS = {
   standslower: 'Arquibancada inferior', standsupper: 'Arquibancada superior', roof: 'Cobertura', pitch: 'Campo',
   exterior: 'Exterior', exterior_facade: 'Fachada', exterior_cityskirt: 'Entorno (cidade)', exterior_background: 'Fundo',
-  scoreclock: 'Placar', playerbenches: 'Bancos de reservas', adboards: 'Placas de publicidade', entrancetunnel: 'Túnel de entrada',
+  scoreclock: 'Placar', vanities_main: 'Bandeiras e faixas da torcida', tifo_player_main: 'Mosaico (tifo)', presentation: 'Apresentação',
+  snow: 'Neve', playerbenches: 'Bancos de reservas', adboards: 'Placas de publicidade', entrancetunnel: 'Túnel de entrada',
   stadium_high: 'Detalhes extras', lighting: 'Iluminação', lighting_main: 'Luzes principais', tournament: 'Torneio',
-  tournament_main: 'Torneio', railings: 'Guarda-corpos', banners: 'Bandeiras e faixas', tifo_player: 'Tifo', vanities: 'Decoração (vanities)',
+  tournament_main: 'Torneio', railings: 'Guarda-corpos', banners: 'Bandeiras e faixas', tifo_player: 'Mosaico (tifo)', vanities: 'Bandeiras e faixas da torcida',
   default: 'Padrão', streaming: 'Streaming', rain: 'Chuva', sideline: 'Lateral do campo', '5v5_dressing': 'Decoração 5v5',
   events_stadium_517_set: 'Cenário externo', crowd: 'Torcida', trophy: 'Troféu', volume_decals: 'Decalques',
   lighting_roof: 'Luzes da cobertura', lighting_roof_main: 'Luzes da cobertura', lighting_stands: 'Luzes das arquibancadas',

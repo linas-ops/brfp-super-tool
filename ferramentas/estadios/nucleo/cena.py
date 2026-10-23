@@ -16,7 +16,7 @@ from collections import Counter, defaultdict
 
 from . import estadios_txt
 from . import xmlfet as X
-from .indice import chave
+from .indice import chave, tipo_primario
 
 # sub-mundos / layers sem geometria de estádio (pessoas, câmeras, coreografia, efeitos, lógica)
 NAO_VISUAIS = ("choreo", "slc", "walkers", "confetti", "effects", "broadcasting", "debug", "chant", "crowd",
@@ -69,6 +69,7 @@ class Cena:
         self._xml = {}
         self.uso_bp = Counter()
         self.nuvens = []
+        self.visitados = set()
 
     # ------------------------------------------------------------------ util
     def xml(self, caminho):
@@ -127,11 +128,13 @@ class Cena:
         raiz = self.novo_no(pai=-1, tipo="mundo", nome=X.curto(mundo_asset), local=X.IDENT, alvo=None, jogo=None,
                             arq=self.ix.id_arquivo(item), asset=mundo_asset)
         self.visitar_arquivo(mundo_asset, raiz["id"], mundo_asset + "/MeshVariationDb_Win32", [mundo_asset.lower()])
+        self.avulsos(mundo_asset, raiz["id"])
         self.podar()
         self.resolver_malhas()
         return self
 
     def visitar_arquivo(self, asset, pai, mvdb, pilha):
+        self.visitados.add(asset.lower())
         item = self.ix.achar(asset, ".xml")
         if not item:
             self.avisos.append(f"Não exportado: {asset}")
@@ -171,6 +174,22 @@ class Cena:
                 vistos.add(g)
                 out.append(el)
         return out
+
+    def avulsos(self, mundo_asset, pai):
+        """Sub-mundos da pasta do estádio que nenhum outro referencia: o jogo os carrega à parte (bandeiras e faixas
+        da torcida em vanities, mosaico em tifo_player, troféu, neve...). Entram na cena, na origem, sem referência
+        própria para editar."""
+        base = mundo_asset.lower().rsplit("/", 1)[0] + "/"
+        for k, item in sorted(self.ix.mapa.items()):
+            if not k.endswith(".xml") or "/" in k[len(base) - len("content/"):-4] or not ("content/" + k).startswith(base):
+                continue
+            asset = "content/" + k[:-4]
+            if asset.lower() in self.visitados or nao_visual(asset) or tipo_primario(self.ix.absoluto(item)) != "SubWorldData":
+                continue
+            curto = asset.split("/")[-1]
+            no = self.novo_no(pai=pai, tipo="subworld", nome=curto, asset=asset, local=X.IDENT, alvo=None, jogo=None,
+                              arq=self.ix.id_arquivo(item), mvdb=asset + "/MeshVariationDb_Win32", avulso=True)
+            self.visitar_arquivo(asset, no["id"], no["mvdb"], [mundo_asset.lower(), asset.lower()])
 
     def referencia_grupo(self, el, tipo, arq, asset_arq, pai, mvdb, pilha):
         if tipo == "SubWorldReferenceObjectData":
