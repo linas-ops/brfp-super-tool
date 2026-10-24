@@ -555,12 +555,16 @@ export function abrirLuzes(app) {
       : '<small>Nenhuma luz no estádio para servir de modelo</small>';
     avisoModelo.replaceChildren(m?.aninhado && (m.compartilhado || 1) > 1
       ? nota(`Este modelo fica dentro de um prefab usado <b>${m.compartilhado}</b> vezes: cada luz nova aparece em todas as cópias dele. Prefira um modelo de um layer de luzes (ex.: “Luzes da cobertura”).`, 'alerta') : '');
+    const exc = m ? app.notaGrupoExcluido([m], 'As luzes novas vão para o mesmo arquivo do modelo,') : null;
+    if (exc) avisoModelo.append(exc);
   };
   const tipos = [...new Set(md.nos.filter((n) => n.tipo === 'luz' && !n.removido).map((n) => n.luz?.tipo))];
   const escolherTipo = seletor([['', 'Trocar o tipo do modelo…'], ...TIPOS_LUZ.filter(([t]) => tipos.includes(t))], '', (t) => {
     if (!t) return;
     const luzes = md.nos.filter((n) => n.tipo === 'luz' && !n.removido && n.alvo && !n.nova && n.luz?.tipo === t && !n.aninhado);
-    const m = luzes.find((n) => /roof/i.test(n.alvo.arq)) || luzes[0];
+    const noJogo = luzes.filter((n) => !md.ocultoNoJogo(n));
+    const lista = noJogo.length ? noJogo : luzes;
+    const m = lista.find((n) => /roof/i.test(n.alvo.arq)) || lista[0];
     if (m) { app.modeloLuzId = m.id; atualizarModelo(); }
     escolherTipo.value = '';
   });
@@ -586,6 +590,8 @@ export function abrirLuzes(app) {
     secSel.replaceChildren();
     secSel.append(el('h4', {}, luzes.length ? `Selecionadas (${luzes.length})` : 'Selecionadas'));
     if (!luzes.length) { secSel.append(el('small', { class: 'mudo' }, 'Clique numa luz (ligue as luzes na vista) ou selecione várias na estrutura.')); return; }
+    const exc = app.notaGrupoExcluido(luzes, luzes.length > 1 ? 'Há luzes selecionadas' : 'Esta luz está');
+    if (exc) secSel.append(exc);
     const L = luzes[luzes.length - 1].luz || {};
     const ids = luzes.map((n) => n.id);
     const chave = ids.join(',');
@@ -622,10 +628,11 @@ export function abrirLuzes(app) {
   montarSel();
   const aoSel = () => { montarSel(); atualizarModelo(); };
   md.addEventListener('selecao', aoSel);
+  md.addEventListener('jogo', aoSel);
   md.addEventListener('luz', montarSel);
   if (!v.mostrarLuzes) app.alternarLuzes(true);
   painelFlutuante({ titulo: 'Luzes', icone: 'luzMais', largura: 360, corpo,
-    aoFechar: () => { md.removeEventListener('selecao', aoSel); md.removeEventListener('luz', montarSel); if (app.modoLuz) app.sairModoLuz(); } });
+    aoFechar: () => { md.removeEventListener('selecao', aoSel); md.removeEventListener('jogo', aoSel); md.removeEventListener('luz', montarSel); if (app.modoLuz) app.sairModoLuz(); } });
 }
 
 // ======================================================================== banco de reservas, área técnica, estádio no jogo

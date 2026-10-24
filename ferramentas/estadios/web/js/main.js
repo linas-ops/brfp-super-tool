@@ -1303,12 +1303,30 @@ class App {
   }
 
   // luz que serve de modelo para as novas: a selecionada, a escolhida no painel ou o spot mais comum da cobertura
+  // grupo (layer/sub-mundo) acima da luz que está fora do jogo (Excluded): as luzes dentro dele não acendem
+  grupoExcluidoDe(n) {
+    const md = this.modelo;
+    return md.ancestrais(n).find((a) => a.jogo?.excluido) || null;
+  }
+
+  notaGrupoExcluido(luzes, texto) {
+    const grupos = [...new Map(luzes.map((n) => this.grupoExcluidoDe(n)).filter(Boolean).map((g) => [g.id, g])).values()];
+    if (!grupos.length) return null;
+    const nomes = grupos.map((g) => `<b>${esc(g.rotulo || g.nome)}</b>`).join(', ');
+    return el('div', {}, nota(`${texto} ${grupos.length > 1 ? 'nos grupos' : 'no grupo'} ${nomes}, que está fora do jogo (Excluded): nenhuma luz dali acende no jogo.`, 'alerta'),
+      el('div', { class: 'acoes-linha' }, el('button', { class: 'btn peq', title: 'Tira o Excluded da referência do grupo (salve com Ctrl+S)',
+        onclick: () => this.definirJogo(grupos.map((g) => g.id), false) }, icone('jogo', 13), grupos.length > 1 ? 'Colocar os grupos no jogo' : 'Colocar o grupo no jogo')));
+  }
+
   modeloLuz() {
     const md = this.modelo;
     const sel = md.nos[md.ativo];
     if (sel?.tipo === 'luz' && !sel.removido) return sel;
     if (this.modeloLuzId !== undefined && md.nos[this.modeloLuzId] && !md.nos[this.modeloLuzId].removido) return md.nos[this.modeloLuzId];
-    const luzes = md.nos.filter((n) => n.tipo === 'luz' && !n.removido && n.alvo && !n.aninhado);
+    // modelo padrão: uma luz que aparece no jogo (layer sem Excluded); luz nova copiada de um layer excluído some no jogo
+    const todas = md.nos.filter((n) => n.tipo === 'luz' && !n.removido && n.alvo && !n.aninhado);
+    const noJogo = todas.filter((n) => !md.ocultoNoJogo(n));
+    const luzes = noJogo.length ? noJogo : todas;
     const cobertura = luzes.filter((n) => n.luz?.tipo === 'spot' && /roof/i.test(n.alvo.arq));
     return cobertura[0] || luzes.find((n) => n.luz?.tipo === 'spot') || luzes[0] || null;
   }

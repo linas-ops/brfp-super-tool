@@ -74,6 +74,7 @@ export class Modelo extends EventTarget {
     this.dados = j;
     this.mundo = j.mundo;
     this.malhas = j.malhas;
+    this._pastasProprias = null;
     this.mvdbs = j.mvdbs;
     this.texturas = j.texturas;
     this.nuvens = j.nuvens || [];
@@ -639,6 +640,26 @@ export class Modelo extends EventTarget {
   }
 
   // ------------------------------------------------------------ materiais de uma peça
+  // textura que só outro estádio carrega (fica na pasta de componentes/mundo dele): o jogo não a carrega neste
+  // mundo e o material fica sem ela. Devolve o nome do outro estádio, ou null.
+  outroEstadio(asset) {
+    const m = String(asset || '').toLowerCase().match(/\/(?:components\/stadiums|stadiums)\/([^/]+)\//);
+    if (!m) return null;
+    const mundo = String(this.mundo || '').toLowerCase().split('/').pop();
+    const base = mundo.replace(/_\d+$/, '');
+    const nome = m[1].replace(/_\d+$/, '');
+    if (!nome || nome === base) return null;
+    // pasta que as malhas deste estádio também usam: é deste estádio, mesmo com outro nome
+    if (!this._pastasProprias) {
+      this._pastasProprias = new Set();
+      for (const i of Object.values(this.malhas || {})) {
+        const p = String(i.asset || '').toLowerCase().match(/\/(?:components\/stadiums|stadiums)\/([^/]+)\//);
+        if (p) this._pastasProprias.add(p[1]);
+      }
+    }
+    return this._pastasProprias.has(m[1]) ? null : m[1];
+  }
+
   materiaisDe(n, chaveMalha) {
     const malha = this.malhas[chaveMalha];
     let ent = this.mvdbs[n.mvdb]?.entradas?.[chaveMalha];

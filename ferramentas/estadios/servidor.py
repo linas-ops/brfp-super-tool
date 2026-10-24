@@ -31,7 +31,7 @@ from nucleo.indice import Indice, detectar_exports  # noqa: E402
 
 WEB = os.path.join(AQUI, "web")
 PREFS = os.path.join(AQUI, "preferencias.json")
-VERSAO = "3.2"
+VERSAO = "3.3"
 AUTOSALVO = os.path.join(AQUI, "cache", "autosalvo")
 
 

@@ -482,10 +482,12 @@ export class Propriedades {
       const nova = !(param in (base.texturas || {}));
       const url = vazia ? null : mats.urlMiniatura(asset);
       const desligada = reg.texOcultas?.has(param);
+      const outro = vazia ? null : md.outroEstadio(asset);
       const linha = el('div', { class: `tex ${asset !== orig ? 'alterada' : ''} ${desligada ? 'desligada' : ''}` });
       const img = el('div', { class: 'tex-img', style: url ? { backgroundImage: `url("${url}")` } : {} }, url ? '' : vazia ? 'vazia' : 'sem imagem');
       linha.append(img, el('div', { class: 'tex-txt', title: vazia ? 'Sem textura (null)' : asset },
-        el('b', {}, nomeParam(param) + (nova ? ' (nova)' : '')), el('small', {}, vazia ? 'nenhuma — clique no pincel para escolher' : nomeCurto(asset))));
+        el('b', {}, nomeParam(param) + (nova ? ' (nova)' : '')), el('small', {}, vazia ? 'nenhuma — clique no pincel para escolher' : nomeCurto(asset)),
+        outro ? el('small', { style: { color: 'var(--erro, #f0565a)' }, title: 'O jogo só carrega esta textura no outro estádio; aqui ela não aparece.' }, `⚠ do estádio ${outro}: não carrega neste`) : ''));
       const ac = el('div', { class: 'tex-acoes' });
       if (r.editavel) {
         if (!vazia) ac.append(el('button', { class: 'btn-icone peq', title: desligada ? 'Mostrar esta textura no editor' : 'Esconder esta textura no editor (não altera o arquivo)', html: icone(desligada ? 'olhoFechado' : 'olho', 14), onclick: () => app.alternarTexturaEditor(r.chave, param) }));
