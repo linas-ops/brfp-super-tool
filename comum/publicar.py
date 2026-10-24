@@ -33,7 +33,8 @@ DONO, NOME_REPO = atualizacao.REPO.split("/")
 DESCRICAO = "BRFP Super Tool: ferramentas de modding do BRFP (EA SPORTS FC 26 / FC 27) numa janela só."
 # modelos e foto tirados do jogo: ficam fora do repositório e do pacote públicos
 FORA_DO_PUBLICO = ("ferramentas/corpos/motor/referencia/", "ferramentas/faces/motor/referencia/",
-                   "ferramentas/kits/motor/referencia/", "ferramentas/minifaces/web/referencia_p158023.png")
+                   "ferramentas/kits/motor/referencia/", "ferramentas/kits_pes/motor/referencia/",
+                   "ferramentas/minifaces/web/referencia_p158023.png")
 
 
 def git(*args, entrada=None):

@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Conversor de Kits PES → FC</title>
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="comum/brfp.css">
+  <link rel="stylesheet" href="app.css">
+  <script type="importmap">
+    { "imports": { "three": "./comum/vendor/three/three.module.js", "three/addons/": "./comum/vendor/three/addons/" } }
+  </script>
+</head>
+<body>
+  <div id="app">
+    <header id="topo">
+      <div class="marca" title="Conversor de Kits PES 2021 → FC 27">
+        <span class="marca-ic"></span>
+        <span class="marca-txt">Conversor de Kits PES → FC</span>
+        <span class="marca-versao" id="versao"></span>
+      </div>
+      <nav id="menus" aria-label="Menu principal"></nav>
+      <div class="titulo-centro" id="titulo"></div>
+      <div class="topo-acoes">
+        <button id="btn-cancelar" class="btn-fantasma" hidden title="Parar a conversão (os kits já convertidos ficam)"></button>
+        <button id="btn-converter" class="btn-primario" title="Converter os kits da lista (Ctrl+Enter)" disabled>
+          <span id="btn-converter-ic"></span><span id="btn-converter-txt">Converter</span><span id="contador" class="contador" hidden>0</span>
+        </button>
+      </div>
+    </header>
+
+    <aside id="painel-esq" class="painel" aria-label="Kits do PES">
+      <div class="painel-cab">
+        <h2>Kits do PES</h2>
+        <div class="painel-cab-acoes">
+          <button id="btn-add-arq" class="btn-icone peq" title="Adicionar texturas de kits…"></button>
+          <button id="btn-add-pasta" class="btn-icone peq" title="Adicionar pasta (com subpastas)…"></button>
+          <button id="btn-limpar" class="btn-icone peq" title="Limpar a lista"></button>
+        </div>
+      </div>
+      <div class="busca-linha">
+        <label class="campo-busca">
+          <span id="busca-ic"></span>
+          <input id="busca" type="search" placeholder="Buscar arquivo ou time…" autocomplete="off" spellcheck="false">
+        </label>
+        <select id="filtro" class="seletor" title="Filtrar a lista">
+          <option value="tudo">Todos</option>
+          <option value="faltando">Falta o time</option>
+          <option value="feitas">Convertidos</option>
+          <option value="problemas">Com problema</option>
+        </select>
+      </div>
+      <div id="lista" class="arvore" role="listbox" aria-label="Kits na lista"></div>
+      <div class="painel-rodape"><span id="resumo-lista"></span></div>
+    </aside>
+    <div class="divisor" id="div-esq" title="Arraste para redimensionar"></div>
+
+    <main id="viewport">
+      <canvas id="tela" tabindex="0" aria-label="Prévia 3D do kit"></canvas>
+      <div id="plano" class="plano" hidden><img id="plano-img" alt="Textura"></div>
+      <div id="barra-vista" class="barra-flutuante" hidden>
+        <div class="segmentado" id="seg-qual">
+          <button data-qual="entrada" class="ativo" title="O kit do PES (Tab alterna)">PES</button>
+          <button data-qual="saida" title="O kit convertido para o FC 27">FC 27</button>
+        </div>
+        <div class="segmentado" id="seg-peca" hidden>
+          <button data-peca="jersey" class="ativo">Camisa</button>
+          <button data-peca="shorts">Calção</button>
+          <button data-peca="socks">Meião</button>
+        </div>
+        <span class="sep-v"></span>
+        <div class="segmentado" id="seg-modo">
+          <button data-modo="3d" title="O kit vestido em 3D">3D</button>
+          <button data-modo="plano" class="ativo" title="A imagem da textura, plana">Plano</button>
+        </div>
+        <span class="sep-v"></span>
+        <button id="btn-girar" class="btn-icone" title="Girar sozinho"></button>
+        <button id="btn-enquadrar" class="btn-icone" title="Enquadrar (F)"></button>
+      </div>
+      <div id="rotulo-previa" class="rotulo-previa" hidden></div>
+      <div id="vazio-vista" class="soltar">
+        <div class="soltar-caixa">
+          <div class="ic-grande" id="soltar-ic"></div>
+          <h2>Arraste kits do PES para cá</h2>
+          <p>A textura do kit do PES 2021 (camisa, mangas, gola, calção e meião numa imagem só, como o <i>u0101p1</i>): PNG, DDS, TGA ou JPG. Cada kit vira a pasta de um kit do FC 27, com camisa, calção e meião no layout do jogo.</p>
+          <div class="acoes">
+            <button class="btn-primario" id="btn-vazio-arq"></button>
+            <button class="btn" id="btn-vazio-pasta"></button>
+          </div>
+          <small>Os mapas de tecido, a braçadeira e o hotspot vêm de um kit base do FC 27 exportado pelo FET (escolha em Saída e opções).</small>
+        </div>
+      </div>
+      <div id="carregando-previa" class="aviso-previa" hidden></div>
+    </main>
+    <div class="divisor" id="div-dir" title="Arraste para redimensionar"></div>
+
+    <aside id="painel-dir" class="painel" aria-label="Detalhes e opções">
+      <div id="propriedades" class="propriedades"></div>
+    </aside>
+
+    <footer id="status">
+      <span class="status-esq" id="status-esq"></span>
+      <span class="status-dir">
+        <span id="status-progresso" hidden><span class="barra-progresso mini"><div id="progresso-barra"></div></span><span id="progresso-txt"></span></span>
+        <span class="chip" id="chip-python" title="Motor de conversão"></span>
+      </span>
+    </footer>
+  </div>
+  <datalist id="lista-times"></datalist>
+  <div id="camada-soltar" hidden><div>Solte os kits para adicionar</div></div>
+  <div id="camada-modal"></div>
+  <div id="menu-contexto" class="menu-flutuante" hidden></div>
+  <div id="toasts" aria-live="polite"></div>
+  <script type="module" src="app.js"></script>
+</body>
+</html>

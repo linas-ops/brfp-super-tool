@@ -2,7 +2,7 @@
 
     python supertool.py [--porta 8760] [--sem-janela] [--abrir <id>]
 
-Cada ferramenta web (Estádios, Placares, Compdata, Faces, Corpos, Minifaces, Tabelas, Criador, Squads, Conversor PES) é um servidor local próprio, iniciado
+Cada ferramenta web (Estádios, Placares, Compdata, Faces, Corpos, Minifaces, Tabelas, Criador, Squads, Conversor PES, Kits PES) é um servidor local próprio, iniciado
 sob demanda e mostrado dentro da janela do Super Tool. Fechar o Super Tool encerra todas elas (Job Object do Windows).
 O RDBM 26 · Add-on FC 27 é um programa nativo: o Super Tool só o abre e passa os comandos de linha.
 Banco de dados e idioma do jogo são importados uma vez aqui (página "Dados do jogo") e valem para todas as ferramentas
@@ -81,6 +81,10 @@ FERRAMENTAS = [
      "pasta": os.path.join(AQUI, "ferramentas", "conversor_pes"), "guia": os.path.join(base.pasta_conversor(), "LEIAME.md"),
      "descricao": "Converte estádios do PES 2021 para um estádio base do FC 26 (Blender + texconv), sem comandos: assistente "
                   "de nova conversão, configuração em formulário, etapas explicadas e a lista do que importar no FET."},
+    {"id": "kits_pes", "nome": "Conversor de Kits PES → FC", "icone": "converter", "tipo": "web", "porta": 8780,
+     "pasta": os.path.join(AQUI, "ferramentas", "kits_pes"), "guia": "LEIAME.md",
+     "descricao": "Converte kits do PES 2021 (camisa, mangas, gola, calção e meião numa textura só) em kits do FC 27: as "
+                  "três texturas refeitas pelo uniforme em 3D, na pasta do kit do FET, com o tecido de um kit base."},
     {"id": "rdbm", "nome": "RDBM 26 · Add-on FC 27", "icone": "pacote", "tipo": "nativo",
      "pasta": base.pasta_rdbm(), "exe": "RDBM26_FC27.exe", "guia": "LEIA-ME.txt",
      "descricao": "Abre e edita squads do FC 27 no RDBM 26 sem mexer na instalação do RDBM (programa à parte)."},
@@ -589,7 +593,7 @@ def main():
     ap = argparse.ArgumentParser(description=NOME)
     ap.add_argument("--porta", type=int, default=8760)
     ap.add_argument("--sem-janela", action="store_true", help="não abre a janela automaticamente")
-    ap.add_argument("--abrir", help="id da ferramenta para abrir direto (estadios, placares, compdata, faces, corpos, conversor_pes)")
+    ap.add_argument("--abrir", help="id da ferramenta para abrir direto (estadios, placares, compdata, faces, corpos, conversor_pes, kits_pes)")
     a = ap.parse_args()
     url_extra = f"#{a.abrir}" if a.abrir else ""
     if not a.sem_janela and ja_aberto(a.porta):
