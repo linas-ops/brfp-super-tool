@@ -29,11 +29,11 @@ import componentes  # noqa: E402
 import edicao  # noqa: E402
 
 RAIZ_ZIP = "BRFP Super Tool"
-# pastas e arquivos deste computador (em qualquer nível, fora de runtime/)
+# pastas e arquivos deste computador (em qualquer nível, fora de runtime/); .worktrees e .claude são cópias de trabalho
 PASTAS_FORA = {".perfil_janela", "dados", "cache", "__pycache__", "exportados", "saida", "autosalvo", "downloads",
-               "backups", "work", ".git", ".vscode", ".idea"}
+               "backups", "work", ".git", ".vscode", ".idea", ".worktrees", ".claude"}
 ARQUIVOS_FORA = {"preferencias.json", "componentes_locais.json", "addon.ini", "addon.log", "local.json", "thumbs.db",
-                 "desktop.ini"}
+                 "desktop.ini", ".git"}
 EXTENSOES_FORA = (".pyc", ".pyo", ".tmp", ".parcial", ".log", ".bak")
 ESTADO = {"ativo": False, "tipo": None, "edicao": None, "fase": "", "feito": 0, "total": 0, "arquivo": None, "erro": None, "fim": 0,
           "tamanho": 0, "msg": ""}
