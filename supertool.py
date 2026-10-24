@@ -32,7 +32,7 @@ import dados  # noqa: E402
 import edicao  # noqa: E402
 import pacote  # noqa: E402
 
-VERSAO = "3.4"
+VERSAO = "3.5"
 NOME = "BRFP Super Tool"
 RAIZ = base.raiz_trabalho()
 SEM_JANELA = getattr(subprocess, "CREATE_NO_WINDOW", 0)
