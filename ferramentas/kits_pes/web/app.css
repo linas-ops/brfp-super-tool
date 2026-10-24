@@ -1,0 +1,95 @@
+/* Conversor de Kits PES → FC — só o que é específico; o resto vem de comum/brfp.css (tema do Editor de Estádios). */
+#app {
+  display: grid; height: 100vh;
+  grid-template-columns: var(--esq) 4px 1fr 4px var(--dir);
+  grid-template-rows: var(--topo) 1fr var(--rodape);
+  grid-template-areas: "topo topo topo topo topo" "esq div1 vp div2 dir" "status status status status status";
+  --esq: 330px; --dir: 350px;
+}
+#topo { grid-area: topo; }
+#painel-esq { grid-area: esq; }
+#div-esq { grid-area: div1; }
+#viewport { grid-area: vp; position: relative; min-width: 0; min-height: 0; background: radial-gradient(900px 600px at 50% 30%, #1a2030 0%, #0e1013 70%); overflow: hidden; }
+#div-dir { grid-area: div2; }
+#painel-dir { grid-area: dir; }
+#status { grid-area: status; }
+.marca-ic, .bv-hero-ic { background-image: url(favicon.svg); }
+
+#tela { position: absolute; inset: 0; width: 100%; height: 100%; display: block; outline: none; touch-action: none; }
+.barra-flutuante {
+  position: absolute; right: 10px; top: 10px; display: flex; align-items: center; gap: 4px; padding: 4px;
+  background: rgba(26, 29, 35, .92); border: 1px solid var(--borda); border-radius: var(--raio-g); box-shadow: var(--sombra); backdrop-filter: blur(6px);
+}
+.barra-flutuante .segmentado { border: 0; }
+.rotulo-previa { position: absolute; left: 12px; top: 12px; padding: 6px 10px; border-radius: var(--raio); background: rgba(18, 20, 24, .8); color: var(--texto-2); font-size: 12px; max-width: calc(100% - 300px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rotulo-previa b { color: var(--texto); }
+.aviso-previa { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); padding: 10px 14px; border-radius: 999px; background: rgba(26, 29, 35, .94); border: 1px solid var(--borda-forte); color: var(--texto-2); display: flex; gap: 8px; align-items: center; box-shadow: var(--sombra); }
+
+.soltar { position: absolute; inset: 0; display: grid; place-items: center; padding: 24px; }
+.soltar-caixa { max-width: 520px; text-align: center; color: var(--texto-2); line-height: 1.55; padding: 34px 30px; border: 1.5px dashed var(--borda-forte); border-radius: 16px; background: rgba(18, 20, 24, .5); }
+.soltar-caixa .ic-grande { width: 64px; height: 64px; margin: 0 auto 12px; color: var(--texto-3); }
+.soltar-caixa h2 { margin: 0 0 6px; font-size: 17px; color: var(--texto); font-weight: 600; }
+.soltar-caixa p { margin: 0; }
+.soltar-caixa .acoes { display: flex; gap: 8px; justify-content: center; margin: 18px 0 12px; flex-wrap: wrap; }
+.soltar-caixa small { color: var(--texto-3); font-size: 12px; }
+#camada-soltar { position: fixed; inset: 0; z-index: 90; display: grid; place-items: center; background: rgba(76, 141, 255, .12); border: 3px dashed var(--acento); pointer-events: none; }
+#camada-soltar div { padding: 14px 22px; border-radius: 12px; background: var(--painel); border: 1px solid var(--acento); font-size: 15px; font-weight: 600; box-shadow: var(--sombra); }
+
+/* lista de texturas */
+.tex { display: grid; grid-template-columns: 22px 1fr auto; align-items: center; gap: 8px; width: 100%; padding: 6px 10px 6px 12px; border: 0; border-left: 2px solid transparent; border-bottom: 1px solid rgba(44, 50, 59, .6); background: none; color: var(--texto); text-align: left; }
+.tex:hover { background: var(--hover); }
+.tex.sel { background: var(--selecao-suave); border-left-color: var(--selecao); }
+.tex .ic-tex { color: var(--texto-3); display: grid; place-items: center; }
+.tex .txt { min-width: 0; }
+.tex .txt b { display: block; font-weight: 600; font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tex .txt small { display: flex; align-items: center; gap: 5px; color: var(--texto-3); font-size: 11.5px; margin-top: 2px; white-space: nowrap; overflow: hidden; }
+.tex .txt small .ic { color: var(--texto-3); }
+.tex .est { display: grid; place-items: center; width: 22px; height: 22px; }
+.est-ok { color: var(--sucesso); }
+.est-erro { color: var(--perigo); }
+.est-ignorado { color: var(--texto-3); }
+.est-na_fila { color: var(--texto-3); }
+.est-convertendo { color: var(--acento); }
+.est-aviso { color: var(--alerta); }
+.jogo { display: inline-grid; place-items: center; height: 17px; padding: 0 6px; border-radius: 9px; font-size: 10.5px; font-weight: 600; letter-spacing: .2px; }
+.jogo.fc26 { background: rgba(157, 139, 232, .18); color: #c4b8ff; }
+.jogo.fc27 { background: rgba(76, 141, 255, .18); color: #9fc0ff; }
+.jogo.nada { background: var(--painel-3); color: var(--texto-3); }
+.grupo-lista { padding: 10px 12px 4px; font-size: 11px; text-transform: uppercase; letter-spacing: .7px; color: var(--texto-3); display: flex; justify-content: space-between; gap: 8px; }
+.grupo-lista span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-transform: none; letter-spacing: 0; font-size: 11.5px; }
+
+/* painel direito */
+.prop-cab { padding: 14px 14px 10px; border-bottom: 1px solid var(--borda); }
+.prop-cab h3 { margin: 0; font-size: 15px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.prop-cab .sub { color: var(--texto-3); font-size: 12px; margin-top: 3px; word-break: break-all; }
+.prop-cab .etiquetas { margin-top: 8px; }
+.seta-jogo { display: inline-flex; align-items: center; gap: 6px; }
+.caminho-saida { font: 11.5px var(--mono); color: var(--texto-2); word-break: break-all; background: var(--bg); border: 1px solid var(--borda); border-radius: var(--raio); padding: 6px 8px; }
+.lista-avisos { margin: 0; padding-left: 18px; color: #ead39b; font-size: 12px; line-height: 1.5; }
+.barra-progresso.mini { display: inline-block; width: 120px; height: 5px; vertical-align: middle; margin-right: 8px; }
+#status-progresso { display: inline-flex; align-items: center; }
+
+@media (max-width: 1150px) { #app { --esq: 250px; --dir: 280px; } }
+@media (max-width: 860px) { #app { grid-template-columns: var(--esq) 4px 1fr 0 0; } #painel-dir, #div-dir { display: none; } }
+
+/* prévia plana da textura */
+.plano { position: absolute; inset: 0; display: grid; place-items: center; padding: 56px 18px 18px; }
+.plano img { max-width: 100%; max-height: 100%; aspect-ratio: 1; object-fit: contain; image-rendering: auto; border: 1px solid var(--borda); border-radius: var(--raio);
+  background: repeating-conic-gradient(#2a2f38 0 25%, #20242b 0 50%) 0 0 / 20px 20px; box-shadow: var(--sombra); }
+.tipo-tex { display: inline-grid; place-items: center; height: 17px; padding: 0 6px; border-radius: 9px; font-size: 10.5px; background: var(--painel-3); color: var(--texto-2); }
+.tipo-tex.normal { background: rgba(120, 140, 255, .16); color: #b7c2ff; }
+.duvida { color: var(--alerta); }
+
+/* específico dos kits */
+.tipo-kit { display: inline-grid; place-items: center; height: 17px; padding: 0 6px; border-radius: 9px; font-size: 10.5px; font-weight: 600; background: rgba(76, 141, 255, .16); color: #9fc0ff; }
+.tipo-kit.goalie_home { background: rgba(80, 200, 140, .16); color: #9fe3bf; }
+.tipo-kit.away { background: rgba(255, 146, 51, .16); color: #ffc08a; }
+.time-kit { overflow: hidden; text-overflow: ellipsis; }
+.falta-time { color: var(--alerta); }
+.linha-campos { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.linha-campos .campo { margin: 0; }
+.plano.tres { grid-template-columns: 1fr; }
+.plano img.retangulo { aspect-ratio: auto; }
+.base-ok { display: flex; gap: 6px; align-items: center; color: var(--texto-2); font-size: 12px; margin-top: 6px; }
+.base-ok .ic { color: var(--sucesso); }
+.rotulo-previa { top: auto; bottom: 12px; max-width: calc(100% - 24px); }
