@@ -1,5 +1,5 @@
 // Criador de Kits — interface (BRFP Super Tool).
-import { $, el, esc, aviso, modal, confirmar, barraMenus, divisorArrastavel, dialogoSobre, nota, modalAberto, menuAberto, lerArquivoBase64, campo, entrada } from './comum/ui.js';
+import { $, el, esc, aviso, modal, confirmar, barraMenus, divisorArrastavel, dialogoSobre, nota, modalAberto, menuAberto, lerArquivoBase64, campo, entrada, interruptor } from './comum/ui.js';
 import { icone } from './comum/icones.js';
 import { api } from './comum/api.js';
 import { instalarComponentes } from './comum/componentes.js';
@@ -10,7 +10,7 @@ import { Previa3D } from './previa3d.js';
 const S = {
   projeto: null, doador: null, analise: null, job: {}, opcoes: {}, ambiente: {}, referencias: {}, malhas: {}, biblioteca: {},
   padroes: [], tipos: [], versao: '', peca: 'jersey', modo: '2d', sel: null, urls: {}, bases: {}, chaves: {}, hist: [], futuro: [],
-  molde: null, kits: [], malhasDados: {}, ultimoFim: null,
+  molde: null, kits: [], malhasDados: {}, ultimoFim: null, verHotspots: true,
 };
 const NOME_PECA = { jersey: 'Camisa', shorts: 'Calção', socks: 'Meião' };
 const NOME_TIPO = { home: 'Casa (home)', away: 'Fora (away)', goalie_home: 'Goleiro (goalie_home)', third: 'Terceiro (third)', fourth: 'Quarto (fourth)' };
@@ -18,6 +18,19 @@ const NOME_PADRAO = {
   lisa: 'Lisa', listras_v: 'Listras verticais', listras_h: 'Listras horizontais (aros)', xadrez: 'Xadrez', metades: 'Metades',
   faixa_diagonal: 'Faixa diagonal', faixa_peito: 'Faixa no peito', v: 'V no peito', degrade: 'Degradê',
 };
+// malhas de gola do FC 27 (jerseycollargeometrytype no teamkits)
+const GOLAS_MALHA = [[0, 'round'], [1, 'mockturtle'], [2, 'nikesquareneck'], [3, 'newadidas'], [4, 'newnike'], [5, 'newpuma'],
+  [6, 'roundchippedcenter'], [7, 'vneck'], [8, 'foldmedium'], [9, 'foldmediumround'], [10, 'foldsmall'], [11, 'polo'],
+  [12, 'vnecknewpuma'], [13, 'adidaschippedcenter1'], [14, 'adidaschippedcenter2'], [15, 'bandedpolo'], [16, 'adidaschippedcenter3'],
+  [17, 'foldsmallvneck'], [18, 'minipolo'], [19, 'squareneck'], [20, 'roundcenterchip'], [21, 'vneckchippedcenter'],
+  [22, 'adidashighvneck'], [23, 'nikebackchip'], [24, 'nikedoublev'], [25, 'deepwidevneck'], [26, 'nikevneckfold']];
+const HOTSPOTS = {
+  jersey: [['jersey/numberfront', 'Número (frente)', '10'], ['jersey/numberback', 'Número (costas)', '10'], ['jersey/name', 'Nome (costas)', 'NOME']],
+  shorts: [['shorts/number', 'Número (calção)', '10']],
+};
+const CATEGORIA = { jersey: 'camisa', shorts: 'calcao', socks: 'meiao' };
+const ehTemplate = (c) => (c?.fonte || {}).tipo === 'template';
+
 const PARAMS = {   // [chave, rótulo, min, max, passo, formato]
   listras_v: [['periodo', 'Distância', 0.04, 0.6, 0.005], ['largura', 'Espessura', 0.05, 0.95, 0.01], ['fase', 'Posição', -0.5, 0.5, 0.01]],
   listras_h: [['periodo', 'Distância', 0.04, 0.6, 0.005], ['largura', 'Espessura', 0.05, 0.95, 0.01], ['fase', 'Posição', -0.5, 0.5, 0.01]],
@@ -115,6 +128,13 @@ function itensEditor() {
       }
     }
   }
+  if (S.verHotspots) {
+    const hs = p.hotspots || {};
+    for (const [k, rotulo, amostra] of HOTSPOTS[S.peca] || []) {
+      if (!hs[k]) continue;
+      it.push({ id: k, tipo: 'hotspot', rotulo, amostra, obj: { get caixa() { return hs[k]; }, set caixa(v) { hs[k] = v; } } });
+    }
+  }
   return it;
 }
 
@@ -128,7 +148,7 @@ function atualizarEditor() {
 let tPrevia = null, pedidoPrevia = 0;
 function chaveRender(peca) {
   const c = S.projeto.pecas[peca];
-  return JSON.stringify([S.projeto.doador, c.camadas, c.cores, c.padrao, c.detalhe]);
+  return JSON.stringify([S.projeto.doador, c.camadas, c.cores, c.padrao, c.detalhe, c.fonte, c.gola]);
 }
 function previaDepois(atraso = 220) {
   clearTimeout(tPrevia);
@@ -360,6 +380,12 @@ function secaoLogos() {
       ].filter(Boolean));
     }
   }
+  for (const [k, rotulo] of HOTSPOTS[S.peca] || []) {
+    if (!(p.hotspots || {})[k]) continue;
+    linha(k, null, rotulo, 'o jogo escreve na caixa (hotspot)', !S.verHotspots, [
+      btn(S.verHotspots ? 'olho' : 'olhoFechado', S.verHotspots ? 'Esconder as caixas de número e nome' : 'Mostrar as caixas de número e nome', () => { S.verHotspots = !S.verHotspots; S.sel = null; desenharKit(); desenharPropriedades(); atualizarEditor(); }),
+    ]);
+  }
   for (const lg of cfg().logos || []) {
     linha(lg.id, urlDe(lg.arquivo), lg.nome || 'Logo', `${Math.round(lg.largura * 1000) / 10}% de largura${lg.origem_foto ? ' · da foto' : ''}`, lg.visivel === false, [
       btn(lg.visivel === false ? 'olhoFechado' : 'olho', lg.visivel === false ? 'Mostrar' : 'Esconder', () => { antes(); lg.visivel = lg.visivel === false; depois({ previa: false }); }),
@@ -421,7 +447,10 @@ function desenharPropriedades() {
     const c = cfg();
     const it = itensEditor().find((i) => i.id === S.sel);
     if (it) raiz.append(secaoSelecionado(it));
-    raiz.append(secaoCores(c), secaoPadrao(c), secaoCamadas(c));
+    raiz.append(secaoFonte(c));
+    if (ehTemplate(c)) raiz.append(secaoPartes(c));
+    else raiz.append(secaoCores(c), secaoPadrao(c), secaoCamadas(c));
+    if (S.peca === 'jersey') raiz.append(secaoGola(c));
   });
 }
 
@@ -481,9 +510,125 @@ function secaoCamadas(c) {
     '“Segue a peça” recebe a cor base, o padrão e as cores de manga/gola/punho. “Cor própria” mantém o desenho daquele detalhe do doador (frisos, faixas, logos estampados) numa cor escolhida.')], 'camadas', false);
 }
 
+// ---------------------------------------------------------------- template de recorte, partes e gola
+function secaoFonte(c) {
+  const f = c.fonte || {};
+  const tpl = ehTemplate(c);
+  const card = el('div', { class: 'doador-cartao' },
+    el('img', { src: tpl ? (urlDe(f.arquivo) || '') : `miniatura?pasta=${encodeURIComponent(S.projeto.doador)}`, alt: '' }),
+    el('div', {}, el('b', {}, tpl ? nomeArq(f.arquivo).replace(/\.png$/i, '') : 'Textura do doador'),
+      el('small', {}, tpl ? 'template de recorte: cada cor é uma parte' : 'recolorida pelas cores e pelo padrão abaixo')));
+  return secao(`Base da textura · ${NOME_PECA[S.peca]}`, 'camadas', [card,
+    el('div', { class: 'acoes-linha' },
+      el('button', { class: 'btn-primario peq', onclick: () => escolherTemplate(CATEGORIA[S.peca]) }, icone('grade', 12), 'Escolher template…'),
+      tpl ? el('button', { class: 'btn peq', onclick: () => usarTemplate(null) }, icone('recarregar', 12), 'Voltar ao doador') : null),
+    el('div', { class: 'ajuda' }, 'Template de recorte: uma imagem no molde do jogo em que cada cor lisa (vermelho, verde, azul…) marca uma parte. Você escolhe a cor de cada parte; normal, coeff e trama saem do doador ou genéricos.')], 'fonte');
+}
+
+function listaPartes(camadas, { dica = '' } = {}) {
+  const lista = el('div', {});
+  camadas.forEach((cam) => {
+    const nome = entrada({ value: cam.nome || '', style: { height: '26px' } });
+    nome.onchange = () => { antes(); cam.nome = nome.value.trim(); depois({ previa: false }); };
+    const inp = el('input', { type: 'color', value: cam.cor || cam.origem });
+    inp.oninput = () => mudarCor((v) => { cam.cor = v; })(inp.value, false);
+    inp.onchange = () => mudarCor((v) => { cam.cor = v; })(inp.value, true);
+    lista.append(el('div', { class: 'camada' }, el('span', { class: 'orig', style: { background: cam.origem }, title: `Cor no template: ${cam.origem}` }),
+      el('span', { class: 'txt' }, nome), el('span', { class: 'ctl' }, el('span', { class: 'amostra' }, inp))));
+  });
+  if (dica) lista.append(el('div', { class: 'ajuda' }, dica));
+  return lista;
+}
+
+function secaoPartes(c) {
+  return secao(`Partes · ${NOME_PECA[S.peca]}`, 'pincel', [listaPartes(c.camadas, { dica: 'A bolinha da esquerda é a cor da parte no template; o quadrado é a cor no uniforme. Dá para renomear as partes.' })], 'partes');
+}
+
+function secaoGola(c) {
+  const g = c.gola || null;
+  const corpo = [];
+  corpo.push(el('div', { class: 'doador-cartao' }, el('img', { src: g ? (urlDe(g.arquivo) || '') : '', alt: '', style: { background: '#222' } }),
+    el('div', {}, el('b', {}, g ? nomeArq(g.arquivo).replace(/\.png$/i, '') : 'Sem gola por cima'), el('small', {}, g ? 'pintada por cima da camisa' : 'a gola fica com as cores da textura'))));
+  corpo.push(el('div', { class: 'acoes-linha' },
+    el('button', { class: 'btn peq', onclick: () => escolherTemplate('golas') }, icone('grade', 12), 'Escolher gola…'),
+    g ? el('button', { class: 'btn-fantasma peq', onclick: () => usarGola(null) }, icone('x', 12), 'Tirar') : null));
+  if (g) corpo.push(listaPartes(g.camadas || []));
+  const sel = el('select', { class: 'seletor' }, el('option', { value: '' }, '(não mexer no banco)'),
+    ...GOLAS_MALHA.map(([n, nome]) => el('option', { value: n, selected: c.gola_geometria === n }, `${n} · ${nome}`)));
+  sel.onchange = () => { antes(); c.gola_geometria = sel.value === '' ? null : +sel.value; depois({ previa: false }); };
+  corpo.push(campo('Malha da gola no jogo', sel, 'A forma da gola é uma malha escolhida no banco (teamkits › jerseycollargeometrytype). O valor vai no relatório da exportação.'));
+  return secao('Gola', 'camisa', corpo, 'gola', !!g);
+}
+
+async function escolherTemplate(cat) {
+  let lista = await tentar(() => api('templates'));
+  if (!lista) return;
+  const gola = cat === 'golas';
+  const atual = gola ? cfg().gola?.arquivo : (cfg().fonte || {}).arquivo;
+  const grade = el('div', { class: 'grade-kits' });
+  let escolhido = atual || null;
+  const desenhar = () => {
+    grade.innerHTML = '';
+    const opcoes = [{ nome: gola ? 'Sem gola' : 'Textura do doador', arquivo: null, url: gola ? '' : `miniatura?pasta=${encodeURIComponent(S.projeto.doador)}` }, ...lista[cat]];
+    for (const t of opcoes) {
+      grade.append(el('button', { class: `cartao-kit ${escolhido === t.arquivo ? 'sel' : ''}`, title: t.arquivo || t.nome,
+        onclick: (e) => { escolhido = t.arquivo; grade.querySelectorAll('.cartao-kit').forEach((b) => b.classList.toggle('sel', b === e.currentTarget)); },
+        ondblclick: () => { escolhido = t.arquivo; m.fechar(true); } },
+      t.url ? el('img', { src: t.url, loading: 'lazy', alt: '', style: gola ? { background: '#333' } : {} }) : el('div', { style: { aspectRatio: '1', display: 'grid', placeItems: 'center', color: 'var(--texto-3)' }, html: icone('x', 28) }),
+      el('b', {}, t.nome), el('small', {}, t.arquivo ? (t.usuario ? 'importado' : 'da ferramenta') : '')));
+    }
+  };
+  desenhar();
+  const importar = el('button', { class: 'btn', onclick: async () => {
+    const c = await escolherImagem();
+    if (!c) return;
+    const r = await tentar(() => api('importar_template', { categoria: cat, caminho: c }));
+    if (r) { lista = r.templates; escolhido = r.arquivo; desenhar(); aviso('Template importado', { tipo: 'sucesso', detalhe: 'Ele fica na lista para os próximos kits.' }); }
+  } }, icone('upload', 13), 'Importar template…');
+  const corpo = el('div', {}, el('div', { class: 'ajuda', style: { marginBottom: '8px' } }, gola
+    ? 'A gola é um PNG transparente no molde da camisa, colado por cima. Cada cor lisa vira uma parte com cor própria.'
+    : 'Cada cor lisa do template é uma parte do uniforme. Importe os seus (PNG no molde do jogo: camisa 2048×2048, calção 1024×512, meião 512×256); um .json com o mesmo nome dá o nome das partes ({"#ff0000": "Corpo"}).'),
+  el('div', { class: 'acoes-linha', style: { marginBottom: '10px' } }, importar), grade);
+  const m = modal({ titulo: gola ? 'Escolher a gola' : `Template de recorte · ${NOME_PECA[S.peca]}`, corpo, largo: true, botoes: [
+    { rotulo: 'Cancelar', classe: 'btn', valor: false }, { rotulo: 'Usar', classe: 'btn-primario', padrao: true, valor: true }] });
+  if (!(await m.promessa)) return;
+  if (gola) await usarGola(escolhido); else await usarTemplate(escolhido);
+}
+
+async function usarTemplate(arquivo) {
+  antes();
+  const fim = carregando('Lendo o template…');
+  try { aplicar(await api('usar_template', { peca: S.peca, arquivo })); S.chaves[S.peca] = null; } catch (e) { S.hist.pop(); aviso(e.message, { tipo: 'erro' }); } finally { fim(); }
+}
+
+async function usarGola(arquivo) {
+  antes();
+  try { aplicar(await api('usar_gola', { arquivo })); S.chaves.jersey = null; } catch (e) { S.hist.pop(); aviso(e.message, { tipo: 'erro' }); }
+}
+
+async function verMinikit() {
+  if (!S.projeto) return;
+  if (!S.malhas.jersey) { modalMalhas(); return; }
+  const fim = carregando('Desenhando o minikit…');
+  let r;
+  try { r = await api('minikit', { projeto: S.projeto }); } catch (e) { aviso(e.message, { tipo: 'erro' }); return; } finally { fim(); }
+  const n = { home: 0, away: 1, goalie_home: 2, third: 3, fourth: 4 }[S.projeto.tipo];
+  modal({ titulo: 'Minikit', texto: `Vai junto na exportação como <span class="mono">minikits/j${n}_${S.projeto.time.teamid || '&lt;teamid&gt;'}_${S.projeto.variacao || 0}.png</span> (256×256, o mesmo formato dos minikits do BRFP 24).`,
+    corpo: el('div', { style: { display: 'grid', placeItems: 'center', padding: '10px', background: 'repeating-conic-gradient(#2a2f38 0 25%, #20242b 0 50%) 0 0 / 20px 20px', borderRadius: '8px' } },
+      el('img', { src: r.url, alt: 'Minikit', style: { width: '256px', height: '256px' } })),
+    botoes: [{ rotulo: 'Fechar', classe: 'btn-primario', padrao: true }] });
+}
+
 function secaoSelecionado(it) {
   const o = it.obj;
   const corpo = [];
+  if (it.tipo === 'hotspot') {
+    corpo.push(el('div', { class: 'ajuda' }, `Caixa onde o jogo escreve ${it.rotulo.toLowerCase().startsWith('nome') ? 'o nome' : 'o número'} (hotspot “${it.id.split('/')[1]}”). Arraste para mover e use o canto para mudar o tamanho; nas costas a caixa fica de cabeça para baixo, como a textura.`));
+    const orig = (S.doador?.hotspot?.Hotspots || []).find((h) => `${h.Group}/${h.Name}` === it.id);
+    if (orig) corpo.push(el('div', { class: 'acoes-linha' }, el('button', { class: 'btn peq', onclick: () => {
+      antes(); S.projeto.hotspots[it.id] = { x0: orig.Bounds.X, y0: orig.Bounds.Y, x1: orig.Bounds.Z, y1: orig.Bounds.W }; depois({ previa: false }); } }, icone('recarregar', 12), 'Voltar à posição do doador')));
+    return secao(it.rotulo, 'cursor', corpo, 'sel');
+  }
   if (it.tipo === 'logo') {
     const nome = entrada({ value: o.nome || '' });
     nome.onchange = () => { antes(); o.nome = nome.value; depois({ previa: false }); };
@@ -694,7 +839,9 @@ async function exportar() {
     'Dentro dela é criada a mesma estrutura do jogo (<span class="mono">kit_&lt;faixa&gt;/&lt;time&gt;_&lt;teamid&gt;/&lt;tipo&gt;_n_v</span>), pronta para importar no FET.'),
     !(p.time.teamid > 0) ? nota('Falta o <b>teamid</b> (seção Time, à esquerda).', 'alerta') : null,
     el('dl', { class: 'kv' }, el('dt', {}, 'Time'), el('dd', {}, `${p.time.nome || '—'} (teamid ${p.time.teamid || '?'})`),
-      el('dt', {}, 'Uniforme'), el('dd', {}, NOME_TIPO[p.tipo]), el('dt', {}, 'Mapas de tecido'), el('dd', {}, p.mapas === 'generico' ? 'genéricos' : 'do doador')));
+      el('dt', {}, 'Uniforme'), el('dd', {}, NOME_TIPO[p.tipo]), el('dt', {}, 'Mapas de tecido'), el('dd', {}, p.mapas === 'generico' ? 'genéricos' : 'do doador')),
+    S.malhas.jersey ? interruptor({ titulo: 'Gerar o minikit', descricao: 'minikits/j&lt;tipo&gt;_&lt;teamid&gt;_&lt;variação&gt;.png, 256×256, a camisa vista de frente.', marcado: p.minikit !== false, aoMudar: (v) => { p.minikit = v; } }).el
+      : nota('O minikit precisa da malha da camisa (Arquivo › Importar malhas para o 3D).'));
   const ok = await modal({ titulo: 'Exportar o kit', corpo, botoes: [{ rotulo: 'Cancelar', classe: 'btn', valor: false },
     { rotulo: 'Exportar', classe: 'btn-primario', padrao: true, valor: true, desabilitado: !(p.time.teamid > 0) }] }).promessa;
   if (!ok) return;
@@ -715,7 +862,7 @@ function acompanharJob() {
       if (r.job.fim !== S.ultimoFim) {
         S.ultimoFim = r.job.fim;
         if (r.job.erro) aviso('A exportação falhou', { tipo: 'erro', detalhe: r.job.erro });
-        else if (r.job.resumo) aviso('Kit exportado', { tipo: 'sucesso', tempo: 9000, detalhe: `${r.job.resumo.arquivos} arquivos em ${r.job.resumo.rel} · ${r.job.resumo.segundos} s`,
+        else if (r.job.resumo) aviso('Kit exportado', { tipo: 'sucesso', tempo: 9000, detalhe: `${r.job.resumo.arquivos} arquivos em ${r.job.resumo.rel}${r.job.resumo.minikit ? ' + minikit' : ''} · ${r.job.resumo.segundos} s`,
           acao: { rotulo: 'Abrir pasta', fn: () => tentar(() => api('abrir', { caminho: r.job.resumo.pasta })) } });
       }
     }
@@ -776,6 +923,10 @@ function menus() {
       { rotulo: 'Abrir foto da camisa…', icone: 'imagem', atalho: 'Ctrl+O', fn: abrirFoto },
       { rotulo: 'Trocar o kit doador…', icone: 'camadas', desabilitado: !S.projeto, fn: () => escolherDoador('trocar') },
       '-',
+      { rotulo: 'Template de recorte desta peça…', icone: 'grade', desabilitado: !S.projeto, fn: () => escolherTemplate(CATEGORIA[S.peca]) },
+      { rotulo: 'Escolher gola…', icone: 'camisa', desabilitado: !S.projeto, fn: () => { definirPeca('jersey'); escolherTemplate('golas'); } },
+      { rotulo: 'Ver o minikit…', icone: 'imagem', desabilitado: !S.projeto, fn: verMinikit },
+      '-',
       { rotulo: 'Adicionar logo…', icone: 'mais', desabilitado: !S.projeto, fn: () => adicionarLogo('logo') },
       { rotulo: 'Escolher escudo…', icone: 'escudo', desabilitado: !S.projeto, fn: () => adicionarLogo('escudo') },
       { rotulo: 'Escolher marca…', icone: 'imagem', desabilitado: !S.projeto, fn: () => adicionarLogo('marca') },
@@ -829,6 +980,8 @@ function sobre() {
     Monta um uniforme do FC 27 a partir de um <b>kit doador</b> exportado pelo FET: recolore a camisa, o calção e o meião,
     desenha o padrão do tronco (listras, faixas, metades…) e coloca patrocinadores, escudo e marca. Uma foto da camisa de frente
     preenche cores, padrão e logos sozinha. A saída é a pasta no formato do jogo, com o hotspot.<br><br>
+    <b>1.1</b> — editor rápido: templates de recorte (cada cor lisa é uma parte com cor própria) para camisa, calção e meião,
+    golas como templates à parte, caixas de número e nome (hotspots) editáveis, minikit na exportação.<br>
     <b>1.0</b> — primeira versão: foto → cores, listras e logos; editor da textura com logos arrastáveis; prévia 3D com as malhas do FET.<br><br>
     Ainda não testado no jogo.` });
 }

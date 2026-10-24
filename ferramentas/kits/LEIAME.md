@@ -1,10 +1,33 @@
-# Criador de Kits do FC 27 — versão 1.0
+# Criador de Kits do FC 27 — versão 1.1
 
 Monta um uniforme do FC 27 (camisa, calção, meião, escudo, marca e hotspot) a partir de um **kit doador** exportado pelo
 FET. A ferramenta troca as cores do doador, desenha o padrão do tronco (listras, faixas, metades…) e coloca os logos.
 Uma **foto da camisa** de frente preenche cores, padrão e logos sozinha; depois é só conferir e ajustar.
 
 A saída é a pasta do kit no formato do jogo (`kit_<faixa>/<time>_<teamid>/<tipo>_<n>_<v>/…`), pronta para importar no FET.
+
+## Editor rápido (templates de recorte)
+
+Para montar um uniforme sem foto: em cada peça (abas Camisa, Calção, Meião), **Base da textura › Escolher template…**.
+Um template de recorte é uma imagem no molde do jogo em que cada **cor lisa** (vermelho, verde, azul, amarelo…) marca uma
+parte; a seção **Partes** lista as partes e você escolhe a cor de cada uma (dá para renomear). Vêm 12 camisas (liso,
+mangas, listras, aros, metades, faixa diagonal, faixa no peito, V, xadrez, laterais, ombros), 4 calções e 3 meiões, e
+**Importar template…** guarda os seus (`cache/templates/<camisa|calcao|meiao|golas>`): PNG de 2048×2048 (camisa),
+1024×512 (calção) ou 512×256 (meião). Um `.json` com o mesmo nome dá o nome das partes (`{"#ff0000": "Corpo"}`).
+**Voltar ao doador** volta à textura do doador recolorida.
+
+- **Gola** (camisa): templates de gola são PNGs transparentes colados por cima (redonda, com friso, dupla, V, polo); cada
+  cor é uma parte. A forma da gola no jogo é a malha escolhida no banco: escolha em **Malha da gola** e o valor de
+  `jerseycollargeometrytype` vai no relatório da exportação.
+- **Número e nome**: as caixas do número da frente, do número e do nome das costas e do número do calção aparecem no editor
+  (com “10” e “NOME” de exemplo) e são arrastadas como os logos; elas vão para o hotspot. **Voltar à posição do doador**
+  desfaz.
+- **Mapas de tecido**: com template, normal, coeff, taa e trama saem do doador; **Genéricos** (seção Kit doador) deixa coeff e
+  taa com um valor só.
+- **Minikit**: `Arquivo › Ver o minikit…` mostra a camisa de frente; na exportação vai junto em
+  `minikits/j<tipo>_<teamid>_<variação>.png` (256×256, como os do BRFP 24). Precisa da malha da camisa (Prévia 3D).
+
+Os templates iniciais são gerados por `motor/gerar_templates.py` (a partir do molde e das malhas).
 
 ## Usar
 

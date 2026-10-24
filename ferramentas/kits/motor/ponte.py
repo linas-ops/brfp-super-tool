@@ -41,7 +41,8 @@ def cmd_previa(a, _id):
         lim = int(a.get("max", 1024))
         f = min(1.0, lim / max(w, h))
         tam = (max(1, round(w * f)), max(1, round(h * f)))
-    rgb = K.renderizar_cor(peca, a["projeto"]["pecas"][peca], arqs[peca], tam)
+    origem, _ = K.origem_cor(a["projeto"], peca, arqs)
+    rgb = K.renderizar_cor(peca, a["projeto"]["pecas"][peca], origem, tam)
     if a.get("com_logos"):
         rgb = K.colar_logos(rgb, a["projeto"]["pecas"][peca].get("logos") or [], peca)
     os.makedirs(os.path.dirname(a["saida"]), exist_ok=True)
@@ -171,7 +172,49 @@ def cmd_molde(_a, _id):
                       "shorts": {"regioes": M.REGIOES_CALCAO}, "socks": {"regioes": M.REGIOES_MEIAO}}}
 
 
-CMDS = {"previa": cmd_previa, "molde": cmd_molde, "doador": cmd_doador, "projeto_inicial": cmd_projeto_inicial, "foto": cmd_foto,
+def cmd_template(a, _id):
+    """Partes de um template de recorte (ou de gola) já com as cores iniciais."""
+    import kit as K
+    return {"camadas": K.camadas_template(a["arquivo"], a.get("cores")), "template": K.analisar_template(a["arquivo"])}
+
+
+def cmd_importar_template(a, _id):
+    """Copia uma imagem para a pasta de templates do usuário no tamanho da peça (golas continuam transparentes)."""
+    from PIL import Image
+    import molde as M
+    im = Image.open(a["origem"])
+    im.load()
+    gola = a["categoria"] == "golas"
+    im = im.convert("RGBA" if gola else "RGB")
+    tam = M.TAMANHOS[{"camisa": "jersey", "golas": "jersey", "calcao": "shorts", "meiao": "socks"}[a["categoria"]]]
+    if im.size != tam:
+        im = im.resize(tam, Image.NEAREST if max(im.size) >= max(tam) else Image.LANCZOS)
+    os.makedirs(os.path.dirname(a["destino"]), exist_ok=True)
+    im.save(a["destino"])
+    return {"caminho": a["destino"]}
+
+
+def cmd_miniatura_img(a, _id):
+    """Miniatura (até 256 px, mantendo a transparência) de uma imagem qualquer, para as listas de templates."""
+    from PIL import Image
+    im = Image.open(a["origem"])
+    im.draft("RGB", (256, 256))
+    im = im.convert("RGBA")
+    im.thumbnail((256, 256), Image.NEAREST if im.width >= 1024 else Image.LANCZOS)
+    os.makedirs(os.path.dirname(a["saida"]), exist_ok=True)
+    im.save(a["saida"])
+    return {"caminho": a["saida"]}
+
+
+def cmd_minikit(a, _id):
+    import kit as K
+    import minikit as MK
+    arqs = K.arquivos_doador(a["projeto"]["doador"])
+    MK.desenhar(K.composto_camisa(a["projeto"], arqs), a["saida"])
+    return {"caminho": a["saida"]}
+
+
+CMDS = {"miniatura_img": cmd_miniatura_img, "previa": cmd_previa, "template": cmd_template, "importar_template": cmd_importar_template, "minikit": cmd_minikit, "molde": cmd_molde, "doador": cmd_doador, "projeto_inicial": cmd_projeto_inicial, "foto": cmd_foto,
         "recorte_logo": cmd_recorte_logo, "importar_logo": cmd_importar_logo, "exportar": cmd_exportar,
         "miniatura": cmd_miniatura, "malha": cmd_malha}
 
