@@ -124,22 +124,34 @@ def preencher_fora(img, cobertos):
     return img[iy, ix]
 
 
-def tapar_buraco(img, buraco, margem=3):
-    """No buraco da gola do tronco do PES (decote e carcela, onde o kit do PES desenha a gola) repete o desenho do
-    tronco, coluna por coluna, de cima para baixo: as listras e a cor do tronco continuam até o decote do FC."""
+def tapar_buraco(img, buraco, margem=3, janela=16):
+    """Buraco da gola no tronco do PES: em cima o decote (onde o kit do PES desenha a gola: sempre refeito) e embaixo
+    a carcela (refeita só quando o desenho dela não é o do tronco em volta). Ali sobe o desenho do tronco da frente,
+    coluna por coluna (mediana de `janela` linhas logo abaixo): as listras e a cor do tronco continuam até o decote do
+    FC, sem puxar os logos da nuca."""
+    larg = buraco.sum(1)
+    if not larg.any():
+        return img
+    largas = np.nonzero(larg >= 0.75 * larg.max())[0]
+    refazer = buraco.copy()
+    carcela = buraco.copy()
+    carcela[:largas[-1] + 1] = False
+    if carcela.any():
+        ys, xs = np.nonzero(carcela)
+        w = xs.max() - xs.min() + 1
+        lados = np.zeros_like(buraco)
+        lados[ys.min():ys.max() + 1, max(0, xs.min() - w):xs.max() + 1 + w] = True
+        lados &= ~buraco
+        if lados.any() and np.abs(img[carcela].mean(0) - img[lados].mean(0)).max() < 30:
+            refazer &= ~carcela             # a carcela já tem o desenho do tronco: fica
     out = img.copy()
     h = img.shape[0]
-    for x in np.nonzero(buraco.any(0))[0]:
-        ys = np.nonzero(buraco[:, x])[0]
-        cortes = np.nonzero(np.diff(ys) > 1)[0]
-        for a, b in zip(np.r_[ys[0], ys[cortes + 1]], np.r_[ys[cortes], ys[-1]]):
-            ya, yb = a - 1 - margem, b + 1 + margem
-            if ya < 0 and yb >= h:
-                continue
-            ca = img[ya, x] if ya >= 0 else img[yb, x]
-            cb = img[yb, x] if yb < h else ca
-            t = ((np.arange(a, b + 1) - ya) / (yb - ya))[:, None]
-            out[a:b + 1, x] = ca * (1 - t) + cb * t
+    for x in np.nonzero(refazer.any(0))[0]:
+        ys = np.nonzero(refazer[:, x])[0]
+        y0 = ys[-1] + 1 + margem
+        abaixo = img[y0:y0 + janela, x] if y0 < h else img[max(0, ys[0] - margem - janela):max(0, ys[0] - margem), x]
+        if len(abaixo):
+            out[ys, x] = np.median(abaixo, 0)
     return out
 
 
@@ -202,7 +214,7 @@ def converter_texturas(img, progresso=lambda m: None):
     M = mapas()
     h, w = img.shape[:2]
     fator = max(w, h) / 2048.0
-    rgb = tapar_buraco(img[..., :3].astype(np.float32), _na_textura(M["buraco"], h, w), max(1, round(3 * fator)))
+    rgb = tapar_buraco(img[..., :3].astype(np.float32), _na_textura(M["buraco"], h, w), max(1, round(3 * fator)), max(4, round(16 * fator)))
     niv = piramide(preencher_fora(rgb, _na_textura(M["ilhas"], h, w)))
     out = {}
     for peca in PECAS:
