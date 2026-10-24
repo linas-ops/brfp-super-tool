@@ -54,10 +54,13 @@ def kmeans(x, k, iters=18, semente=0):
     centros = [x[rng.integers(n)]]
     d2 = ((x - centros[0]) ** 2).sum(1)
     for _ in range(1, k):
-        p = d2 / max(d2.sum(), 1e-9)
+        if float(d2.sum()) <= 1e-9:          # todos iguais aos centros já escolhidos
+            break
+        p = d2 / d2.sum()
         centros.append(x[rng.choice(n, p=p)])
         d2 = np.minimum(d2, ((x - centros[-1]) ** 2).sum(1))
     c = np.array(centros, np.float32)
+    k = len(c)
     rot = np.zeros(n, np.int64)
     for _ in range(iters):
         dist = ((x[:, None, :] - c[None]) ** 2).sum(-1)

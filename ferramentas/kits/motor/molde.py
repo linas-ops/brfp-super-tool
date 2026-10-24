@@ -215,6 +215,11 @@ def _mascaras_malha(peca, w, h):
     def suave(b):
         return np.asarray(Image.fromarray((b * 255).astype(np.uint8)).filter(ImageFilter.GaussianBlur(raio)), np.float32) / 255.0
     res = {}
+    # só perto das ilhas (alguns pixels de sangria); o resto da textura (sem uso) fica com a parte vizinha do tronco
+    from scipy import ndimage as nd
+    raio_px = max(2, w // 256)
+    perto_ilha = nd.binary_dilation(r[0] >= 0, iterations=raio_px)
+    perto = np.where(perto_ilha, perto, -1)
     if peca == "jersey" and papeis.get("manga"):
         manga_b = np.isin(perto, papeis["manga"])
         res["manga"] = suave(manga_b)
@@ -225,6 +230,20 @@ def _mascaras_malha(peca, w, h):
     if peca == "socks" and papeis.get("cano"):
         res["cano"] = suave(np.isin(perto, papeis["cano"]))
     return res
+
+
+def usado(peca, w, h):
+    """Máscara (0..1) da parte da textura que aparece no jogo: as ilhas da malha (com sangria) e, na camisa, as faixas das
+    mangas longas. None sem a malha."""
+    r = rasterizar(peca, w, h)
+    if r is None:
+        return None
+    from scipy import ndimage as nd
+    m = nd.binary_dilation(r[0] >= 0, iterations=max(2, w // 256)).astype(np.float32)
+    if peca == "jersey":
+        for k in ("manga_longa_d", "manga_longa_e", "bracadeira"):
+            m = np.maximum(m, np.asarray(_poligono(REGIOES_CAMISA[k], w, h), np.float32) / 255.0)
+    return m
 
 
 def mascaras(peca, w, h):

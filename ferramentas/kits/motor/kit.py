@@ -1,6 +1,6 @@
-"""Geração do kit: recolore a textura de cor de um kit doador, desenha o padrão do tronco e os logos, e grava a pasta no
-formato do jogo (texturas, escudo, marca e hotspot). Os mapas de tecido (normal, coeff, taa, weave) vêm do doador ou
-genéricos (preenchidos com o valor mais comum).
+"""Geração do kit: recolore a textura de cor de um kit doador (ou um template de recorte, em que cada cor lisa é uma
+parte), desenha o padrão do tronco, a gola e os logos, e grava a pasta no formato do jogo (texturas, escudo, marca e
+hotspot). Os mapas de tecido (normal, coeff, taa, weave) vêm do doador ou genéricos (preenchidos com o valor mais comum).
 """
 import glob
 import json
@@ -19,6 +19,9 @@ PECAS = ("jersey", "shorts", "socks")
 TIPOS = {"home": 0, "away": 1, "goalie_home": 2, "third": 3, "fourth": 4}
 SIGMA_CAMADA = 7.0          # ΔE da transição suave entre camadas do doador
 _CACHE_DOADOR = {}
+_CACHE_TEMPLATE = {}
+# hotspots que o editor posiciona (além do escudo e da marca): grupo/nome no .hotspot
+HOTSPOTS_EDITAVEIS = ("jersey/numberfront", "jersey/numberback", "jersey/name", "shorts/number")
 
 
 class ErroKit(Exception):
@@ -84,6 +87,67 @@ def analisar_doador(pasta):
     return res
 
 
+def analisar_template(caminho):
+    """Partes de um template de recorte: cada cor lisa da imagem é uma parte. Os nomes vêm do .json ao lado
+    ({"#ff0000": "Corpo", ...}), quando existe."""
+    chave = (os.path.abspath(caminho), os.path.getmtime(caminho))
+    if chave in _CACHE_TEMPLATE:
+        return _CACHE_TEMPLATE[chave]
+    img = Image.open(caminho).convert("RGBA")
+    a = np.asarray(img.resize((512, max(1, 512 * img.height // img.width)), Image.NEAREST)).astype(np.int16)
+    # só pixels "lisos" (iguais aos vizinhos) e opacos: as bordas suavizadas entre duas partes não viram parte
+    igual = (np.abs(a[:-1, :-1, :3] - a[1:, :-1, :3]).max(-1) < 6) & (np.abs(a[:-1, :-1, :3] - a[:-1, 1:, :3]).max(-1) < 6)
+    liso = igual & (a[:-1, :-1, 3] > 200)
+    px = a[:-1, :-1, :3][liso].astype(np.float32)
+    if not len(px):
+        raise ErroKit("O template não tem nenhuma área de cor lisa.")
+    lab = C.rgb_lab(px)
+    centros, fr = C.agrupar(lab[:: max(1, len(lab) // 60000)], k=10, juntar=7.0, minimo=0.002)
+    nomes = {}
+    j = os.path.splitext(caminho)[0] + ".json"
+    if os.path.isfile(j):
+        try:
+            with open(j, encoding="utf-8") as f:
+                nomes = {C.rgb_hex(C.hex_rgb(k)): v for k, v in json.load(f).items()}
+        except (OSError, ValueError):
+            nomes = {}
+    camadas = []
+    for i, c in enumerate(centros):
+        hexa = C.rgb_hex(C.lab_rgb(c))
+        nome = None
+        for h, n in nomes.items():
+            if float(np.linalg.norm(C.hex_lab(h) - c)) < 20:
+                nome = n
+                break
+        camadas.append({"origem": hexa, "fracao": round(float(fr[i]), 4), "nome": nome or f"Parte {i + 1}"})
+    r = {"arquivo": os.path.abspath(caminho), "camadas": camadas, "tamanho": [img.width, img.height]}
+    _CACHE_TEMPLATE[chave] = r
+    return r
+
+
+PALETA_INICIAL = ["#f4f6f8", "#1f5fbf", "#d32f2f", "#111418", "#f2c230", "#1f9a5c", "#7b3fa0", "#ff7a1a"]
+
+
+def camadas_template(caminho, cores_atuais=None):
+    """Camadas (todas com cor própria) de um template, com cores iniciais: as que o projeto já tinha, na ordem, ou a
+    paleta inicial."""
+    t = analisar_template(caminho)
+    cores_atuais = list(cores_atuais or [])
+    out = []
+    for i, c in enumerate(t["camadas"]):
+        cor = cores_atuais[i] if i < len(cores_atuais) else PALETA_INICIAL[i % len(PALETA_INICIAL)]
+        out.append({"origem": c["origem"], "papel": "fixa", "cor": cor, "nome": c["nome"]})
+    return out
+
+
+def origem_cor(projeto, peca, arqs):
+    """(caminho da imagem de origem da cor, tamanho forçado) da peça: o template escolhido ou a cor do doador."""
+    fonte = (projeto["pecas"][peca].get("fonte") or {})
+    if fonte.get("tipo") == "template" and fonte.get("arquivo") and os.path.isfile(fonte["arquivo"]):
+        return fonte["arquivo"], Image.open(arqs[peca]).size
+    return arqs[peca], None
+
+
 def caixa_hotspot(hotspot, grupo, nome):
     for h in hotspot.get("Hotspots", []):
         if h.get("Group") == grupo and h.get("Name") == nome:
@@ -119,7 +183,18 @@ def projeto_inicial(doador, base="#ffffff", padrao="#0a6d4a", manga=None, gola=N
         cx = caixa_hotspot(hs, "jersey", nome)
         if cx:
             p[chave] = {"arquivo": None, "caixa": cx, "caixa_calcao": caixa_hotspot(hs, "shorts", nome)}
+    p["hotspots"] = hotspots_doador(hs)
     return p
+
+
+def hotspots_doador(hs):
+    out = {}
+    for k in HOTSPOTS_EDITAVEIS:
+        g, n = k.split("/")
+        cx = caixa_hotspot(hs, g, n)
+        if cx:
+            out[k] = cx
+    return out
 
 
 # ------------------------------------------------------------------ padrões do tronco
@@ -191,7 +266,8 @@ def _campos_regiao(peca, cfg, mas, x, d, frente, px):
 
 
 def renderizar_cor(peca, cfg, origem, tamanho=None):
-    """Textura de cor recolorida (RGB uint8). origem = caminho da cor do doador; tamanho = (w, h) ou None (o do doador)."""
+    """Textura de cor recolorida (RGB uint8). origem = caminho da cor do doador (ou do template); tamanho = (w, h) ou
+    None (o da origem)."""
     img = Image.open(origem).convert("RGB")
     if tamanho and tuple(tamanho) != img.size:
         img = img.resize(tuple(tamanho), Image.LANCZOS)
@@ -233,7 +309,61 @@ def renderizar_cor(peca, cfg, origem, tamanho=None):
             out += wk * (alvo + delta)
         out[..., 0] = np.clip(out[..., 0], 0, 100)
         saida[y0:y1] = np.round(C.lab_rgb(out)).astype(np.uint8)
+    if peca == "jersey" and (cfg.get("gola") or {}).get("arquivo"):
+        saida = aplicar_gola(saida, cfg["gola"])
     return saida
+
+
+def aplicar_gola(rgb, gola):
+    """Cola um template de gola (PNG transparente no molde da camisa; cada cor lisa é uma parte) com as cores escolhidas."""
+    if not os.path.isfile(gola["arquivo"]):
+        return rgb
+    h, w = rgb.shape[:2]
+    im = Image.open(gola["arquivo"]).convert("RGBA")
+    if im.size != (w, h):
+        im = im.resize((w, h), Image.LANCZOS)
+    a = np.asarray(im).astype(np.float32)
+    alfa = a[..., 3:4] / 255.0
+    if float(alfa.max()) <= 0:
+        return rgb
+    camadas = gola.get("camadas") or []
+    if camadas:
+        lab = C.rgb_lab(a[..., :3])
+        centros = np.array([C.hex_lab(c["origem"]) for c in camadas], np.float32)
+        alvos = np.array([C.hex_lab(c.get("cor") or c["origem"]) for c in camadas], np.float32)
+        dist = np.sqrt(((lab[..., None, :] - centros) ** 2).sum(-1))
+        wgt = np.exp(-((dist - dist.min(-1, keepdims=True)) / SIGMA_CAMADA) ** 2)
+        wgt /= wgt.sum(-1, keepdims=True)
+        cor = C.lab_rgb(np.einsum("hwk,kc->hwc", wgt, alvos))
+    else:
+        cor = a[..., :3]
+    return np.round(rgb * (1 - alfa) + cor * alfa).astype(np.uint8)
+
+
+def composto_camisa(projeto, arqs, tamanho=(1024, 1024)):
+    """Textura final da camisa com logos e com o escudo e a marca desenhados na caixa do hotspot (como o jogo mostra),
+    para o minikit."""
+    cfg = projeto["pecas"]["jersey"]
+    origem, _ = origem_cor(projeto, "jersey", arqs)
+    rgb = renderizar_cor("jersey", cfg, origem, tamanho)
+    rgb = colar_logos(rgb, cfg.get("logos") or [], "jersey")
+    base = Image.fromarray(rgb).convert("RGBA")
+    w, h = base.size
+    for chave in ("escudo", "marca"):
+        info = projeto.get(chave) or {}
+        cx = info.get("caixa")
+        if not (info.get("arquivo") and cx and os.path.isfile(info["arquivo"])):
+            continue
+        q = quadro_logo(info["arquivo"])
+        x0, x1 = sorted((cx["x0"] * w, cx["x1"] * w))
+        y0, y1 = sorted((cx["y0"] * h, cx["y1"] * h))
+        q = q.resize((max(1, round(x1 - x0)), max(1, round(y1 - y0))), Image.LANCZOS)
+        if cx["x1"] < cx["x0"]:
+            q = q.transpose(Image.FLIP_LEFT_RIGHT)
+        if cx["y1"] < cx["y0"]:
+            q = q.transpose(Image.FLIP_TOP_BOTTOM)
+        _colar(base, q, (x0 + x1) / 2, (y0 + y1) / 2)
+    return np.asarray(base.convert("RGB"))
 
 
 # ------------------------------------------------------------------ logos
@@ -366,7 +496,8 @@ def exportar(projeto, saida, progresso=lambda f, m: None):
     for i, peca in enumerate(PECAS):
         progresso(0.05 + 0.25 * i, f"Desenhando {'a camisa' if peca == 'jersey' else 'o calção' if peca == 'shorts' else 'o meião'}")
         cfg = projeto["pecas"][peca]
-        rgb = renderizar_cor(peca, cfg, arqs[peca])
+        origem, tam = origem_cor(projeto, peca, arqs)
+        rgb = renderizar_cor(peca, cfg, origem, tam)
         rgb = colar_logos(rgb, cfg.get("logos") or [], peca)
         os.makedirs(os.path.join(pasta, peca), exist_ok=True)
         dst = os.path.join(pasta, peca, f"{peca}_{suf}_color.png")
@@ -406,9 +537,20 @@ def exportar(projeto, saida, progresso=lambda f, m: None):
             cx = info.get("caixa") if h.get("Group") == "jersey" else info.get("caixa_calcao") if h.get("Group") == "shorts" else None
             if h.get("Name") == nome and cx:
                 h["Bounds"] = {"X": round(cx["x0"], 6), "Y": round(cx["y0"], 6), "Z": round(cx["x1"], 6), "W": round(cx["y1"], 6)}
+        cx = (projeto.get("hotspots") or {}).get(f"{h.get('Group')}/{h.get('Name')}")
+        if cx:
+            h["Bounds"] = {"X": round(cx["x0"], 6), "Y": round(cx["y0"], 6), "Z": round(cx["x1"], 6), "W": round(cx["y1"], 6)}
     dst = os.path.join(pasta, f"hotspots_{suf}.hotspot")
     with open(dst, "w", encoding="utf-8", newline="\n") as fh:
         json.dump(hs, fh, indent=2)
     feitos.append(dst)
+    minikit_arq = None
+    if projeto.get("minikit", True) and M.malha("jersey") is not None:
+        progresso(0.97, "Minikit")
+        import minikit as MK
+        n = TIPOS[projeto["tipo"]]
+        minikit_arq = os.path.join(saida, "minikits", f"j{n}_{int(projeto['time']['teamid'])}_{int(projeto.get('variacao') or 0)}.png")
+        MK.desenhar(composto_camisa(projeto, arqs), minikit_arq)
+        feitos.append(minikit_arq)
     progresso(1.0, "Pronto")
-    return {"pasta": pasta, "rel": rel, "arquivos": feitos}
+    return {"pasta": pasta, "rel": rel, "arquivos": feitos, "minikit": minikit_arq}

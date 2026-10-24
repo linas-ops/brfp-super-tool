@@ -29,7 +29,7 @@ import base  # noqa: E402
 import componentes  # noqa: E402
 import referencias  # noqa: E402
 
-VERSAO = "1.0"
+VERSAO = "1.1"
 GRUPO = "kits"
 IMG = (".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tga", ".tif", ".tiff", ".gif", ".dds")
 PECAS = ("jersey", "shorts", "socks")
@@ -46,6 +46,9 @@ BIB = {"pasta": None, "kits": [], "lendo": False}
 MALHAS = {}
 ARQ_PROJETO = os.path.join(CACHE, "projeto.json")
 ARQ_ANALISE = os.path.join(CACHE, "analise.json")
+TEMPLATES = os.path.join(AQUI, "templates")                 # os que vêm com a ferramenta
+TEMPLATES_USUARIO = os.path.join(CACHE, "templates")        # os importados pelo usuário
+CATEGORIA = {"jersey": "camisa", "shorts": "calcao", "socks": "meiao"}
 # malhas dos uniformes (LOD0) exportadas pelo FET do FC 27: só para a prévia 3D (não vêm no pacote leve)
 MALHA_ARQ = {"jersey": "jersey_0_0_0_0_1_0_0_mesh.fbx", "shorts": "shorts_0_0_0_mesh.fbx", "socks": "sock_0_0_1_0_0_mesh.fbx"}
 REF = referencias.Referencias("Criador de Kits", {n: os.path.join(MOTOR, "referencia", n) for n in MALHA_ARQ.values()},
@@ -217,12 +220,25 @@ def validar_projeto(p):
         for lg in cfg.get("logos", []):
             if lg.get("arquivo") and not _dentro_cache(lg["arquivo"]):
                 raise base.ErroUsuario("Logo fora da pasta da ferramenta: importe a imagem pelo botão de logos.")
+        for chave in ("fonte", "gola"):
+            arq = (cfg.get(chave) or {}).get("arquivo")
+            if arq and not _permitido(arq):
+                raise base.ErroUsuario("Template fora da pasta da ferramenta: importe pelo botão Importar template.")
+    for k, cx in (p.get("hotspots") or {}).items():
+        if not isinstance(cx, dict) or not all(isinstance(cx.get(c), (int, float)) for c in ("x0", "y0", "x1", "y1")):
+            raise base.ErroUsuario(f"Hotspot inválido: {k}")
     return p
 
 
 def _dentro_cache(c):
     c = os.path.normcase(os.path.abspath(c))
     return c.startswith(os.path.normcase(os.path.abspath(CACHE)) + os.sep)
+
+
+def _permitido(c):
+    """Arquivos que a interface pode ler e o projeto pode citar: a pasta de trabalho (cache) e os templates."""
+    c = os.path.normcase(os.path.abspath(c))
+    return _dentro_cache(c) or c.startswith(os.path.normcase(os.path.abspath(TEMPLATES)) + os.sep)
 
 
 def api_inicio(_):
@@ -279,6 +295,8 @@ def api_trocar_doador(d):
         else:
             for peca in PECAS:
                 cfg = p["pecas"][peca]
+                if (cfg.get("fonte") or {}).get("tipo") == "template":
+                    continue                     # o template continua; do doador só saem os mapas e o hotspot
                 cores = cfg["cores"]
                 cam = novo["pecas"][peca]["camadas"]
                 for i, c in enumerate(cam):
@@ -300,6 +318,128 @@ def garantir_doador():
     p = ESTADO["projeto"]
     if p and (not ESTADO["doador"] or ESTADO["doador"].get("pasta") != os.path.abspath(p["doador"])):
         _doador_analisado(p["doador"])
+    if p and "hotspots" not in p and ESTADO["doador"]:
+        p["hotspots"] = hotspots_de(ESTADO["doador"].get("hotspot") or {})
+        salvar_projeto()
+
+
+HOTSPOTS_EDITAVEIS = ("jersey/numberfront", "jersey/numberback", "jersey/name", "shorts/number")
+
+
+def hotspots_de(hs):
+    out = {}
+    for h in hs.get("Hotspots", []):
+        k = f"{h.get('Group')}/{h.get('Name')}"
+        if k in HOTSPOTS_EDITAVEIS and h.get("Bounds"):
+            b = h["Bounds"]
+            out[k] = {"x0": b["X"], "y0": b["Y"], "x1": b["Z"], "y1": b["W"]}
+    return out
+
+
+# ------------------------------------------------------------------ templates de recorte e golas
+def listar_templates():
+    out = {"camisa": [], "calcao": [], "meiao": [], "golas": []}
+    for raiz, usuario in ((TEMPLATES, False), (TEMPLATES_USUARIO, True)):
+        for cat in out:
+            pasta = os.path.join(raiz, cat)
+            if not os.path.isdir(pasta):
+                continue
+            for n in sorted(os.listdir(pasta)):
+                if n.lower().endswith(".png"):
+                    c = os.path.join(pasta, n)
+                    out[cat].append({"nome": os.path.splitext(n)[0], "arquivo": c, "usuario": usuario,
+                                     "url": "miniatura_arquivo?" + url_arquivo(c).split("?", 1)[1]})
+    return out
+
+
+def api_templates(_):
+    return listar_templates()
+
+
+def api_usar_template(d):
+    """Peça passa a usar um template de recorte (cada cor lisa = uma parte com cor própria) ou volta ao doador."""
+    peca = d.get("peca")
+    if peca not in PECAS:
+        raise base.ErroUsuario("Peça inválida.")
+    with LOCK:
+        p = ESTADO["projeto"]
+        if not p:
+            raise base.ErroUsuario("Escolha o kit doador antes.")
+        cfg = p["pecas"][peca]
+        arq = d.get("arquivo")
+        if arq:
+            if not _permitido(arq) or not os.path.isfile(arq):
+                raise base.ErroUsuario("Template não encontrado.")
+            atuais = [c.get("cor") for c in cfg.get("camadas", [])] if (cfg.get("fonte") or {}).get("tipo") == "template" else \
+                [cfg["cores"].get(k) for k in ("base", "manga", "padrao", "punho", "gola") if cfg["cores"].get(k)]
+            r = MOT.pedir("template", {"arquivo": arq, "cores": atuais})
+            cfg["fonte"] = {"tipo": "template", "arquivo": arq}
+            cfg["camadas"] = r["camadas"]
+            cfg["detalhe"] = 0.0
+        else:
+            novo = MOT.pedir("projeto_inicial", {"pasta": p["doador"]})["projeto"]
+            cam = novo["pecas"][peca]["camadas"]
+            for i, c in enumerate(cam):
+                c["cor"] = cfg["cores"]["base"] if c["papel"] == "base" else (cfg["cores"].get("padrao") or cfg["cores"]["base"])
+            cfg["fonte"] = {"tipo": "doador"}
+            cfg["camadas"] = cam
+            cfg["detalhe"] = 1.0
+        salvar_projeto()
+    return estado_payload()
+
+
+def api_usar_gola(d):
+    with LOCK:
+        p = ESTADO["projeto"]
+        if not p:
+            raise base.ErroUsuario("Escolha o kit doador antes.")
+        cfg = p["pecas"]["jersey"]
+        arq = d.get("arquivo")
+        if not arq:
+            cfg["gola"] = None
+        else:
+            if not _permitido(arq) or not os.path.isfile(arq):
+                raise base.ErroUsuario("Gola não encontrada.")
+            atuais = [c.get("cor") for c in (cfg.get("gola") or {}).get("camadas", [])] or \
+                [cfg["cores"].get("gola") or cfg["cores"].get("padrao"), cfg["cores"].get("base")]
+            r = MOT.pedir("template", {"arquivo": arq, "cores": atuais})
+            cfg["gola"] = {"arquivo": arq, "camadas": r["camadas"], "geometria": (cfg.get("gola") or {}).get("geometria")}
+        salvar_projeto()
+    return estado_payload()
+
+
+def api_importar_template(d):
+    cat = d.get("categoria")
+    if cat not in ("camisa", "calcao", "meiao", "golas"):
+        raise base.ErroUsuario("Categoria inválida.")
+    if d.get("arquivo"):
+        origem = _receber_arquivo(d["arquivo"], os.path.join(CACHE, "recebidos", "templates"))
+    else:
+        origem = os.path.abspath(d["caminho"])
+        if not os.path.isfile(origem):
+            raise base.ErroUsuario(f"Não encontrado: {origem}")
+        PREFS.atualizar(ultima_pasta=os.path.dirname(origem))
+    nome = re.sub(r'[<>:"/\\|?*]+', "_", os.path.splitext(os.path.basename(origem))[0]).strip() or "template"
+    destino = os.path.join(TEMPLATES_USUARIO, cat, nome + ".png")
+    n = 2
+    while os.path.exists(destino):
+        destino = os.path.join(TEMPLATES_USUARIO, cat, f"{nome} ({n}).png")
+        n += 1
+    MOT.pedir("importar_template", {"origem": origem, "destino": destino, "categoria": cat})
+    js = os.path.splitext(origem)[0] + ".json"
+    if os.path.isfile(js):
+        with open(js, "rb") as fi, open(os.path.splitext(destino)[0] + ".json", "wb") as fo:
+            fo.write(fi.read())
+    return {"arquivo": destino, "templates": listar_templates()}
+
+
+def api_minikit(d):
+    p = validar_projeto(copy.deepcopy(d.get("projeto") or ESTADO["projeto"]))
+    if not os.path.isfile(os.path.join(MOTOR, "referencia", MALHA_ARQ["jersey"])):
+        raise base.ErroUsuario("O minikit precisa da malha da camisa exportada do FET (veja Importar malhas para o 3D).")
+    destino = os.path.join(CACHE, "previas", f"minikit_{int(time.time() * 1000)}.png")
+    MOT.pedir("minikit", {"projeto": p, "saida": destino})
+    return {"url": url_arquivo(destino), "caminho": destino}
 
 
 def api_previa(d):
@@ -545,12 +685,27 @@ def esp_miniatura(h, q):
     h.arquivo(destino)
 
 
+def esp_miniatura_arquivo(h, q):
+    """GET /miniatura_arquivo?c=…&t=… — miniatura de um template (gerada uma vez e guardada)."""
+    try:
+        c = base64.urlsafe_b64decode(q.get("c", "").encode()).decode("utf-8")
+    except (ValueError, UnicodeDecodeError):
+        raise base.ErroUsuario("Caminho inválido.")
+    if not _permitido(c) or not os.path.isfile(c):
+        raise base.ErroUsuario("Arquivo não encontrado.")
+    chave = hashlib.sha1(f"{os.path.abspath(c).lower()}|{os.path.getmtime(c)}".encode()).hexdigest()[:16]
+    destino = os.path.join(CACHE, "miniaturas", "t_" + chave + ".png")
+    if not os.path.isfile(destino):
+        MOT.pedir("miniatura_img", {"origem": c, "saida": destino})
+    h.arquivo(destino)
+
+
 def esp_arquivo(h, q):
     try:
         c = base64.urlsafe_b64decode(q.get("c", "").encode()).decode("utf-8")
     except (ValueError, UnicodeDecodeError):
         raise base.ErroUsuario("Caminho inválido.")
-    if not _dentro_cache(c) or not os.path.isfile(c):
+    if not _permitido(c) or not os.path.isfile(c):
         raise base.ErroUsuario("Arquivo não encontrado.")
     h.arquivo(c)
 
@@ -582,7 +737,7 @@ def api_exportar(d):
             r = MOT.pedir("exportar", {"projeto": p, "saida": saida},
                           progresso=lambda f, m: JOB.update(progresso=f, mensagem=m))
             relatorio(p, r, saida)
-            JOB.update(resumo={"pasta": r["pasta"], "rel": r["rel"], "arquivos": len(r["arquivos"]), "saida": saida,
+            JOB.update(resumo={"pasta": r["pasta"], "rel": r["rel"], "arquivos": len(r["arquivos"]), "saida": saida, "minikit": r.get("minikit"),
                                "segundos": round(time.time() - JOB["inicio"], 1)})
         except Exception as ex:  # noqa: BLE001
             JOB["erro"] = str(ex)
@@ -599,6 +754,11 @@ def relatorio(p, r, saida):
             f.write(f"Time: {p['time'].get('nome')} (teamid {p['time']['teamid']}) · {p['tipo']} · variação {p.get('variacao', 0)}\n")
             f.write(f"Doador: {p['doador']}\nPasta: {r['rel']}\n")
             f.write(f"Mapas de tecido: {'genéricos' if p.get('mapas') == 'generico' else 'do doador'}\n")
+            geo = p["pecas"]["jersey"].get("gola_geometria")
+            if geo is not None:
+                f.write(f"Gola: no teamkits, jerseycollargeometrytype = {geo}\n")
+            if r.get("minikit"):
+                f.write(f"Minikit: {r['minikit']}\n")
             f.write(f"{len(r['arquivos'])} arquivos. Importe a pasta no FET (content/character/kit/{r['rel']}).\n\n")
     except OSError:
         pass
@@ -655,9 +815,10 @@ def api_malha(q):
     return MALHAS[peca]
 
 
-ROTAS_GET = {"inicio": api_inicio, "estado": api_estado, "biblioteca": api_biblioteca, "malha": api_malha, "molde": api_molde,
+ROTAS_GET = {"templates": api_templates, "inicio": api_inicio, "estado": api_estado, "biblioteca": api_biblioteca, "malha": api_malha, "molde": api_molde,
              "versao": lambda _: {"versao": VERSAO}}
-ROTAS_POST = {"projeto": api_projeto, "novo": api_novo, "trocar_doador": api_trocar_doador, "previa": api_previa,
+ROTAS_POST = {"usar_template": api_usar_template, "usar_gola": api_usar_gola, "importar_template": api_importar_template,
+              "minikit": api_minikit, "projeto": api_projeto, "novo": api_novo, "trocar_doador": api_trocar_doador, "previa": api_previa,
               "foto": api_foto, "receber_foto": api_receber_foto, "aplicar_foto": api_aplicar_foto, "papel_logo": api_papel_logo,
               "recorte_logo": api_recorte_logo, "importar_logo": api_importar_logo, "url": api_url,
               "definir_biblioteca": api_definir_biblioteca, "exportar": api_exportar, "opcoes": api_opcoes,
@@ -693,7 +854,7 @@ def main():
                 print(ex, flush=True)
     threading.Thread(target=preparar, daemon=True).start()
     handler = base.criar_handler(os.path.join(AQUI, "web"), ROTAS_GET, ROTAS_POST,
-                                 especiais={"/arquivo": esp_arquivo, "/miniatura": esp_miniatura}, nome="CriadorKits/" + VERSAO)
+                                 especiais={"/miniatura_arquivo": esp_miniatura_arquivo, "/arquivo": esp_arquivo, "/miniatura": esp_miniatura}, nome="CriadorKits/" + VERSAO)
     try:
         base.servir(handler, a.porta, "Criador de Kits", VERSAO, sem_janela=a.sem_janela)
     finally:

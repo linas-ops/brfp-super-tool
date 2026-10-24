@@ -80,6 +80,7 @@ export class Editor2D {
     g.drawImage(b, 0, 0);
     for (const it of this.itens) {
       const o = it.obj;
+      if (it.tipo === 'hotspot') continue;             // número e nome: o jogo escreve; aqui só a caixa (por cima)
       if (it.tipo === 'logo' && o.visivel === false) continue;
       const im = this.imagem(this.cb.urlDe(o.arquivo));
       if (!im) continue;
@@ -158,6 +159,7 @@ export class Editor2D {
     // contornos do escudo/marca (sempre) e do selecionado
     for (const it of this.itens) {
       const sel = it.id === this.sel;
+      if (it.tipo === 'hotspot') this._amostra(g, it);
       if (!sel && it.tipo === 'logo') continue;
       this._contorno(g, it, sel);
     }
@@ -208,11 +210,13 @@ export class Editor2D {
     g.save();
     g.lineWidth = sel ? 1.6 : 1;
     g.setLineDash(sel ? [] : [4, 3]);
-    g.strokeStyle = sel ? '#4c8dff' : it.tipo === 'escudo' ? 'rgba(255,120,120,.9)' : 'rgba(255,190,90,.9)';
+    g.strokeStyle = sel ? '#4c8dff' : it.tipo === 'escudo' ? 'rgba(255,120,120,.9)' : it.tipo === 'hotspot' ? 'rgba(90,220,255,.9)' : 'rgba(255,190,90,.9)';
     g.beginPath(); pts.forEach(([x, y], i) => (i ? g.lineTo(x, y) : g.moveTo(x, y))); g.closePath(); g.stroke();
     if (!sel && it.tipo !== 'logo') {
       g.fillStyle = g.strokeStyle; g.font = '11px system-ui';
-      g.fillText(it.tipo === 'escudo' ? 'escudo' : 'marca', pts[0][0], pts[0][1] - 4);
+      const nome = it.tipo === 'escudo' ? 'escudo' : it.tipo === 'hotspot' ? it.rotulo.toLowerCase() : 'marca';
+      const [lx, ly] = pts.reduce((a, b) => (b[1] < a[1] || (b[1] === a[1] && b[0] < a[0]) ? b : a));
+      g.fillText(nome, lx, ly - 4);
     }
     if (sel) {
       g.setLineDash([]);
@@ -225,6 +229,29 @@ export class Editor2D {
         g.beginPath(); g.arc(hx, hy, 5, 0, Math.PI * 2); g.fill(); g.stroke();
       }
     }
+    g.restore();
+  }
+
+  // número/nome de exemplo dentro da caixa do hotspot (de cabeça para baixo quando a caixa está invertida)
+  _amostra(g, it) {
+    const k = this.caixa(it);
+    const [cx, cy] = this._tela(k.cx, k.cy);
+    const s = this._escala();
+    const w = k.w * s, h = k.h * s;
+    if (w < 6 || h < 6) return;
+    g.save();
+    g.translate(cx, cy);
+    if (k.fx < 0 && k.fy < 0) g.rotate(Math.PI);
+    else g.scale(k.fx, k.fy);
+    g.font = `800 ${Math.max(6, h * 0.86)}px system-ui, sans-serif`;
+    g.textAlign = 'center'; g.textBaseline = 'middle';
+    const larg = g.measureText(it.amostra).width || 1;
+    if (larg > w) g.scale(w / larg, 1);
+    g.fillStyle = 'rgba(255,255,255,.55)';
+    g.strokeStyle = 'rgba(0,0,0,.45)';
+    g.lineWidth = Math.max(1, h * 0.04);
+    g.strokeText(it.amostra, 0, h * 0.04);
+    g.fillText(it.amostra, 0, h * 0.04);
     g.restore();
   }
 
