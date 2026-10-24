@@ -161,6 +161,10 @@ export class Materiais {
     }
     if (classe === 'sobreposto') Object.assign(p, { polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2, side: THREE.DoubleSide });
     if (classe === 'emissivo') { p.emissive = cor.clone().multiplyScalar(0.35); if (mapa) p.emissiveMap = p.map; }
+    // dígitos do placar (worlds_scoreclock_led): o desenho de cada número está no alfa do atlas; sem isso viram retângulos brancos
+    if (mapa && /scoreclock/i.test(shader) && /digit/i.test(nomeTex)) {
+      Object.assign(p, { alphaTest: 0.3, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
+    }
     if (/metal|steel|alumin|galvan/.test(nomeTex.toLowerCase())) p.metalness = 0.25;
     const m = new THREE.MeshStandardMaterial(p);
     m.userData.texturas = Object.values(tex);

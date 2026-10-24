@@ -204,7 +204,7 @@ export class Propriedades {
       vis.push(interruptor({ titulo: 'Aparece no jogo', descricao: desc, marcado: !oc, icone: 'jogo', aoMudar: (v) => app.definirJogo([n.id], !v) }).el);
       if (md.ocultoNoJogo(n) && !oc) vis.push(nota('Um grupo acima deste está oculto no jogo, então ele também não aparece.', 'alerta'));
     } else if (!grupo || n.tipo === 'smg' || n.tipo === 'membro') {
-      vis.push(nota(n.tipo === 'smg' || n.tipo === 'membro' ? 'Para ocultar no jogo, use as cópias dentro deste grupo (ou selecione todas e pressione <kbd>Del</kbd>).' : 'Este item não tem referência própria no mundo.'));
+      vis.push(nota(n.avulso ? 'Sub-mundo que o jogo carrega à parte (nenhum outro arquivo do estádio o referencia). Ele aparece na origem; para tirar do jogo, oculte os objetos dentro dele.' : n.tipo === 'smg' || n.tipo === 'membro' ? 'Para ocultar no jogo, use as cópias dentro deste grupo (ou selecione todas e pressione <kbd>Del</kbd>).' : 'Este item não tem referência própria no mundo.'));
     }
     this.raiz.append(secao('visibilidade', 'Visibilidade', vis));
 
@@ -399,8 +399,23 @@ export class Propriedades {
       const geo = app.viewport.geos.get(p.m);
       if (!geo) continue;
       const regs = app.viewport.registroSecoes(n, p.m, geo);
-      // asset novo: a malha não tem entrada no MVDB do próprio sub-mundo
-      if (regs.some((r) => r && (!r.editavel || r.outroMvdb)) && md.mvdbs[n.mvdb]?.arq) {
+      const { lista } = md.materiaisDe(n, p.m);
+      const novas = regs.filter((r) => r?.particaoNova && !r.outroMvdb);
+      const nomeMalha = esc(md.malhas[p.m]?.nome || p.m);
+      if (lista && novas.length && md.mvdbs[n.mvdb]?.arq) {
+        // seção acrescentada ao FBX (partição nova): a entrada existe, mas sem material para ela
+        semEntrada = true;
+        const semGuid = novas.filter((r) => r.semGuid).length;
+        if (semGuid) {
+          corpo.push(nota(`${semGuid === novas.length ? 'A malha' : `${semGuid} das partições novas de`} <b>${nomeMalha}</b> tem mais seções no FBX do que materiais no XML exportado. Depois de importar o FBX no FET, exporte de novo o XML da malha (é lá que a partição nova ganha o GUID) e abra o estádio de novo.`, 'alerta'));
+        }
+        if (novas.length > semGuid) {
+          corpo.push(nota(`${novas.length - semGuid === 1 ? 'Uma partição nova' : `${novas.length - semGuid} partições novas`} de <b>${nomeMalha}</b> não ${novas.length - semGuid === 1 ? 'tem' : 'têm'} material no MeshVariationDb deste sub-mundo, por isso ${novas.length - semGuid === 1 ? 'fica' : 'ficam'} só leitura. O editor cria o material copiando o da partição de cima; depois é só trocar as texturas.`, 'alerta'));
+          corpo.push(el('div', { class: 'acoes-linha' }, el('button', { class: 'btn-primario peq', title: 'Acrescenta à entrada desta malha no MeshVariationDb um material para cada partição nova, copiado da partição de cima',
+            onclick: () => app.completarEntradaMvdb(n, p.m) }, icone('mais', 13), 'Criar material das partições novas')));
+        }
+      } else if (regs.some((r) => r && (!r.editavel || r.outroMvdb)) && md.mvdbs[n.mvdb]?.arq) {
+        // asset novo: a malha não tem entrada no MVDB do próprio sub-mundo
         semEntrada = true;
         const outro = regs.some((r) => r?.outroMvdb);
         const nomeMvdb = (a) => esc(String(a || '').split('/').slice(-2, -1)[0] || '');
@@ -524,7 +539,8 @@ export class Propriedades {
       }
       corpo.append(lista);
     }
-    if (!r.editavel) corpo.append(nota('Sem entrada no MeshVariationDb deste sub-mundo: mostrando os valores do XML da malha, que o jogo não usa para o material.'));
+    if (!r.editavel && r.particaoNova && !r.outroMvdb) corpo.append(nota(r.semGuid ? 'Seção nova do FBX que ainda não está no XML exportado da malha.' : 'Partição nova: ainda sem material no MeshVariationDb deste sub-mundo.'));
+    else if (!r.editavel) corpo.append(nota('Sem entrada no MeshVariationDb deste sub-mundo: mostrando os valores do XML da malha, que o jogo não usa para o material.'));
     else if (r.outroMvdb) corpo.append(nota('Valores de outro MeshVariationDb: editar aqui muda aquele arquivo, não o deste sub-mundo.', 'alerta'));
     card.append(corpo);
     return card;

@@ -387,14 +387,21 @@ export class Viewport extends EventTarget {
   registroSecoes(n, chave, geo) {
     const { lista, xml, mvdb } = this.modelo.materiaisDe(n, chave);
     const outroMvdb = !!lista && mvdb !== n.mvdb;
+    // o MVDB liga cada material à partição (MeshMaterial) da malha pelo GUID; partição nova (seção acrescentada ao
+    // FBX e importada no FET) não tem material na entrada. Só cai na ordem quando os GUIDs não batem em nada.
+    const g = (x) => String(x || '').toLowerCase();
+    const guidsXml = new Set(xml.map((x) => g(x.guid)).filter(Boolean));
+    const porGuid = !!lista && lista.some((m) => guidsXml.has(g(m.material)));
     const out = [];
     let k = 0;
     for (const s of geo.secoes) {
       if (s.sombra) { out.push(null); continue; }
-      const xg = xml[k]?.guid;
-      let mv = lista ? (lista.find((m) => xg && m.material === xg) || lista[k]) : null;
+      const xg = g(xml[k]?.guid);
+      let mv = null;
+      if (lista) mv = porGuid ? (xg ? lista.find((m) => g(m.material) === xg) : null) : lista[k];
       const reg = mv?.variacao ? this.modelo.materiais.get(mv.variacao) : null;
-      out.push({ indice: k, chave: mv?.variacao || `${chave}|${k}`, reg: reg || { info: mv || xml[k] || {} }, editavel: !!reg, outroMvdb });
+      out.push({ indice: k, chave: mv?.variacao || `${chave}|${k}`, reg: reg || { info: mv || xml[k] || {} }, editavel: !!reg, outroMvdb,
+        particaoNova: !!lista && !mv, semGuid: !xg });
       k++;
     }
     return out;
