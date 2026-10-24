@@ -17,6 +17,7 @@ const NOVIDADES = {
   banco: 'v1.0: times (elenco, escalação, formação, capitão, cobradores, tática, cores, dados do clube, técnico), jogadores, ligas, árbitros, técnicos e qualquer tabela; transferências, empréstimos, liberar, números; verificação de erros com correção; edição salva sozinha com desfazer; grava um banco novo (FIFA 16 … FC 27).',
   criador: 'v2.2: Atualizar banco com várias ligas de uma vez (painéis de casamento, desempate pelo elenco) e ligas de seleções; time rebaixado sem divisão abaixo vai para o Resto do Mundo; coluna de foto, tirar jogador do elenco, jogadores que já estão no banco (usar o do banco); Transfermarkt: idade da época e nível de temporadas antigas pela liga e classificação, nacionalidade válida, elenco com jogador sem foto. v2.1: Transfermarkt como segunda fonte (escolha no topo da aba API) — ligas, times, seleções, coleta com nota pelo valor de mercado e Atualizar banco; servidor local em Componentes ou instância pública. v2.0: seleções (convocação casada com o banco + internationals.txt), feminino, Atualizar banco (elencos, empréstimos, saídas, números, notas e participantes das ligas), aparência pelas fotos, tática, técnico, estádio, IDs à mão, todas as colunas editáveis, vários times de uma vez, fotos para o Criador de Minifaces. v1.0: ligas, times e jogadores da API-Football com notas calibradas no banco.',
   tabelas: 'v1.1: qualquer par de versões (FIFA 16, 21, 22, 23, FC 24, 26, 27), colunas renomeadas e de resumo calculadas, destino pelo esquema guardado. v1.0: converte tabelas entre FC 26 e FC 27 — colunas novas, escalas que mudaram, faixas do meta — e grava .txt ou um .db novo.',
+  kits: 'v1.0: uniforme do FC 27 a partir de um kit doador do FET — recolore camisa, calção e meião (mantém costuras e o desenho tom sobre tom do doador), padrões no tronco (listras, aros, xadrez, metades, faixas, V, degradê), logos arrastáveis na textura, escudo e marca com hotspot; uma foto da camisa preenche cores, listras e logos sozinha; prévia 3D com as malhas do FET.',
   corpos: 'v1.0: texturas do corpo (pele e tatuagens do bodyupper) FC 26 ↔ FC 27: identifica o layout de cada imagem, refaz a UV do outro jogo (cor e mapa normal), prévia 3D da entrada e do resultado no corpo.',
   faces: 'v1.4: olhos não ficam mais tortos quando o facemaker trocou a malha dos olhos (a direção da íris segue a da face original). v1.2: roda no Python embutido e baixa numpy/SciPy se faltarem. v1.1: interface com lista de faces e jogo identificado, pasta de saída, prévia 3D da entrada e do resultado, arrastar e soltar.',
   conversor_pes: 'v2.0: sem comandos — assistente de nova conversão (acha o estádio do mod e o mundo do export), configuração em formulário, etapas explicadas com progresso e dicas de erro, lista do que importar no FET, prévias, ferramentas em cartões. v1.0: interface para o conversor de linha de comando — etapas, registro ao vivo, PASSOS_FET.md e entregas.',
@@ -87,6 +88,7 @@ function mostrar(id) {
 }
 
 async function abrir(id) {
+  if (S.edicao && (id === 'dados' || id === 'componentes')) id = 'inicio';
   if (id === 'inicio') { desenharInicio(); mostrar('inicio'); return; }
   if (id === 'dados') { await paginaDados(); mostrar('dados'); return; }
   if (id === 'componentes') { await paginaComponentes(); mostrar('componentes'); return; }
@@ -223,9 +225,10 @@ function desenharInicio() {
   const t = $('#tela-inicio');
   t.innerHTML = '';
   const i = el('div', { class: 'inicio' });
+  const ed = S.edicao;
   i.append(el('div', { class: 'bv-hero' }, el('div', { class: 'bv-hero-ic' }), el('div', {},
-    el('h1', {}, 'BRFP Super Tool', el('span', { class: 'marca-versao' }, S.versao)),
-    el('p', {}, 'Todas as ferramentas de modding do BRFP numa janela só, com a mesma interface: estádios, placares, competições, faces, corpos (tatuagens), minifaces, tabelas do banco, squads e o conversor de estádios do PES. O banco e o idioma do jogo são importados uma vez em Dados do jogo e valem para todas.'))));
+    el('h1', {}, ed ? `BRFP Super Tool · ${ed.nome}` : 'BRFP Super Tool', el('span', { class: 'marca-versao' }, S.versao)),
+    el('p', {}, ed ? ed.descricao : 'Todas as ferramentas de modding do BRFP numa janela só, com a mesma interface: estádios, placares, competições, faces, corpos (tatuagens), kits (uniformes), minifaces, tabelas do banco, squads e o conversor de estádios do PES. O banco e o idioma do jogo são importados uma vez em Dados do jogo e valem para todas.'))));
   i.append(faixaAtualizacao());
   const grade = el('div', { class: 'grade-ferramentas' });
   S.ferramentas.forEach((f, n) => {
@@ -242,7 +245,7 @@ function desenharInicio() {
         el('button', { class: 'btn-fantasma peq', onclick: () => guia(f.id, f.nome) }, icone('ajuda', 13), 'Guia'),
         el('button', { class: 'btn-icone peq', title: 'Mais opções', onclick: (e) => { const r = e.currentTarget.getBoundingClientRect(); menuFerramenta(f, r.left, r.bottom + 4); } }, icone('lista', 14)))));
   });
-  i.append(faixaDados());
+  if (!ed) i.append(faixaDados());
   i.append(el('div', { class: 'bv-bloco' }, el('h3', {}, 'Ferramentas'), grade));
   i.append(el('div', { class: 'bv-bloco' }, el('h3', {}, 'Versões'), tabelaVersoes()));
   i.append(el('div', { class: 'rodape-inicio' },
@@ -292,7 +295,8 @@ function faixaAtualizacao() {
 
 function tabelaVersoes() {
   const tb = el('tbody');
-  tb.append(el('tr', {}, el('td', {}, 'BRFP Super Tool'), el('td', { class: 'v' }, S.versao), el('td', {}, NOVIDADES_ST)));
+  // na edição, as novidades do Super Tool falam das outras ferramentas
+  tb.append(el('tr', {}, el('td', {}, 'BRFP Super Tool'), el('td', { class: 'v' }, S.versao), el('td', {}, S.edicao ? '' : NOVIDADES_ST)));
   for (const f of S.ferramentas) tb.append(el('tr', {}, el('td', {}, f.nome), el('td', { class: 'v' }, f.versao), el('td', {}, NOVIDADES[f.id] || '')));
   return el('table', { class: 'tabela-versoes' }, el('thead', {}, el('tr', {}, el('th', {}, 'Ferramenta'), el('th', {}, 'Versão'), el('th', {}, 'Novidades da versão'))), tb);
 }
@@ -670,6 +674,22 @@ async function paginaComponentes() {
   resumo.append(opcao('completo', 'Completo', 'Com o Python embutido e todos os pacotes: abre sem internet.', 'calculando o tamanho…'),
     opcao('leve', 'Leve', 'Sem o Python: na primeira vez o .bat baixa o Python (11 MB) e cada ferramenta baixa os pacotes quando precisar.', 'calculando o tamanho…'));
   corpoZip.append(resumo);
+  for (const ed of S.edicoes || []) {
+    const tam = el('small', { class: 'mudo' }, 'calculando o tamanho…');
+    const gerar = (tipo) => el('button', { class: tipo === 'completo' ? 'btn-primario peq' : 'btn peq', disabled: !!pk.ativo, onclick: async () => {
+      const r = await tentar(() => api('pacote_gerar', { tipo, edicao: ed.id }));
+      if (!r || r.cancelado) return;
+      await paginaComponentes();
+      acompanharPacote();
+    } }, icone('maleta', 13), `Gerar ${tipo}…`);
+    const op = el('div', { class: 'pacote-op' }, el('b', {}, `Só o ${ed.nome}`),
+      el('p', {}, `O Super Tool com só o ${ed.nome}, para compartilhar: as outras ferramentas, Dados do jogo e Componentes não vão. O completo leva só o Python (sem os pacotes), o leve baixa o Python na primeira vez.`),
+      tam, el('div', { class: 'acoes-linha' }, gerar('completo'), gerar('leve')));
+    corpoZip.append(el('div', { class: 'pacote-opcoes' }, op));
+    api('pacote_resumo?edicao=' + encodeURIComponent(ed.id)).then((r) => {
+      tam.textContent = (r.completo ? `completo ≈ ${mb(r.completo * 0.45)} compactado · ` : '') + `leve ≈ ${mb(r.leve * 0.6)} compactado`;
+    }).catch(() => { tam.textContent = ''; });
+  }
   const caixaProg = el('div', { id: 'pacote-prog' });
   if (pk.ativo || pk.fase === 'pronto' || pk.fase === 'erro') {
     const prog = barraTarefa();
@@ -731,6 +751,13 @@ async function iniciar() {
   dica($('#btn-inicio'), 'Início', 'Ctrl+0');
   dica($('#btn-sobre'), 'Versões e guias');
   const r = await api('inicio');
+  S.edicao = r.edicao || null;
+  S.edicoes = r.edicao ? [] : r.edicoes || [];
+  if (S.edicao) {
+    // edição (ex.: só o Editor de Placares): sem Dados do jogo e Componentes
+    $('#btn-dados').style.display = 'none';
+    $('#btn-componentes').style.display = 'none';
+  }
   S.versao = r.versao;
   S.raiz = r.raiz;
   S.pasta = r.pasta;
@@ -741,6 +768,12 @@ async function iniciar() {
   const alvo = location.hash.slice(1);
   if (alvo && alvo !== 'inicio' && (porId(alvo) || alvo === 'dados' || alvo === 'componentes')) abrir(alvo);
   else mostrar('inicio');
+  // a edição abre direto na ferramenta: a versão nova é avisada aqui, já que o Início quase não aparece
+  if (S.edicao) {
+    api('atualizacao').then((x) => {
+      if (x.nova) aviso(`Versão ${x.ultima} disponível`, { tipo: 'info', tempo: 15000, detalhe: 'Atualize pelo Início.', acao: { rotulo: 'Ir ao Início', fn: () => abrir('inicio') } });
+    }).catch(() => {});
+  }
   setInterval(atualizar, 3000);
 }
 

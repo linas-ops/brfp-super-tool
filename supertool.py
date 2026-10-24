@@ -9,6 +9,7 @@ Banco de dados e idioma do jogo são importados uma vez aqui (página "Dados do 
 (comum/dados.py, registro em dados/fontes.json).
 Componentes (página "Componentes"): o Python embutido em runtime/python, os pacotes de cada ferramenta (comum/componentes.py)
 e o pacote .zip para levar o Super Tool a outro computador (comum/pacote.py).
+Edição (comum/edicao.py): com o edicao.json na pasta, só as ferramentas da edição aparecem (ex.: só o Editor de Placares).
 """
 import argparse
 import collections
@@ -28,6 +29,7 @@ import atualizacao  # noqa: E402
 import base  # noqa: E402
 import componentes  # noqa: E402
 import dados  # noqa: E402
+import edicao  # noqa: E402
 import pacote  # noqa: E402
 
 VERSAO = "3.4"
@@ -35,6 +37,7 @@ NOME = "BRFP Super Tool"
 RAIZ = base.raiz_trabalho()
 SEM_JANELA = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 PREFS = base.Prefs(os.path.join(AQUI, "preferencias.json"))
+EDICAO = edicao.atual()
 
 FERRAMENTAS = [
     {"id": "estadios", "nome": "Editor de Estádios", "icone": "estadio", "tipo": "web", "porta": 8765,
@@ -57,6 +60,10 @@ FERRAMENTAS = [
      "pasta": os.path.join(AQUI, "ferramentas", "corpos"), "guia": "LEIAME.md",
      "descricao": "Converte a textura do corpo (pele e tatuagens do bodyupper) entre FC 26 e FC 27: identifica o layout de "
                   "cada imagem, refaz a UV do outro jogo e mostra a entrada e o resultado no corpo em 3D."},
+    {"id": "kits", "nome": "Criador de Kits", "icone": "camisa", "tipo": "web", "porta": 8779,
+     "pasta": os.path.join(AQUI, "ferramentas", "kits"), "guia": "LEIAME.md",
+     "descricao": "Monta um uniforme do FC 27 a partir de um kit doador do FET: troca as cores, desenha listras e faixas e "
+                  "coloca patrocinadores, escudo e marca. Uma foto da camisa preenche tudo sozinha; sai a pasta do kit com o hotspot."},
     {"id": "minifaces", "nome": "Criador de Minifaces", "icone": "miniface", "tipo": "web", "porta": 8773,
      "pasta": os.path.join(AQUI, "ferramentas", "minifaces"), "guia": "LEIAME.md",
      "descricao": "Transforma fotos de jogadores em minifaces do jogo: tira o fundo, enquadra o rosto como as originais "
@@ -86,6 +93,8 @@ FERRAMENTAS = [
      "descricao": "Abre e edita squads do FC 27 no RDBM 26 sem mexer na instalação do RDBM (programa à parte)."},
 ]
 POR_ID = {f["id"]: f for f in FERRAMENTAS}
+if EDICAO:  # só as ferramentas da edição aparecem e abrem (POR_ID continua com todas: o RDBM é lido pela página Componentes)
+    FERRAMENTAS = [f for f in FERRAMENTAS if f["id"] in EDICAO["ferramentas"]]
 
 
 def versao_de(f):
@@ -230,13 +239,14 @@ def api_ferramentas(_):
 
 def api_inicio(_):
     p = PREFS.ler()
-    return {"versao": VERSAO, "app": NOME, "raiz": RAIZ, "pasta": AQUI, "ultima": p.get("ultima"),
+    return {"versao": VERSAO, "app": NOME, "raiz": RAIZ, "pasta": AQUI, "ultima": p.get("ultima"), "edicao": EDICAO,
+            "edicoes": [{"id": e["id"], "nome": e["nome"]} for e in edicao.EDICOES.values()],
             "ferramentas": [info_ferramenta(f) for f in FERRAMENTAS]}
 
 
 def exige_web(d):
     f = POR_ID.get(d.get("id"))
-    if not f or f["tipo"] != "web":
+    if not f or f["tipo"] != "web" or f["id"] not in FILHOS:
         raise base.ErroUsuario("Ferramenta desconhecida.")
     return FILHOS[f["id"]]
 
@@ -523,24 +533,27 @@ def gravar_ini_rdbm(chave, valor):
         fh.write("\n".join(linhas) + "\n")
 
 
-def api_pacote_resumo(_):
+def api_pacote_resumo(q):
     try:
-        return pacote.resumo()
+        return pacote.resumo(q.get("edicao") or None)
     except componentes.ErroComponente as ex:
         raise base.ErroUsuario(str(ex))
 
 
 def api_pacote_gerar(d):
-    tipo = d.get("tipo")
+    tipo, ed = d.get("tipo"), d.get("edicao") or None
     if tipo not in ("completo", "leve"):
         raise base.ErroUsuario("Tipo de pacote inválido.")
-    destino = base.dialogo("pasta", f"Onde gravar o pacote {tipo} do BRFP Super Tool (.zip)", PREFS.ler().get("pacote_destino") or RAIZ)
+    if ed and ed not in edicao.EDICOES:
+        raise base.ErroUsuario("Edição desconhecida.")
+    nome = NOME + (" — " + edicao.EDICOES[ed]["nome"] if ed else "")
+    destino = base.dialogo("pasta", f"Onde gravar o pacote {tipo} do {nome} (.zip)", PREFS.ler().get("pacote_destino") or RAIZ)
     if not destino:
         return {"cancelado": True, "pacote": dict(pacote.ESTADO)}
     if os.path.normcase(os.path.abspath(destino) + os.sep).startswith(os.path.normcase(AQUI + os.sep)):
         raise base.ErroUsuario("Escolha uma pasta fora da pasta do Super Tool (o pacote não pode ficar dentro dele mesmo).")
     PREFS.atualizar(pacote_destino=destino)
-    return {"pacote": pacote.iniciar(tipo, destino)}
+    return {"pacote": pacote.iniciar(tipo, destino, ed)}
 
 
 def api_pacote_abrir(_):
@@ -587,10 +600,12 @@ def ja_aberto(porta):
 
 def main():
     ap = argparse.ArgumentParser(description=NOME)
-    ap.add_argument("--porta", type=int, default=8760)
+    ap.add_argument("--porta", type=int, default=(EDICAO or {}).get("porta") or 8760)
     ap.add_argument("--sem-janela", action="store_true", help="não abre a janela automaticamente")
-    ap.add_argument("--abrir", help="id da ferramenta para abrir direto (estadios, placares, compdata, faces, corpos, conversor_pes)")
+    ap.add_argument("--abrir", help="id da ferramenta para abrir direto (estadios, placares, compdata, faces, corpos, kits, conversor_pes)")
     a = ap.parse_args()
+    if not a.abrir and EDICAO and len(FERRAMENTAS) == 1:
+        a.abrir = FERRAMENTAS[0]["id"]  # edição de uma ferramenta só: a janela já abre nela
     url_extra = f"#{a.abrir}" if a.abrir else ""
     if not a.sem_janela and ja_aberto(a.porta):
         # já está aberto: só mostra outra janela

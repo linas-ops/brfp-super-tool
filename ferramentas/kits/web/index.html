@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Criador de Kits</title>
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="comum/brfp.css">
+  <link rel="stylesheet" href="app.css">
+  <script type="importmap">
+    { "imports": { "three": "./comum/vendor/three/three.module.js", "three/addons/": "./comum/vendor/three/addons/" } }
+  </script>
+</head>
+<body>
+  <div id="app">
+    <header id="topo">
+      <div class="marca" title="Criador de Kits do FC 27">
+        <span class="marca-ic"></span>
+        <span class="marca-txt">Criador de Kits</span>
+        <span class="marca-versao" id="versao"></span>
+      </div>
+      <nav id="menus" aria-label="Menu principal"></nav>
+      <div class="titulo-centro" id="titulo"></div>
+      <div class="topo-acoes">
+        <button id="btn-desfazer" class="btn-icone" title="Desfazer (Ctrl+Z)"></button>
+        <button id="btn-refazer" class="btn-icone" title="Refazer (Ctrl+Y)"></button>
+        <button id="btn-exportar" class="btn-primario" title="Gravar a pasta do kit no formato do jogo (Ctrl+E)" disabled>
+          <span id="btn-exportar-ic"></span><span id="btn-exportar-txt">Exportar kit</span>
+        </button>
+      </div>
+    </header>
+
+    <aside id="painel-esq" class="painel" aria-label="Kit">
+      <div id="kit" class="propriedades"></div>
+    </aside>
+    <div class="divisor" id="div-esq" title="Arraste para redimensionar"></div>
+
+    <main id="viewport">
+      <div id="abas-peca" class="abas-peca" hidden>
+        <div class="segmentado" id="seg-peca">
+          <button data-peca="jersey" class="ativo">Camisa</button>
+          <button data-peca="shorts">Calção</button>
+          <button data-peca="socks">Meião</button>
+        </div>
+      </div>
+      <canvas id="tela2d" tabindex="0" aria-label="Textura da peça (editor)"></canvas>
+      <canvas id="tela3d" tabindex="0" aria-label="Prévia 3D" hidden></canvas>
+      <div id="barra-vista" class="barra-flutuante" hidden>
+        <div class="segmentado" id="seg-modo">
+          <button data-modo="2d" class="ativo" title="A textura plana, onde dá para arrastar os logos">Textura</button>
+          <button data-modo="3d" title="A peça em 3D (precisa das malhas exportadas do FET)">3D</button>
+        </div>
+        <span class="sep-v"></span>
+        <button id="btn-molde" class="btn-icone" title="Mostrar as partes do molde (M)"></button>
+        <button id="btn-enquadrar" class="btn-icone" title="Enquadrar (F)"></button>
+      </div>
+      <div id="rotulo-previa" class="rotulo-previa" hidden></div>
+      <div id="vazio-vista" class="soltar">
+        <div class="soltar-caixa">
+          <div class="ic-grande" id="soltar-ic"></div>
+          <h2>Crie um kit a partir de uma foto</h2>
+          <p>Arraste a foto da camisa (de frente, de preferência foto de produto com fundo liso) ou comece do zero.
+            A ferramenta parte de um <b>kit doador</b> do jogo, troca as cores, desenha o padrão e coloca os logos.</p>
+          <div class="acoes">
+            <button class="btn-primario" id="btn-vazio-foto"></button>
+            <button class="btn" id="btn-vazio-zero"></button>
+          </div>
+          <small id="vazio-dica"></small>
+        </div>
+      </div>
+      <div id="carregando-previa" class="aviso-previa" hidden></div>
+    </main>
+    <div class="divisor" id="div-dir" title="Arraste para redimensionar"></div>
+
+    <aside id="painel-dir" class="painel" aria-label="Peça">
+      <div id="propriedades" class="propriedades"></div>
+    </aside>
+
+    <footer id="status">
+      <span class="status-esq" id="status-esq"></span>
+      <span class="status-dir">
+        <span id="status-progresso" hidden><span class="barra-progresso mini"><div id="progresso-barra"></div></span><span id="progresso-txt"></span></span>
+        <span class="chip" id="chip-python" title="Motor"></span>
+      </span>
+    </footer>
+  </div>
+  <div id="camada-soltar" hidden><div id="camada-soltar-txt">Solte a imagem</div></div>
+  <div id="camada-modal"></div>
+  <div id="menu-contexto" class="menu-flutuante" hidden></div>
+  <div id="toasts" aria-live="polite"></div>
+  <script type="module" src="app.js"></script>
+</body>
+</html>

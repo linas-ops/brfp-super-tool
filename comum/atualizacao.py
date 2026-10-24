@@ -5,6 +5,7 @@ iniciar()          baixa o pacote leve da Release e copia por cima da pasta do S
 
 O pacote leve só leva o código das ferramentas (comum/pacote.py): banco e idioma importados, preferências, o Python
 embutido (runtime/), o perfil da janela e as saídas deste computador ficam como estão. Depois é só reabrir o Super Tool.
+Numa edição (comum/edicao.py, ex.: só o Editor de Placares), só entram as ferramentas da edição e o LEIA-ME dela fica.
 """
 import json
 import os
@@ -15,6 +16,8 @@ import threading
 import time
 import urllib.request
 import zipfile
+
+import edicao
 
 REPO = "linas-ops/brfp-super-tool"
 PAGINA = f"https://github.com/{REPO}/releases/latest"
@@ -66,8 +69,10 @@ def verificar(versao, forcar=False):
 
 def _aplicar(caminho_zip):
     falhas = []
+    e = edicao.atual()
     with zipfile.ZipFile(caminho_zip) as z:
-        itens = [i for i in z.infolist() if i.filename.startswith(RAIZ_ZIP) and not i.is_dir()]
+        itens = [i for i in z.infolist() if i.filename.startswith(RAIZ_ZIP) and not i.is_dir()
+                 and (not e or (edicao.leva(e, i.filename[len(RAIZ_ZIP):]) and i.filename != RAIZ_ZIP + "LEIA-ME PRIMEIRO.txt"))]
         ESTADO.update(fase="copiando", feito=0, total=len(itens))
         for n, i in enumerate(itens, 1):
             rel = i.filename[len(RAIZ_ZIP):]
