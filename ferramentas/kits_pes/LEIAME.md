@@ -1,4 +1,4 @@
-# Conversor de Kits PES → FC — versão 1.0
+# Conversor de Kits PES → FC — versão 1.1
 
 Converte kits do **PES 2021** em kits do **FC 27**.
 
@@ -45,8 +45,12 @@ A correspondência entre as duas texturas foi medida uma vez nos uniformes em 3D
 UV do jogo e as malhas de camisa, calção e meião do FC 27 exportadas pelo FET) e vem pronta em
 `motor/mapas/mapas_pes2021_fc27.npz`: para cada pixel do FC, o ponto da textura do PES que veste o mesmo lugar do corpo.
 
-- **Tronco, gola, calção e meião**: as duas malhas são alinhadas parte por parte e cada ponto do FC vai ao ponto mais
+- **Tronco, calção e meião**: as duas malhas são alinhadas parte por parte e cada ponto do FC vai ao ponto mais
   próximo da superfície do PES (do mesmo lado: frente com frente, costas com costas).
+- **Pescoço e gola**: a gola do PES não tem nada a ver com a do FC, então não é copiada. O tronco do PES tem um buraco
+  em T no decote (onde fica a gola e a carcela, e onde o kit do PES desenha a gola): ali o conversor continua o desenho
+  do tronco, coluna por coluna, até o decote do FC, sem esticar a borda. A gola do FC sai lisa, na cor predominante da
+  camisa, para pôr a gola do FC à mão.
 - **Mangas**: os braços dos dois jogos têm tamanhos diferentes, então as mangas são medidas em volta do braço (da cava ao
   punho, e o ângulo em volta dele). A manga longa do FC (que não tem malha no FET) segue a volta da manga curta, e a do
   PES é lida linha a linha na UV: as listras ao longo da manga ficam retas, como nos kits do FC.
@@ -57,8 +61,8 @@ UV do jogo e as malhas de camisa, calção e meião do FC 27 exportadas pelo FET
 ## Limitações
 
 - Feito para o layout do kit do **PES 2021** (o do modelo de kit do BRFP). Kits de outro PES com outra UV não saem certos.
-- A camisa do FC usa a gola e a UV da malha `jersey_0_0_0_0_1_0_0`. Golas de outros modelos (`jerseycollargeometrytype`
-  do `teamkits`) que usem outras áreas da textura ficam com a cor mais próxima.
+- A camisa do FC usa a UV da malha `jersey_0_0_0_0_1_0_0`. A gola não vem do PES (sai lisa, na cor da camisa): a do FC
+  (`jerseycollargeometrytype` do `teamkits`) é posta à mão.
 - **Números e nomes** nas costas não vêm do kit do PES: são os do jogo (`kitnumbers`, cores no `teamkits`).
 - Ainda não testado no jogo.
 

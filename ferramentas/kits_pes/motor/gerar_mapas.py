@@ -9,8 +9,11 @@ Precisa dos modelos de referência em motor/referencia (tirados dos jogos, fora 
 
 Para cada pixel da textura do FC (camisa 2048×2048, calção 1024×512, meião 512×256) acha o ponto do uniforme do PES que
 veste o mesmo lugar do corpo e guarda a UV do PES ali:
-  - tronco, gola, calção e meião: as duas malhas são alinhadas pela caixa de cada parte e cada ponto do FC vai ao ponto
-    mais próximo da superfície do PES com a normal do mesmo lado;
+  - tronco, calção e meião: as duas malhas são alinhadas pela caixa de cada parte e cada ponto do FC vai ao ponto mais
+    próximo da superfície do PES com a normal do mesmo lado. Em volta do pescoço o tronco do PES tem o buraco da gola
+    (decote e carcela, em T): ali a UV é interpolada (harmônica) por dentro do buraco, onde o conversor continua o
+    desenho do tronco, em vez de esticar a borda;
+  - gola do FC: não vem do PES (as golas dos dois jogos não têm nada a ver); o conversor pinta com a cor do tronco;
   - mangas: coordenadas do braço (s = 0 na cava … 1 no punho, medido em cada ângulo entre os laços da cava e do punho;
     θ = ângulo em volta do braço, 0 no lado de fora, 90° na frente), iguais nos dois jogos mesmo com braços e mangas de
     tamanhos diferentes. A manga longa do FC (sem malha) segue o molde da curta: mesma volta em v, punho na borda.
@@ -37,6 +40,7 @@ FORA, TRONCO, MANGA_CURTA, MANGA_LONGA, GOLA, DO_BASE = 0, 1, 2, 3, 4, 9
 MOLDE_LONGA = [(0.0, 0.342), (0.335, 0.342), (0.356, 0.39), (0.364, 0.46), (0.357, 0.54), (0.338, 0.60), (0.305, 0.640),
                (0.285, 0.665), (0.0, 0.665)]
 BRACADEIRA = (0.362, 0.950, 0.638, 1.0)       # faixa da braçadeira de capitão na camisa (u0, v0, u1, v1): fica a do kit base
+LIM_PESCOCO = 3.0      # distância (unidades do PES, ~0,6 cm) acima da qual o ponto do FC no pescoço não tem tronco do PES
 PES_PARTES = {"tronco": ["Shirt_Out_mesh_id_1.006"], "manga_curta": ["Sleeves_Short_MESH_sleeve_short_001"],
               "manga_longa": ["Sleeves_Long_mesh_id_0.007"], "gola": ["Collar_01_MESH_collar_901"],
               "calcao": ["Shorts_With_Shirt_Out_MESH_pants_out_sub", "Shorts_Base_MESH_pants_001"],
@@ -364,6 +368,52 @@ def na_grade(g, sr, th):
     return g[iy, ix]
 
 
+def harmonico(mapa, valido, refazer):
+    """Refaz `mapa` nos pixels `refazer` pela média dos vizinhos (Laplace; borda livre fora de `valido`)."""
+    from scipy.sparse import coo_matrix
+    from scipy.sparse.linalg import spsolve
+    h, w = valido.shape
+    ys, xs = np.nonzero(refazer)
+    idx = np.full((h, w), -1, np.int64)
+    idx[ys, xs] = np.arange(len(ys))
+    n = len(ys)
+    lin, col, val = [np.arange(n)], [np.arange(n)], []
+    grau = np.zeros(n)
+    lado = np.zeros((n, mapa.shape[2]))
+    for dy, dx in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+        y2, x2 = ys + dy, xs + dx
+        dentro = (y2 >= 0) & (y2 < h) & (x2 >= 0) & (x2 < w)
+        y2, x2 = np.clip(y2, 0, h - 1), np.clip(x2, 0, w - 1)
+        viz = dentro & valido[y2, x2]
+        grau += viz
+        inc = viz & refazer[y2, x2]
+        lin.append(np.nonzero(inc)[0])
+        col.append(idx[y2, x2][inc])
+        val.append(-np.ones(inc.sum()))
+        fixo = viz & ~refazer[y2, x2]
+        lado[fixo] += mapa[y2[fixo], x2[fixo]]
+    A = coo_matrix((np.concatenate([grau] + val), (np.concatenate(lin), np.concatenate(col))), shape=(n, n)).tocsr()
+    for c in range(mapa.shape[2]):
+        mapa[ys, xs, c] = spsolve(A, lado[:, c])
+
+
+def pescoco_liso(mapa, tronco, dist, raio=500, borda=12):
+    """O tronco do PES tem o buraco da gola (decote e carcela em T), mais fundo que o decote do FC: os pontos do FC
+    que caem nele iam todos para a borda do buraco e esticavam o desenho. Refaz esses pontos (e uma faixa em volta)
+    pela interpolação harmônica da UV. Devolve quantos pixels."""
+    buraco = nd.binary_fill_holes(tronco) & ~tronco
+    lab, n = nd.label(buraco)
+    if not n:
+        return 0
+    pesc = lab == int(np.argmax(nd.sum(buraco, lab, range(1, n + 1)))) + 1
+    perto = nd.distance_transform_edt(~pesc) < raio
+    ruim = nd.binary_opening(tronco & perto & (dist > LIM_PESCOCO), iterations=2)
+    ruim = nd.binary_dilation(ruim, iterations=borda) & tronco
+    if ruim.any():
+        harmonico(mapa, tronco, ruim)
+    return int(ruim.sum())
+
+
 def sangrar(mapa, valido):
     """Fora dos pixels válidos, copia o válido mais próximo."""
     _, (iy, ix) = nd.distance_transform_edt(~valido, return_indices=True)
@@ -392,7 +442,10 @@ def camisa(obj, fc, log=print):
     parte = np.zeros((H, W), np.uint8)
     ok, uv, d = mapa_superficie((V, T, UV), ilha == tronco, W, H, malha_pes(obj, PES_PARTES["tronco"]))
     mapa[ok], parte[ok] = uv, TRONCO
-    log(f"  tronco: {ok.sum()} px, distância mediana {np.median(d):.2f}")
+    dist = np.zeros((H, W))
+    dist[ok] = d
+    n = pescoco_liso(mapa, ok, dist)
+    log(f"  tronco: {ok.sum()} px, distância mediana {np.median(d):.2f}; {n} px em volta do pescoço refeitos")
     v_curta = {}
     for nome, tipo in (("manga_curta", MANGA_CURTA), ("manga_longa", MANGA_LONGA)):
         pes = malha_pes(obj, PES_PARTES[nome])
@@ -432,11 +485,9 @@ def camisa(obj, fc, log=print):
                 mapa[ys[livre], xs[livre]] = manga_longa_pes(pes, lado, sr[livre], th[livre])
                 parte[ys[livre], xs[livre]] = MANGA_LONGA
                 log(f"  manga longa {'esquerda' if lado > 0 else 'direita'}: {livre.sum()} px")
-    if gola is not None:
-        Vp, Tp, UVp = malha_pes(obj, PES_PARTES["gola"])
-        Tp = Tp[(1 - UVp[Tp].mean(1)[:, 1]) > 0.85]          # só a faixa da gola (a carcela fica no tronco)
-        ok, uv, d = mapa_superficie((V, T, UV), ilha == gola, W, H, (Vp, Tp, UVp))
-        mapa[ok], parte[ok] = uv, GOLA
+    if gola is not None:                # não vem do PES: o conversor pinta com a cor do tronco
+        ok, _, _ = pontos_fc(V, T, UV, ilha == gola, W, H)
+        parte[ok & (parte == FORA)] = GOLA
         log(f"  gola: {ok.sum()} px")
     u0, v0, u1, v1 = BRACADEIRA
     parte[int(v0 * H):int(v1 * H), int(u0 * W):int(u1 * W)] = DO_BASE
@@ -501,7 +552,11 @@ def gerar(saida, log=print):
     Vp, Tp, UVp = malha_pes(obj, [n for ns in PES_PARTES.values() for n in ns])
     ilhas = nd.binary_dilation(rasterizar(Tp, UVp, 2048, 2048)[0] >= 0, iterations=2)
     dados["pes_ilhas"] = np.packbits(ilhas, axis=1)
-    dados["versao"] = np.array(1)
+    # buraco da gola no tronco do PES (decote e carcela): o conversor continua ali o desenho do tronco
+    Vt, Tt, UVt = malha_pes(obj, PES_PARTES["tronco"])
+    tr = nd.binary_closing(rasterizar(Tt, UVt, 2048, 2048)[0] >= 0, iterations=2)
+    dados["pes_buraco"] = np.packbits(nd.binary_fill_holes(tr) & ~tr, axis=1)
+    dados["versao"] = np.array(2)
     os.makedirs(os.path.dirname(os.path.abspath(saida)), exist_ok=True)
     np.savez_compressed(saida, **dados)
     log(f"gravado {saida} ({os.path.getsize(saida) / 1e6:.1f} MB) em {time.time() - t0:.0f} s")

@@ -29,7 +29,7 @@ import componentes  # noqa: E402
 import referencias  # noqa: E402
 import kit_nomes as K  # noqa: E402
 
-VERSAO = "1.0"
+VERSAO = "1.1"
 GRUPO = "corpos"                       # mesmos pacotes (numpy, SciPy e Pillow) do Conversor de Corpos
 EXT = (".png", ".dds", ".tga", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff")
 PREFS = base.Prefs(os.path.join(AQUI, "preferencias.json"), {
