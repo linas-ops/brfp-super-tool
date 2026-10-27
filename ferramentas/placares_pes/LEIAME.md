@@ -48,13 +48,19 @@ menor (524×128, 1024×1024) o que ficar fora da imagem não aparece.
 - **Acréscimos**: a placa de acréscimos do PES vira a imagem da caixa `mcExtraTime` do molde, na posição do PES.
 - **Cores dos times**: as faixas `mcTeamHomeColor`/`AwayColor` vão para as placas de cor dos times do PES.
 - **Cartões**: os vermelhos logo abaixo do placar e os dos expulsos logo acima, a partir da ponta de dentro de cada nome.
+- **Fonte dos números** (ligada por padrão): o PES desenha o relógio e o placar com números em imagem
+  (`MatchPlate-texFont`: 0 a 9, ":" e "+"). O conversor contorna esses desenhos e monta uma fonte TrueType
+  (`PES-<placar>-Numeros.ttf`, com um "-" desenhado no mesmo estilo), grava em `data/ui/fonts` da saída com família no
+  `FIFA.xml` (como o *Importar fonte* do Editor de Placares) e liga na fonte dos gols do molde; o relógio passa a usar
+  essa fonte, com cada dígito na caixa do dígito do PES. Os nomes continuam com a fonte do molde. O botão *Salvar o
+  .ttf…* guarda a fonte onde você quiser.
 
 ## Limites
 
 - Só o **placar da partida** (`game2d_score`) é convertido. O pacote do PES também tem escalação, substituição, gol,
   estatísticas e pênaltis (outros filmes do `game2dPes.bin`, `game2dPesEnter.bin`, `game2dPesPk.bin`).
-- Os textos são escritos pelo FC, com as fontes do molde (o PES desenha os números do relógio com uma fonte em imagem).
-  Para trocar a fonte, use a aba Fontes do Editor de Placares.
+- Os nomes são escritos pelo FC com a fonte do molde: a fonte dos nomes do PES é do próprio jogo e não vem no pacote.
+  Para trocar, use a aba Fontes do Editor de Placares com um .ttf parecido.
 - O logo/escudo da competição do PES (que o jogo põe por licença) não entra.
 - O código das animações do PES não é rodado: o placar é montado no estado "aparecendo parado" de cada parte (rótulos
   `on`, fim do `show`), sem acréscimos.
@@ -62,7 +68,8 @@ menor (524×128, 1024×1024) o que ficar fora da imagem não aparece.
 ## Como o PES 2021 guarda os placares (o que o conversor lê)
 
 - `common\menu\licence\*.bin`: um pacote simples (contagem + entradas) com um `.apk` dentro, que é um **TXP2** da Konami
-  em big-endian: texturas **TXDT** (ARGB 8 bits ou DXT5, comprimidas com LZSS), recortes das texturas com nome
+  em big-endian: texturas **TXDT** (ARGB 8 bits, ou DXT5 com as palavras de 16 bits invertidas, comprimidas com LZSS),
+  recortes das texturas com nome
   (`game2dPes-score-plateMain`… em coordenadas dobradas), formas vetoriais **GE2D** e as animações **AFP** (o "Flash"
   da Konami, com sprites, objetos colocados com matriz e cor, quadros e rótulos). O AFP vem com uma tabela de inversão
   de bytes (BSI) que o deixa em little-endian.
@@ -79,6 +86,7 @@ placares_pes\
   motor\afp.py       leitor do TXP2/AFP do PES: texturas, recortes, formas, filmes e a montagem da cena
   motor\pes.py       o placar do PES entendido: papel de cada peça (fundo, cores, acréscimos, caixas de texto)
   motor\fc.py        a conversão para o molde do FC (operações do Editor de Placares)
+  motor\fonte_ttf.py fonte TrueType a partir das imagens dos números (contorno com OpenCV, tabelas escritas à mão)
   web\               interface
   cache\             texturas do PES já descomprimidas
 ```

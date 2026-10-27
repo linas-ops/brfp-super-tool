@@ -35,7 +35,7 @@ import base  # noqa: E402
 VERSAO = "1.0"
 GRUPO = "placares_pes"                 # numpy e Pillow
 PREFS = base.Prefs(os.path.join(AQUI, "preferencias.json"), {
-    "pasta": "", "molde": None, "x": 64, "y": 48, "escala": 1.0, "alvo": "molde", "alvo_outro": ""})
+    "pasta": "", "molde": None, "x": 64, "y": 48, "escala": 1.0, "alvo": "molde", "alvo_outro": "", "fonte_pes": True})
 LOCK = threading.RLock()
 MOTOR_OK = {"ok": False, "msg": "verificando…"}
 PLACARES = {}                          # pasta -> PlacarPes
@@ -209,15 +209,50 @@ def _matriz(d, pl, fc):
     return fc.posicionar(pl, x, y, esc), {"x": x, "y": y, "escala": esc}
 
 
+def _usar_fonte(d, pl):
+    """(ttf, avanços) dos números do PES, se pedido (padrão) e se o pacote tiver os números."""
+    if d.get("fonte_pes", PREFS.ler().get("fonte_pes", True)) is False:
+        return None
+    return pl.fonte_numeros()
+
+
+def face_numeros(pl):
+    nome = re.sub(r"[^A-Za-z0-9]+", "-", pl.nome).strip("-")[:40] or "Placar"
+    return "PES-" + nome + "-Numeros", "FONT_NAME_PES_" + re.sub(r"[^A-Z0-9]+", "_", nome.upper()).strip("_")
+
+
 def api_previa(d):
     _afp, _pes, fc = motor()
     pl = placar(d["pasta"])
     _f, m, _ov, molde = abrir_molde(d)
     S, pos = _matriz(d, pl, fc)
-    img = fc.previa(pl, molde, S, recorte=False)
+    num = _usar_fonte(d, pl)
+    ttf = num[0] if num else None
+    img = fc.previa(pl, molde, S, recorte=False, ttf_numeros=ttf)
     tela = img.resize((960, 540))
-    return {"tela": png_dados(tela), "recorte": png_dados(fc.previa(pl, molde, S)), "molde": m, "pos": pos,
-            "fundo": molde.descricao()["fundo"]}
+    return {"tela": png_dados(tela), "recorte": png_dados(fc.previa(pl, molde, S, ttf_numeros=ttf)), "molde": m,
+            "pos": pos, "fundo": molde.descricao()["fundo"]}
+
+
+def api_fonte_png(d):
+    """Os números do PES escritos com a fonte gerada (para conferir) e o .ttf salvo onde o usuário quiser."""
+    from PIL import Image, ImageDraw, ImageFont
+    pl = placar(d["pasta"])
+    num = pl.fonte_numeros()
+    if not num:
+        return {"tem": False}
+    f = ImageFont.truetype(io.BytesIO(num[0]), 44)
+    img = Image.new("RGBA", (330, 60), (0, 0, 0, 0))
+    ImageDraw.Draw(img).text((6, 52), "0123456789 45:00 +3", font=f, fill=(235, 238, 244, 255), anchor="ls")
+    face, _chave = face_numeros(pl)
+    if d.get("salvar"):
+        destino = base.dialogo("salvar", "Salvar a fonte dos números do PES", None, [("Fonte TrueType", "*.ttf")],
+                               nome=face + ".ttf", extensao="ttf")
+        if destino:
+            with open(destino, "wb") as fh:
+                fh.write(num[0])
+            return {"tem": True, "salvo": destino}
+    return {"tem": True, "imagem": png_dados(img), "face": face}
 
 
 def api_converter(d):
@@ -238,14 +273,24 @@ def api_converter(d):
         raise base.ErroUsuario("O destino precisa ser um caminho data/ui/…/….big (por exemplo "
                                "data/ui/game/overlays/overlay_35002.big).")
     consts = fc.constantes_do_codigo(ov, ED.bibliotecas_anim(), ED.valores_tema())
-    ops, resumo = fc.converter(pl, molde, S, consts)
+    num = _usar_fonte(d, pl)
+    numeros = None
+    if num:
+        # a fonte vai para data/ui/fonts da saída, com família no FIFA.xml (o mesmo que "Importar fonte" do editor)
+        from nucleo import tema
+        face, chave = face_numeros(pl)
+        tema.definir(sai, ED.ler_efetivo, chave, face, ttf=num[0], nome_ttf=face + ".ttf")
+        ED._depois_tema()
+        numeros = {"face": face, "avancos": num[1]}
+    ops, resumo = fc.converter(pl, molde, S, consts, numeros)
     novo = ED._abrir_overlay(f, m["arquivo"])
     lst = list(ops.values())
     novo.aplicar(lst, ED._imagens_das_ops(lst))
     destino = projetos.gravar_saida(sai, alvo, novo.bytes(), ED.desc_fonte(f), m["arquivo"], ops)
     if "saida" in ED.E.fontes:
         ED.E.fontes["saida"].atualizar()
-    PREFS.atualizar(molde=m, alvo=modo, alvo_outro=d.get("alvo_outro") or "", **pos)
+    PREFS.atualizar(molde=m, alvo=modo, alvo_outro=d.get("alvo_outro") or "",
+                    fonte_pes=d.get("fonte_pes", True) is not False, **pos)
     return {"destino": destino, "alvo": alvo, "resumo": resumo, "operacoes": len(ops), "molde": m,
             "bytes": os.path.getsize(destino)}
 
@@ -278,7 +323,8 @@ def main():
     comp_get, comp_post = base.rotas_componentes(GRUPO, ao_concluir=verificar_motor)
     get = {"inicio": api_inicio, **comp_get}
     post = {"pacote": api_pacote, "placar": api_placar, "moldes": api_moldes, "previa": api_previa,
-            "converter": api_converter, "abrir": api_abrir, "dialogo": api_dialogo, **comp_post}
+            "converter": api_converter, "fonte_png": api_fonte_png, "abrir": api_abrir, "dialogo": api_dialogo,
+            **comp_post}
     h = base.criar_handler(os.path.join(AQUI, "web"), get, post, nome="ConversorPlacaresPES")
     base.servir(h, a.porta, "Conversor de Placares PES → FC", VERSAO, sem_janela=a.sem_janela)
 

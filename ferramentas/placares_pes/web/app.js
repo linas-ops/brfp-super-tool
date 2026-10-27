@@ -1,11 +1,11 @@
 // Conversor de Placares PES → FC — interface (BRFP Super Tool).
-import { $, el, esc, aviso, modal, barraMenus, divisorArrastavel, dialogoSobre, nota, campo, entrada } from './comum/ui.js';
+import { $, el, esc, aviso, modal, barraMenus, divisorArrastavel, dialogoSobre, nota, campo, entrada, interruptor } from './comum/ui.js';
 import { icone } from './comum/icones.js';
 import { api } from './comum/api.js';
 import { instalarComponentes } from './comum/componentes.js';
 
 const S = { inicio: null, pasta: '', placares: [], sel: null, info: {}, moldes: null, molde: null, pos: { x: 64, y: 48, escala: 1 },
-  alvo: 'molde', alvoOutro: '', previa: null, ultimo: null, ocupado: false, tPrevia: null };
+  alvo: 'molde', alvoOutro: '', fontePes: true, fontes: {}, previa: null, ultimo: null, ocupado: false, tPrevia: null };
 
 async function tentar(fn) { try { return await fn(); } catch (e) { aviso(e.message, { tipo: 'erro' }); return undefined; } }
 const nomeArq = (c) => (c || '').split(/[\\/]/).filter(Boolean).pop() || '';
@@ -95,7 +95,7 @@ async function atualizarPrevia() {
   $('#img-pes').src = info?.previa || '';
   $('#img-pes').style.width = info ? `${info.w * 2}px` : '';       // o placar do PES é pequeno: em dobro
   if (!info || !S.molde) { $('#img-fc').src = ''; $('#img-tela').src = ''; return; }
-  const r = await api('previa', { pasta: S.sel, molde: S.molde, ...S.pos }).catch((e) => { aviso(e.message, { tipo: 'erro' }); return null; });
+  const r = await api('previa', { pasta: S.sel, molde: S.molde, ...S.pos, fonte_pes: S.fontePes }).catch((e) => { aviso(e.message, { tipo: 'erro' }); return null; });
   if (!r) return;
   S.previa = r;
   $('#img-fc').src = r.recorte;
@@ -109,7 +109,7 @@ async function converter() {
   S.ocupado = true;
   desenharTopo();
   carregando('Convertendo e gravando…');
-  const r = await tentar(() => api('converter', { pasta: S.sel, molde: S.molde, ...S.pos, alvo: S.alvo, alvo_outro: S.alvoOutro }));
+  const r = await tentar(() => api('converter', { pasta: S.sel, molde: S.molde, ...S.pos, alvo: S.alvo, alvo_outro: S.alvoOutro, fonte_pes: S.fontePes }));
   carregando('');
   S.ocupado = false;
   if (r) {
@@ -210,6 +210,25 @@ function desenharPropriedades() {
     el('div', { class: 'linha-num' }, numero('X', 'x', 1, 'Distância da borda esquerda da tela (1920×1080)'), numero('Y', 'y', 1, 'Distância do topo da tela'), numero('Escala', 'escala', 0.05, '1 = o tamanho do PES')),
     el('div', { class: 'mudo peq-txt' }, 'Canto do placar na tela de 1920×1080. Depois dá para mover tudo junto no Editor de Placares (o grupo mcClassOverlay).'),
   ]));
+  // fonte dos números
+  const fn = S.fontes[S.sel];
+  if (info && fn === undefined) {
+    const pasta = S.sel;
+    S.fontes[pasta] = null;
+    api('fonte_png', { pasta }).then((r) => { S.fontes[pasta] = r || { tem: false }; desenharPropriedades(); })
+      .catch(() => { S.fontes[pasta] = { tem: false }; desenharPropriedades(); });
+  }
+  if (info) {
+    const corpoFonte = [];
+    if (fn && fn.tem) {
+      const iv = interruptor({ titulo: 'Números com a fonte do PES', descricao: `Relógio e gols com os números desenhados do PES, como a fonte <span class="mono">${esc(fn.face)}.ttf</span> (vai para data/ui/fonts da saída, com família no FIFA.xml). Os nomes continuam com a fonte do molde.`,
+        marcado: S.fontePes, aoMudar: (v) => { S.fontePes = v; pedirPrevia(); } });
+      corpoFonte.push(iv.el, el('div', { class: 'amostra-fonte' }, el('img', { src: fn.imagem, alt: 'Números do PES' })),
+        el('div', { class: 'acoes-linha' }, el('button', { class: 'btn peq', onclick: () => tentar(async () => { const r = await api('fonte_png', { pasta: S.sel, salvar: true }); if (r.salvo) aviso('Fonte salva', { tipo: 'sucesso', detalhe: r.salvo }); }) }, el('span', { html: icone('baixar', 12) }), 'Salvar o .ttf…')));
+    } else if (fn && !fn.tem) corpoFonte.push(el('div', { class: 'mudo' }, 'Este pacote não traz os números desenhados do PES.'));
+    else corpoFonte.push(el('div', { class: 'mudo' }, 'Gerando a fonte…'));
+    p.append(secao('Fonte dos números', 'textura', corpoFonte));
+  }
   // destino
   const radio = (valor, titulo, sub) => {
     const r = el('input', { type: 'radio', name: 'alvo', value: valor });
@@ -296,6 +315,7 @@ async function iniciar() {
   const pr = r.prefs || {};
   S.pos = { x: +pr.x || 64, y: +pr.y || 48, escala: +pr.escala || 1 };
   S.alvo = pr.alvo || 'molde';
+  S.fontePes = pr.fonte_pes !== false;
   S.alvoOutro = pr.alvo_outro || '';
   desenharTudo();
   if (!r.motor.ok) return;

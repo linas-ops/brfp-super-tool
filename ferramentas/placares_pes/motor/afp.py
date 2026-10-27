@@ -63,8 +63,16 @@ def _dds_dxt(w, h, fourcc, dados):
     return im.convert("RGBA")
 
 
-def tdxt(dados):
-    """Textura TXDT (cabeçalho de 64 bytes): 0x15 = ARGB 8 bits, 0x1A = DXT5."""
+def _dxt(w, h, fourcc, px, tam_bloco, big_endian):
+    n = ((w + 3) // 4) * ((h + 3) // 4) * tam_bloco
+    dados = px[:n]
+    if big_endian:                       # pacote big-endian: os blocos DXT vêm com as palavras de 16 bits invertidas
+        dados = np.frombuffer(dados, np.uint16).byteswap().tobytes()
+    return _dds_dxt(w, h, fourcc, dados)
+
+
+def tdxt(dados, big_endian=True):
+    """Textura TXDT (cabeçalho de 64 bytes): 0x15 = ARGB 8 bits, 0x1A = DXT5, 0x18 = DXT1."""
     if dados[:4] not in (b"TXDT", b"TDXT"):
         raise ErroAfp("Textura sem o cabeçalho TXDT")
     w, h = struct.unpack(">HH", dados[0x10:0x14])
@@ -74,9 +82,9 @@ def tdxt(dados):
         a = np.frombuffer(px[:w * h * 4], np.uint8).reshape(h, w, 4)[:, :, [1, 2, 3, 0]]
         return Image.fromarray(np.ascontiguousarray(a), "RGBA")
     if fmt == 0x1A:
-        return _dds_dxt(w, h, b"DXT5", px[:((w + 3) // 4) * ((h + 3) // 4) * 16])
+        return _dxt(w, h, b"DXT5", px, 16, big_endian)
     if fmt == 0x18:
-        return _dds_dxt(w, h, b"DXT1", px[:((w + 3) // 4) * ((h + 3) // 4) * 8])
+        return _dxt(w, h, b"DXT1", px, 8, big_endian)
     raise ErroAfp(f"Formato de textura 0x{fmt:02x} ainda não suportado")
 
 
@@ -209,7 +217,7 @@ class Pacote:
             if self.cache:
                 import hashlib
                 st = os.stat(self.caminho)
-                chave = "%s|%d|%d|%d" % (os.path.abspath(self.caminho).lower(), st.st_size, int(st.st_mtime), i)
+                chave = "v2|%s|%d|%d|%d" % (os.path.abspath(self.caminho).lower(), st.st_size, int(st.st_mtime), i)
                 arq = os.path.join(self.cache, hashlib.sha1(chave.encode("utf-8")).hexdigest()[:24] + ".png")
                 if os.path.isfile(arq):
                     try:
@@ -223,7 +231,7 @@ class Pacote:
             cheio, comp = struct.unpack(">II", d[t["off"]:t["off"] + 8])
             corpo = d[t["off"] + 8:t["off"] + 8 + comp]
             bruto = lzss(corpo, cheio) if self.legado_lz and comp < cheio else d[t["off"] + 8:t["off"] + 8 + cheio]
-            self._imgs[i] = tdxt(bruto)
+            self._imgs[i] = tdxt(bruto, big_endian=self.d[:4] == b"TXP2")
             if arq:
                 try:
                     os.makedirs(self.cache, exist_ok=True)
@@ -488,8 +496,9 @@ _PREFERIDOS = (("on",), ("_on",), ("show", "_show"), ("_usual",), ("_pes",), ("_
 def quadro_exibido(rotulos, n_quadros):
     """Quadro em que um clipe com rótulos fica 'aparecendo parado' (o jogo pula para esses rótulos por código).
 
-    Usa o fim do trecho do rótulo preferido (o quadro antes do rótulo seguinte). Rótulos do modo transparente (quando um
-    jogador passa por trás do placar) são ignorados; clipes de dígitos e outros rótulos ficam no primeiro quadro.
+    Usa o quadro do 'on', ou o fim do trecho do rótulo preferido (o quadro antes do rótulo seguinte). Rótulos do modo
+    transparente (quando um jogador passa por trás do placar) são ignorados; clipes de dígitos e outros rótulos ficam no
+    primeiro quadro.
     """
     if not rotulos:
         return None
@@ -497,6 +506,10 @@ def quadro_exibido(rotulos, n_quadros):
     for sufixos in _PREFERIDOS:
         for nome, q in sorted(validos.items(), key=lambda kv: kv[1]):
             if any(nome == s or (s.startswith("_") and nome.endswith(s)) for s in sufixos):
+                if sufixos[0] in ("on", "_on"):
+                    # o começo do 'on' é a tela inteira; o trecho segue com animações internas (painéis que giram,
+                    # textos que trocam) que podem terminar escondendo tudo
+                    return q
                 depois = [v for v in rotulos.values() if v > q]
                 return (min(depois) - 1) if depois else n_quadros - 1
     return 0

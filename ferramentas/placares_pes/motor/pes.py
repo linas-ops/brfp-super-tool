@@ -168,6 +168,39 @@ class PlacarPes:
                     dr.rectangle((c[0] - x0, c[1] - y0, c[2] - x0, c[3] - y0), outline=(255, 210, 0, 255))
         return img
 
+    def caixas_relogio(self):
+        """Os dígitos e o ':' do relógio do PES, um por um, da esquerda para a direita: [(nome, caixa)]."""
+        out = []
+        for p in self.pecas:
+            if p["tipo"] != "imagem" or "texfont" not in p["ref"].lower() or p["mult"][3] <= 0.01 or not p["caixa"]:
+                continue
+            cam = p["caminho"]
+            if "time_texts" not in cam or "losstime" in cam:
+                continue
+            nome = next((n for n in cam if n.startswith("numbers_")), "colon" if "colon" in p["ref"].lower() else "?")
+            out.append((nome, p["caixa"]))
+        return sorted(out, key=lambda t: t[1][0])
+
+    def fonte_numeros(self):
+        """A fonte dos números do PES (MatchPlate-texFont: 0 a 9, ':' e '+', mais um '-' desenhado no mesmo estilo)
+        como .ttf: (bytes, {char: avanço em frações do em}), ou None se o pacote não tiver os números."""
+        if getattr(self, "_fonte", None) is None:
+            import fonte_ttf
+            cars = {}
+            for ch, nome in [(str(i), "digit%d" % i) for i in range(10)] + [(":", "colon"), ("+", "plus")]:
+                im = self.bib.recorte("MatchPlate-texFont-" + nome)
+                if im is not None:
+                    cars[ch] = im
+            if len([c for c in cars if c.isdigit()]) < 10:
+                self._fonte = False
+            else:
+                cars["-"] = fonte_ttf.traco(cars["1"])
+                try:
+                    self._fonte = fonte_ttf.montar(cars, "PES " + self.nome)
+                except ImportError:            # o contorno usa o OpenCV (pacote do grupo da ferramenta)
+                    self._fonte = False
+        return self._fonte or None
+
     def luminancia(self, caixa, papeis=("fundo",)):
         """Brilho médio (0 a 1) do fundo dentro de uma caixa: decide se o texto vai claro ou escuro."""
         x0, y0, x1, y1 = caixa

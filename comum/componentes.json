@@ -320,6 +320,7 @@
    "nome": "Conversor de Placares PES → FC",
    "pacotes": [
     "numpy",
+    "opencv",
     "pillow"
    ]
   },

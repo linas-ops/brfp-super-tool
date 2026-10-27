@@ -182,11 +182,13 @@ def _cor_texto(pl, caixa):
     return ESCURO if lum is not None and lum > 0.55 else CLARO
 
 
-def converter(pl, molde, S, constantes=None):
+def converter(pl, molde, S, constantes=None, numeros=None):
     """Operações do Editor de Placares ({chave: op}) e um resumo do que foi feito.
 
     'constantes' são as constantes do código do molde ({nome: {slot, valor}}, do simulador do editor): algumas posições
     (o _x dos gols e do relógio, o _y dos cartões dos expulsos) são postas pelo código e só mudam por elas.
+    'numeros' ({face, avancos}): a fonte dos números do PES, já gravada como data/ui/fonts/<face>.ttf, para os gols e o
+    relógio.
     """
     constantes = constantes or {}
     ops = {}
@@ -269,6 +271,11 @@ def converter(pl, molde, S, constantes=None):
         centros[campo] = ponto(inv(lg["pai"]), (R[0] + R[2]) / 2, (R[1] + R[3]) / 2)
         gols = campo.startswith("gols")
         altura = round(hl * (0.86 if gols else 0.72), 1)
+        desce = 0.0
+        if gols and numeros:
+            # fonte do PES: os números ocupam 0,72 do tamanho (de 0,08 a 0,80 abaixo do topo da linha)
+            altura = round(hl, 1)
+            desce = 0.06 * hl
         campos = {"altura": altura, "cor": _cor_texto(pl, cx)}
         if gols:
             # o código do placar põe o _x dos gols (encostados no traço do meio): o campo fica alinhado como está e
@@ -277,9 +284,21 @@ def converter(pl, molde, S, constantes=None):
             centros["altura_gols"] = altura
         else:
             campos.update(limites=[-2.0, -2.0, round(wl - 2, 2), round(hl - 2, 2)], alinh=2)
-        op_place(lg, tx=[px + 2 * ma, py + 2 * md])
+        op_place(lg, tx=[px + 2 * ma, py + 2 * md + desce * md])
         op_texto(lg["char"], **campos)
     resumo.append("Nomes dos times e placar levados para as caixas do PES.")
+    # fonte dos números do PES: vai na fonte dos gols (que no molde do LTA é outra que a dos nomes) e o relógio passa a
+    # usar essa mesma fonte
+    fonte_num = None
+    if numeros:
+        cg = a.chars[molde.por_nome["txtTeamScoreHome"]["char"]]
+        cn = a.chars[molde.por_nome["txtTeamNameHome"]["char"]]
+        if cg.get("fonte") is not None and cg.get("fonte") != cn.get("fonte"):
+            fonte_num = cg["fonte"]
+            ops["fonte_char:%d" % fonte_num] = {"op": "fonte_char", "char": fonte_num, "nome": numeros["face"]}
+            resumo.append("Gols e relógio com a fonte dos números do PES (%s)." % numeros["face"])
+        else:
+            resumo.append("O molde usa a mesma fonte para os nomes e os números: a fonte do PES não foi aplicada.")
     if "gols_casa" in centros and "gols_fora" in centros:
         # gols: o da casa termina em C - traço/2 - PADDING e o de fora começa em C + traço/2 + PADDING
         # (C = OFFSET + BOUND/2); com um dígito (~0,6 da altura) e o traço (~0,3 da altura dele), cada número fica no
@@ -288,7 +307,10 @@ def converter(pl, molde, S, constantes=None):
         bound = (constantes.get("WIDTH_SCORE_BOUND") or {}).get("valor", 119)
         dash = molde.por_nome.get("txtTeamScoreDash")
         alt_dash = (a.chars[dash["char"]].get("altura") if dash and a.chars[dash["char"]] else None) or 30
-        pad = (fc_ - hc) / 2 - 0.3 * alt_dash / 2 - 0.6 * centros["altura_gols"] / 2
+        av = (numeros or {}).get("avancos") if fonte_num is not None else None
+        w_traco = (av.get("-", 0.3) if av else 0.3) * alt_dash
+        w_digito = (av.get("0", 0.6) if av else 0.6) * centros["altura_gols"]
+        pad = (fc_ - hc) / 2 - w_traco / 2 - w_digito / 2
         if op_const("SCORE_TEXT_TOTAL_OFFSET", (hc + fc_) / 2 - bound / 2) and op_const("PADDING_SCORE", pad, 0, 255):
             resumo.append("Constantes do código do placar ajustadas para os gols caírem nos círculos.")
 
@@ -324,6 +346,34 @@ def converter(pl, molde, S, constantes=None):
             if a.chars[l["char"]] and a.chars[l["char"]]["t"] == "texto":
                 op_texto(l["char"], cor=cor)
         resumo.append("Relógio levado para a caixa do relógio do PES (escala %.2f)." % k)
+        caixas = pl.caixas_relogio()
+        ordem = [n for n in ("txtTenMin", "txtMin", "txtColon", "txtTenSec", "txtSec") if n in molde.por_nome]
+        if fonte_num is not None and len(caixas) == len(ordem) == 5:
+            # com a fonte do PES, cada dígito vai para a caixa do dígito do PES (o desenho dele é a altura dos números)
+            Wc = mul((ma, 0.0, 0.0, md, tx[0], tx[1]), lc["pai"])
+            iWc = inv(Wc)
+            passo = None
+            for n, (_nome, cxd) in zip(ordem, caixas):
+                l = molde.por_nome[n]
+                c = a.chars[l["char"]]
+                R = tela(cxd)
+                (lx0, ly0), (_lx1, ly1) = ponto(iWc, R[0], R[1]), ponto(iWc, R[2], R[3])
+                lcx = ponto(iWc, (R[0] + R[2]) / 2, 0)[0]
+                sa, sd = l["item"]["m"][0], l["item"]["m"][3]
+                alt_n = round((ly1 - ly0) / sd / 0.72, 1)
+                lim = c["limites"]
+                nx = lcx - sa * (lim[0] + lim[2]) / 2
+                ny = ly0 - sd * (lim[1] + 2 + 0.08 * alt_n)
+                op_place(l, tx=[nx, ny])
+                op_texto(l["char"], fonte=fonte_num, altura=alt_n, alinh=2)
+                if n == "txtTenMin":
+                    primeiro = (nx, ny, alt_n)
+                elif n == "txtMin" and passo is None:
+                    passo = nx - primeiro[0]
+            lh = molde.por_nome.get("txtHundredMin")
+            if lh and passo:
+                op_place(lh, tx=[primeiro[0] - passo, primeiro[1]])
+                op_texto(lh["char"], fonte=fonte_num, altura=primeiro[2], alinh=2)
 
     # 5. acréscimos: a placa do PES vira a imagem da caixa de acréscimos do molde
     le = molde.por_nome.get("mcExtraTime")
@@ -406,8 +456,11 @@ def converter(pl, molde, S, constantes=None):
 
 # ------------------------------------------------------------------ prévia (como deve ficar no FC)
 
-def previa(pl, molde, S, largura=1920, altura=1080, recorte=True):
-    """O fundo do PES na tela do FC com textos de exemplo nas caixas (o jogo escreve os de verdade)."""
+def previa(pl, molde, S, largura=1920, altura=1080, recorte=True, ttf_numeros=None):
+    """O fundo do PES na tela do FC com textos de exemplo nas caixas (o jogo escreve os de verdade).
+
+    'ttf_numeros' (bytes): gols e relógio com a fonte dos números do PES."""
+    import io
     from PIL import ImageDraw, ImageFont
     img = pl.desenhar(("fundo", "cor_casa", "cor_fora"), S, largura, altura, fundo=(30, 96, 52, 255))
     dr = ImageDraw.Draw(img)
@@ -416,13 +469,22 @@ def previa(pl, molde, S, largura=1920, altura=1080, recorte=True):
         cx = pl.caixa_campo(campo)
         if not cx:
             continue
-        R = _transformar_caixa(S, cx)
-        tam = max(8, int((R[3] - R[1]) * 0.72))
-        try:
-            fonte = ImageFont.truetype("arialbd.ttf", tam)
-        except OSError:
-            fonte = ImageFont.load_default()
         cor = tuple(_cor_texto(pl, cx))
+        if ttf_numeros and campo == "relogio" and len(pl.caixas_relogio()) == 5:
+            # cada dígito na caixa do dígito do PES, como na conversão
+            for ch, (_n, cxd) in zip("45:00", pl.caixas_relogio()):
+                R = _transformar_caixa(S, cxd)
+                f = ImageFont.truetype(io.BytesIO(ttf_numeros), max(6, int(round((R[3] - R[1]) / 0.72))))
+                dr.text(((R[0] + R[2]) / 2, R[3]), ch, fill=cor, font=f, anchor="ms")
+            continue
+        R = _transformar_caixa(S, cx)
+        if ttf_numeros and campo.startswith("gols"):
+            fonte = ImageFont.truetype(io.BytesIO(ttf_numeros), max(8, int(R[3] - R[1])))
+        else:
+            try:
+                fonte = ImageFont.truetype("arialbd.ttf", max(8, int((R[3] - R[1]) * 0.72)))
+            except OSError:
+                fonte = ImageFont.load_default()
         dr.text(((R[0] + R[2]) / 2, (R[1] + R[3]) / 2), txt, fill=cor, font=fonte, anchor="mm")
     if recorte:
         cx = _transformar_caixa(S, pl.caixa_visivel(("fundo", "cor_casa", "cor_fora")))
