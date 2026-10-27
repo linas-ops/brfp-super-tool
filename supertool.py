@@ -92,6 +92,10 @@ FERRAMENTAS = [
      "pasta": os.path.join(AQUI, "ferramentas", "kits_pes"), "guia": "LEIAME.md",
      "descricao": "Converte kits do PES 2021 (camisa, mangas, gola, calção e meião numa textura só) em kits do FC 27: as "
                   "três texturas refeitas pelo uniforme em 3D, na pasta do kit do FET, com o tecido de um kit base."},
+    {"id": "placares_pes", "nome": "Conversor de Placares PES → FC", "icone": "placar", "tipo": "web", "porta": 8781,
+     "pasta": os.path.join(AQUI, "ferramentas", "placares_pes"), "guia": "LEIAME.md",
+     "descricao": "Converte o placar de um pacote do PES 2021 (game2dPes.bin e companhia) para o FC: o desenho do PES num "
+                  "placar do FC usado como molde, com nomes, placar e relógio no lugar, como projeto do Editor de Placares."},
     {"id": "rdbm", "nome": "RDBM 26 · Add-on FC 27", "icone": "pacote", "tipo": "nativo",
      "pasta": base.pasta_rdbm(), "exe": "RDBM26_FC27.exe", "guia": "LEIA-ME.txt",
      "descricao": "Abre e edita squads do FC 27 no RDBM 26 sem mexer na instalação do RDBM (programa à parte)."},
@@ -606,7 +610,7 @@ def main():
     ap = argparse.ArgumentParser(description=NOME)
     ap.add_argument("--porta", type=int, default=(EDICAO or {}).get("porta") or 8760)
     ap.add_argument("--sem-janela", action="store_true", help="não abre a janela automaticamente")
-    ap.add_argument("--abrir", help="id da ferramenta para abrir direto (estadios, placares, compdata, faces, corpos, kits, conversor_pes, kits_pes)")
+    ap.add_argument("--abrir", help="id da ferramenta para abrir direto (estadios, placares, compdata, faces, corpos, kits, conversor_pes, kits_pes, placares_pes)")
     a = ap.parse_args()
     if not a.abrir and EDICAO and len(FERRAMENTAS) == 1:
         a.abrir = FERRAMENTAS[0]["id"]  # edição de uma ferramenta só: a janela já abre nela

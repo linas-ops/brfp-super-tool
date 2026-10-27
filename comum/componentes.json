@@ -316,6 +316,13 @@
     "pillow"
    ]
   },
+  "placares_pes": {
+   "nome": "Conversor de Placares PES → FC",
+   "pacotes": [
+    "numpy",
+    "pillow"
+   ]
+  },
   "minifaces": {
    "nome": "Criador de Minifaces",
    "pacotes": [
