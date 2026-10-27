@@ -928,12 +928,14 @@ class App {
     this.carregando('Gravando no MeshVariationDb…', info.nome || chave, -1);
     try {
       const r = await api('mvdb_entrada', { mvdb: n.mvdb, malha: chave, origens, padrao });
+      if (r.malha_materiais) info.materiais = r.malha_materiais;
       md.adicionarEntradaMvdb(n.mvdb, chave, r.materiais, r.texturas);
       await this.viewport.recarregarMalha(chave);
       this.carregando(null);
       this.props.agendar();
-      aviso(titulo, { tipo: 'sucesso', tempo: 7000,
-        detalhe: `${r.materiais.length} material(is) de ${info.nome || chave}. Troque texturas/shader nas seções e importe o ${r.arq.split('/').pop()} no FET.` });
+      const arqs = [r.arq, r.xml_malha].filter(Boolean).map((a) => a.split('/').pop()).join(' e o ');
+      aviso(titulo, { tipo: 'sucesso', tempo: 9000,
+        detalhe: `${r.materiais.length} material(is) de ${info.nome || chave}. Troque texturas/shader nas seções e importe ${r.xml_malha ? 'os dois arquivos' : 'o arquivo'} no FET: ${arqs}.` });
     } catch (e) {
       this.carregando(null);
       aviso('Não consegui gravar no MeshVariationDb', { tipo: 'erro', detalhe: e.message });

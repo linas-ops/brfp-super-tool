@@ -436,11 +436,22 @@ def aplicar(indice, alteracoes):
 
 
 def _malha_do_xml(indice, malha_asset):
-    """(partitionGuid, guid da malha, [guids dos MeshMaterial na ordem]) do XML da malha exportado pelo FET."""
+    """(partitionGuid, guid da malha, [guids dos MeshMaterial na ordem], nome) do XML da malha exportado pelo FET.
+
+    Partição nova do FBX (importado no FET) vem com ref="null" no Materials, sem MeshMaterial: o material dela é
+    criado aqui no XML da malha (cópia do MeshMaterial de cima, GUID novo), porque o MVDB precisa de um GUID para
+    ligar. O XML é gravado com backup e tem de ser importado no FET junto com o MVDB."""
     item = indice.achar(malha_asset, ".xml")
     if not item:
         raise ErroEdicao(f"XML da malha não exportado: {malha_asset}")
-    raiz = X.analisar(X.ler(indice.absoluto(item)))
+    ident = indice.id_arquivo(item)
+    texto = X.ler(indice.absoluto(item))
+    guids = re.findall(r'<instance guid="([^"]+)"', texto)
+    dup = sorted({g for g in guids if guids.count(g) > 1})
+    if dup:
+        raise ErroEdicao(f"o XML da malha tem a instância {dup[0]} repetida e o FET recusa importar. Exporte o XML da "
+                         "malha de novo pelo FET (sem editar à mão) e tente outra vez")
+    raiz = X.analisar(texto)
     prim = raiz.find("instance")
     if prim is None:
         raise ErroEdicao("XML da malha sem instância")
@@ -448,8 +459,40 @@ def _malha_do_xml(indice, malha_asset):
     mats = [it.get("ref") for it in (arr if arr is not None else [])]
     if not mats:
         raise ErroEdicao("malha sem materiais")
+    if not any(X.eh_guid(g) for g in mats):
+        raise ErroEdicao("nenhuma partição da malha tem material no XML para servir de modelo")
+    if not all(X.eh_guid(g) for g in mats):
+        texto, mats = _criar_materiais_malha(texto, prim.get("guid"), mats)
+        garantir_backup(indice, ident)
+        X.gravar(indice.de_id(ident), texto)
     nome = prim.findtext("field[@name='Name']") or malha_asset
     return raiz.get("guid"), prim.get("guid"), mats, nome
+
+
+def _criar_materiais_malha(texto, mguid, mats):
+    """Troca cada ref="null" do Materials da malha por um MeshMaterial novo, cópia do da partição de cima."""
+    nl = "\r\n" if "\r\n" in texto else "\n"
+    ini, _ = X.trecho_instancia(texto, mguid)
+    sp = X.array_span(texto, "Materials", ini)
+    its = X.itens(texto, *sp)
+    if len(its) != len(mats):
+        raise ErroEdicao("lista Materials da malha fora do padrão")
+    novos, blocos = list(mats), []
+    for i, g in enumerate(mats):
+        if X.eh_guid(g):
+            continue
+        modelo = next(mats[j] for j in list(range(i - 1, -1, -1)) + list(range(i + 1, len(mats))) if X.eh_guid(mats[j]))
+        a, b = X.trecho_instancia(texto, modelo)
+        novo = str(uuid.uuid4())
+        blocos.append(texto[a:b].replace(f'<instance guid="{modelo}"', f'<instance guid="{novo}"', 1))
+        novos[i] = novo
+    for i in range(len(mats) - 1, -1, -1):      # de trás para frente: as posições de its continuam valendo
+        if novos[i] != mats[i]:
+            s, e = its[i]
+            texto = texto[:s] + f'<item ref="{novos[i]}" />' + texto[e:]
+    pos = texto.rfind("</partition>")
+    texto = texto[:pos] + "".join(f"\t{b}{nl}" for b in blocos) + texto[pos:]
+    return texto, novos
 
 
 def _item_material(nome, pguid, mat, var, sid, sguid, nl, ind):
@@ -460,6 +503,32 @@ def _item_material(nome, pguid, mat, var, sid, sguid, nl, ind):
             f'{t}\t<field name="SurfaceShaderId">{sid or 0}</field>{nl}'
             f'{t}\t<field name="SurfaceShaderGuid">{sguid or "00000000-0000-0000-0000-000000000000"}</field>{nl}'
             f'{t}</complex>{nl}{ind}</item>{nl}')
+
+
+RX_MAT_NULO = re.compile(r'<field name="Material" ref="[^"]*\\\\([^"\\]*)"[^>]*/>\s*<field name="MaterialVariation" ref="([^"]+)"')
+
+
+def _tirar_materiais_nulos(texto, pos_entrada):
+    """Tira da entrada do MVDB os materiais com ref "null" (o FET recusa: "Invalid instance GUID 'null'") e as
+    MeshMaterialVariation que só eles usavam. As versões 3.2/3.3 do editor gravavam isso quando a malha tinha
+    partição nova sem MeshMaterial."""
+    ini = texto.rfind('<complex type="MeshVariationDatabaseEntry">', 0, pos_entrada)
+    sp = X.array_span(texto, "Materials", ini)
+    if not sp:
+        return texto
+    variacoes = []
+    for s, e in reversed(X.itens(texto, *sp)):
+        m = RX_MAT_NULO.search(texto, s, e)
+        if m and not X.eh_guid(m.group(1)):
+            a, b = texto.rfind("\n", 0, s) + 1, texto.find("\n", e) + 1
+            texto = texto[:a] + texto[b:]
+            variacoes.append(m.group(2))
+    for v in set(variacoes):
+        if f'ref="{v}"' not in texto and f'<instance guid="{v}"' in texto:
+            a, b = X.trecho_instancia(texto, v)
+            a, b = texto.rfind("\n", 0, a) + 1, texto.find("\n", b) + 1
+            texto = texto[:a] + texto[b:]
+    return texto
 
 
 RX_MAT_MVDB = re.compile(r'<field name="Material" ref="[^"]*\\([0-9a-fA-F-]{36})"[^>]*/>\s*<field name="MaterialVariation" ref="([^"]+)"')
@@ -478,15 +547,23 @@ def entrada_mvdb(indice, mvdb_ident, malha_asset, origens=None, padrao=None):
     pguid, mguid, mats, nome = _malha_do_xml(indice, malha_asset)
     texto = X.ler(indice.de_id(mvdb_ident))
     nl = "\r\n" if "\r\n" in texto else "\n"
-    m_ent = re.search(rf'<field name="Mesh" ref="{re.escape(nome)}{re.escape(X.BS * 2)}{re.escape(mguid)}"', texto, re.I)
+    rx_ent = re.compile(rf'<field name="Mesh" ref="{re.escape(nome)}{re.escape(X.BS * 2)}{re.escape(mguid)}"', re.I)
+    m_ent = rx_ent.search(texto)
     existentes = {}
+    original = texto
     if m_ent:
+        texto = _tirar_materiais_nulos(texto, m_ent.start())
+        m_ent = rx_ent.search(texto)
         ini = texto.rfind('<complex type="MeshVariationDatabaseEntry">', 0, m_ent.start())
         fim = X._fim_elemento(texto, ini, "complex")
         existentes = {g.lower(): v for g, v in RX_MAT_MVDB.findall(texto[ini:fim])}
-    faltam = [g for g in mats if g.lower() not in existentes]
+    faltam = list(dict.fromkeys(g for g in mats if g.lower() not in existentes))
     if not faltam:
-        raise ErroEdicao("todas as partições desta malha já têm material neste MeshVariationDb")
+        if texto == original:
+            raise ErroEdicao("todas as partições desta malha já têm material neste MeshVariationDb")
+        garantir_backup(indice, mvdb_ident)      # só havia materiais "null" para tirar
+        X.gravar(indice.de_id(mvdb_ident), texto)
+        return []
 
     def origem_de(g):
         if g.lower() in origens:

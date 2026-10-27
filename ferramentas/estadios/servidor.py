@@ -31,7 +31,7 @@ from nucleo.indice import Indice, detectar_exports  # noqa: E402
 
 WEB = os.path.join(AQUI, "web")
 PREFS = os.path.join(AQUI, "preferencias.json")
-VERSAO = "3.3"
+VERSAO = "3.4"
 AUTOSALVO = os.path.join(AQUI, "cache", "autosalvo")
 
 
@@ -249,12 +249,17 @@ def api_mvdb_entrada(d):
         edicao.entrada_mvdb(ix, mvdb["arq"], info["asset"], d.get("origens"), d.get("padrao"))
         nova = Cena(ix)
         nova.ler_mvdb(d["mvdb"], {chave})
+        antes = [m.get("guid") for m in info.get("materiais") or []]
+        if info.get("xml"):      # o XML da malha muda quando ganha MeshMaterial para partição nova ("null")
+            nova.ler_xml_malha(info, ix.de_id(info["xml"]))
     mats = nova.mvdbs[d["mvdb"]]["entradas"].get(chave)
     if not mats:
         raise ValueError("A entrada foi gravada, mas não consegui lê-la de volta.")
     mvdb["entradas"][chave] = mats
     ESTADO.cena.texturas.update({k: v for k, v in nova.texturas.items() if k not in ESTADO.cena.texturas})
-    return {"materiais": mats, "texturas": nova.texturas, "arq": mvdb["arq"]}
+    xml_mudou = [m.get("guid") for m in info.get("materiais") or []] != antes
+    return {"materiais": mats, "texturas": nova.texturas, "arq": mvdb["arq"], "malha_materiais": info.get("materiais"),
+            "xml_malha": info.get("xml") if xml_mudou else None}
 
 
 def api_mesh_zero(d):

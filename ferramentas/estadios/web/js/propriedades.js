@@ -402,15 +402,23 @@ export class Propriedades {
       const { lista } = md.materiaisDe(n, p.m);
       const novas = regs.filter((r) => r?.particaoNova && !r.outroMvdb);
       const nomeMalha = esc(md.malhas[p.m]?.nome || p.m);
+      // materiais com ref "null" na entrada (gravados pelo editor 3.2/3.3): o FET recusa o MVDB inteiro
+      const nulos = (lista || []).filter((m) => !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(m.material || '')).length;
+      if (nulos && !novas.length && md.materiaisDe(n, p.m).mvdb === n.mvdb) {
+        corpo.push(nota(`A entrada de <b>${nomeMalha}</b> no MeshVariationDb tem ${nulos} material(is) ligado(s) a <i>null</i>, e o FET recusa importar o arquivo assim ("Invalid instance GUID 'null'").`, 'alerta'));
+        corpo.push(el('div', { class: 'acoes-linha' }, el('button', { class: 'btn-primario peq', onclick: () => app.gravarEntradaMvdb(n, p.m, {}, 'MeshVariationDb consertado') }, icone('restaurar', 13), 'Tirar os materiais "null"')));
+      }
       if (lista && novas.length && md.mvdbs[n.mvdb]?.arq) {
         // seção acrescentada ao FBX (partição nova): a entrada existe, mas sem material para ela
         semEntrada = true;
         const semGuid = novas.filter((r) => r.semGuid).length;
+        const nulas = novas.filter((r) => r.particaoNula).length;
         if (semGuid) {
           corpo.push(nota(`${semGuid === novas.length ? 'A malha' : `${semGuid} das partições novas de`} <b>${nomeMalha}</b> tem mais seções no FBX do que materiais no XML exportado. Depois de importar o FBX no FET, exporte de novo o XML da malha (é lá que a partição nova ganha o GUID) e abra o estádio de novo.`, 'alerta'));
         }
         if (novas.length > semGuid) {
-          corpo.push(nota(`${novas.length - semGuid === 1 ? 'Uma partição nova' : `${novas.length - semGuid} partições novas`} de <b>${nomeMalha}</b> não ${novas.length - semGuid === 1 ? 'tem' : 'têm'} material no MeshVariationDb deste sub-mundo, por isso ${novas.length - semGuid === 1 ? 'fica' : 'ficam'} só leitura. O editor cria o material copiando o da partição de cima; depois é só trocar as texturas.`, 'alerta'));
+          corpo.push(nota(`${novas.length - semGuid === 1 ? 'Uma partição nova' : `${novas.length - semGuid} partições novas`} de <b>${nomeMalha}</b> não ${novas.length - semGuid === 1 ? 'tem' : 'têm'} material no MeshVariationDb deste sub-mundo, por isso ${novas.length - semGuid === 1 ? 'fica' : 'ficam'} só leitura. O editor cria o material copiando o da partição de cima; depois é só trocar as texturas.`
+            + (nulas ? ` ${nulas === 1 ? 'Uma delas veio' : `${nulas} delas vieram`} do FET sem material também no XML da malha (<i>null</i>): o editor cria o material lá também, e aí é preciso importar no FET o XML da malha junto com o MeshVariationDb.` : ''), 'alerta'));
           corpo.push(el('div', { class: 'acoes-linha' }, el('button', { class: 'btn-primario peq', title: 'Acrescenta à entrada desta malha no MeshVariationDb um material para cada partição nova, copiado da partição de cima',
             onclick: () => app.completarEntradaMvdb(n, p.m) }, icone('mais', 13), 'Criar material das partições novas')));
         }
