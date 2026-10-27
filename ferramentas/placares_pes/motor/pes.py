@@ -53,6 +53,44 @@ def achar_placares(pasta, limite=200):
     return achados
 
 
+TELAS = {"game2d_score": "Placar", "game2d_scoreDemo": "Placar grande (intervalo e fim)",
+         "game2d_memberChange": "Substituição", "game2d_memberChangeDemo": "Substituição (grande)",
+         "game2d_card": "Cartão", "game2d_goal": "Gol", "game2d_stats": "Estatística", "game2d_player": "Jogador",
+         "game2d_demoTitle": "Título", "game2d_pkScore": "Pênaltis", "game2d_commentary": "Transmissão (narradores)",
+         "game2d_matchCard": "Apresentação da partida", "game2d_memberFormation": "Escalação",
+         "resultTeamRecordPes": "Retrospecto dos times"}
+
+
+def desenhar_tela(bib, nome, margem=8, fundo=None):
+    """Uma tela do pacote como o PES mostra (só as imagens: as formas são recortes), enquadrada pelas peças."""
+    fm = bib.filme(nome)
+    if not fm:
+        return None
+    ps = [p for p in afp.Cena(fm).pecas() if p["tipo"] == "imagem" and p["mult"][3] > 0.01]
+    cxs = [c for c in (afp.caixa(bib, p) for p in ps) if c]
+    if not cxs:
+        return None
+    # recortes que passam muito da tela (pontas a milhares de px) não contam no enquadramento
+    x0 = max(min(c[0] for c in cxs), -2000)
+    y0 = max(min(c[1] for c in cxs), -1500)
+    x1 = min(max(c[2] for c in cxs), x0 + 3840)
+    y1 = min(max(c[3] for c in cxs), y0 + 2160)
+    w, h = int(np.ceil(x1 - x0)) + 2, int(np.ceil(y1 - y0)) + 2
+    img = afp.desenhar(bib, ps, w, h, origem=(x0, y0), formas=False)
+    a = np.asarray(img)[..., 3]
+    ys, xs = np.nonzero(a > 8)
+    if not len(xs):
+        return None
+    img = img.crop((max(0, xs.min() - margem), max(0, ys.min() - margem), min(w, xs.max() + 1 + margem),
+                    min(h, ys.max() + 1 + margem)))
+    if fundo:
+        from PIL import Image
+        bg = Image.new("RGBA", img.size, fundo)
+        bg.alpha_composite(img)
+        img = bg
+    return img
+
+
 def _papel(p):
     cam = p["caminho"]
     nomes = set(cam)

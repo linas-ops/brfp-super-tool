@@ -234,6 +234,54 @@ def api_previa(d):
             "pos": pos, "fundo": molde.descricao()["fundo"]}
 
 
+def api_telas(d):
+    """Todas as telas do pacote (placar, substituição, escalação…) em miniatura."""
+    _afp, pes, _fc = motor()
+    from PIL import Image
+    pl = placar(d["pasta"])
+    out = []
+    for _pk, nome in pl.bib.filmes():
+        img = pes.desenhar_tela(pl.bib, nome)
+        if img is None:
+            continue
+        mini = img.copy()
+        mini.thumbnail((520, 300), Image.LANCZOS)
+        out.append({"nome": nome, "titulo": pes.TELAS.get(nome, nome), "w": img.width, "h": img.height,
+                    "imagem": png_dados(mini)})
+    return {"telas": out}
+
+
+def api_exportar(d):
+    """Grava em exportados/<placar>: cada tela inteira e cada recorte das texturas, em PNG (para usar no Editor de
+    Placares em Trocar… ou num editor de imagem)."""
+    _afp, pes, _fc = motor()
+    pl = placar(d["pasta"])
+    pasta = os.path.join(AQUI, "exportados", re.sub(r'[<>:"/\\|?*]+', "_", pl.nome))
+    os.makedirs(os.path.join(pasta, "telas"), exist_ok=True)
+    os.makedirs(os.path.join(pasta, "recortes"), exist_ok=True)
+    n_telas = n_rec = 0
+    for _pk, nome in pl.bib.filmes():
+        img = pes.desenhar_tela(pl.bib, nome)
+        if img is not None:
+            img.save(os.path.join(pasta, "telas", "%s - %s.png" % (nome, pes.TELAS.get(nome, nome))))
+            n_telas += 1
+    for pk in pl.bib.pacotes:
+        for r in pk.regioes:
+            if r["x1"] - r["x0"] < 2 or r["y1"] - r["y0"] < 2:
+                continue
+            img = pk.recorte(r["nome"])
+            if img is not None:
+                img.save(os.path.join(pasta, "recortes", re.sub(r'[<>:"/\\|?*]+', "_", r["nome"]) + ".png"))
+                n_rec += 1
+    num = pl.fonte_numeros()
+    if num:
+        face, _chave = face_numeros(pl)
+        with open(os.path.join(pasta, face + ".ttf"), "wb") as fh:
+            fh.write(num[0])
+    base.abrir_no_explorer(pasta)
+    return {"pasta": pasta, "telas": n_telas, "recortes": n_rec}
+
+
 def api_fonte_png(d):
     """Os números do PES escritos com a fonte gerada (para conferir) e o .ttf salvo onde o usuário quiser."""
     from PIL import Image, ImageDraw, ImageFont
@@ -323,7 +371,8 @@ def main():
     comp_get, comp_post = base.rotas_componentes(GRUPO, ao_concluir=verificar_motor)
     get = {"inicio": api_inicio, **comp_get}
     post = {"pacote": api_pacote, "placar": api_placar, "moldes": api_moldes, "previa": api_previa,
-            "converter": api_converter, "fonte_png": api_fonte_png, "abrir": api_abrir, "dialogo": api_dialogo,
+            "converter": api_converter, "fonte_png": api_fonte_png, "telas": api_telas, "exportar": api_exportar,
+            "abrir": api_abrir, "dialogo": api_dialogo,
             **comp_post}
     h = base.criar_handler(os.path.join(AQUI, "web"), get, post, nome="ConversorPlacaresPES")
     base.servir(h, a.porta, "Conversor de Placares PES → FC", VERSAO, sem_janela=a.sem_janela)

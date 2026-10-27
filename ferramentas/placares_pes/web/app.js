@@ -64,7 +64,29 @@ async function selecionar(pasta) {
   desenharLista();
   const r = await carregarPlacar(pasta);
   desenharTudo();
-  if (r) atualizarPrevia();
+  if (r) { atualizarPrevia(); carregarTelas(pasta); }
+}
+
+async function carregarTelas(pasta) {
+  const t = $('#telas');
+  t.innerHTML = '<div class="mudo">Montando as telas…</div>';
+  const r = await api('telas', { pasta }).catch((e) => ({ erro: e.message }));
+  if (S.sel !== pasta) return;
+  t.innerHTML = '';
+  if (r.erro) { t.append(nota(esc(r.erro), 'erro')); return; }
+  for (const x of r.telas) {
+    t.append(el('figure', { class: 'tela-mini' + (x.nome === 'game2d_score' ? ' convertida' : ''), title: `${x.nome} · ${x.w}×${x.h}` },
+      el('div', { class: 'tela-img xadrez' }, el('img', { src: x.imagem, alt: x.titulo })),
+      el('figcaption', {}, el('b', {}, x.titulo), el('small', {}, x.nome === 'game2d_score' ? 'convertida' : `${x.w}×${x.h}`))));
+  }
+}
+
+async function exportar() {
+  if (!S.sel) return;
+  carregando('Exportando as imagens…');
+  const r = await tentar(() => api('exportar', { pasta: S.sel }));
+  carregando('');
+  if (r) aviso(`${r.telas} telas e ${r.recortes} recortes exportados`, { tipo: 'sucesso', detalhe: r.pasta, tempo: 7000 });
 }
 
 async function escolherPasta() {
@@ -285,6 +307,7 @@ function menus() {
       { rotulo: 'Ler a pasta de novo', icone: 'recarregar', desabilitado: !S.pasta, fn: () => abrirPasta(S.pasta) },
       '-',
       { rotulo: 'Mostrar a pasta do placar', icone: 'externo', desabilitado: !S.sel, fn: () => tentar(() => api('abrir', { caminho: S.sel })) },
+      { rotulo: 'Exportar as telas, recortes e a fonte…', icone: 'baixar', desabilitado: !S.sel, fn: exportar },
       { rotulo: 'Mostrar o último arquivo gravado', icone: 'externo', desabilitado: !S.ultimo, fn: () => tentar(() => api('abrir', { caminho: S.ultimo.destino })) },
     ]],
     ['Converter', () => [
@@ -332,6 +355,8 @@ $('#btn-pasta').onclick = escolherPasta;
 $('#btn-vazio-pasta').onclick = escolherPasta;
 $('#btn-recarregar').onclick = () => S.pasta && abrirPasta(S.pasta);
 $('#btn-converter').onclick = converter;
+$('#btn-exportar').innerHTML = icone('baixar', 12) + ' Exportar imagens';
+$('#btn-exportar').onclick = exportar;
 divisorArrastavel($('#div-esq'), '--esq', { min: 220, max: 480, lado: 'esq' });
 divisorArrastavel($('#div-dir'), '--dir', { min: 280, max: 560, lado: 'dir' });
 document.addEventListener('keydown', (e) => {
