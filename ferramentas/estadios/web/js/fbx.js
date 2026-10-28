@@ -166,8 +166,10 @@ async function camada(geo, tipoCamada, campo, campoIndice) {
 }
 
 async function geometria(nome, geo, modelo) {
-  const verts = await valores(filho(geo, 'Vertices').props[0]);
-  const pvi = await valores(filho(geo, 'PolygonVertexIndex').props[0]);
+  // seção vazia (o FET exporta assim o material que só aparece nos LODs mais baixos): Geometry sem Vertices
+  const vazio = (campo) => (filho(geo, campo) ? valores(filho(geo, campo).props[0]) : Promise.resolve(new Float64Array(0)));
+  const verts = await vazio('Vertices');
+  const pvi = await vazio('PolygonVertexIndex');
   const normais = (await camada(geo, 'LayerElementNormal', 'Normals', 'NormalsIndex'))[0] || null;
   const uvs = await camada(geo, 'LayerElementUV', 'UV', 'UVIndex');
   const cores = (await camada(geo, 'LayerElementColor', 'Colors', 'ColorIndex'))[0] || null;
@@ -233,7 +235,8 @@ async function geometria(nome, geo, modelo) {
       if (v > caixa[a + 3]) caixa[a + 3] = v;
     }
   }
-  const baixo = nome.toLowerCase();
+  // nome do FET: "<material>:<malha>_lod.000"; a seção de sombra é a do material terminado em _Shadow / _ZOnly
+  const baixo = nome.toLowerCase().split(':')[0];
   return {
     nome,
     sombra: baixo.endsWith('_shadow') || baixo.endsWith('_zonly'),
