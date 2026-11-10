@@ -85,19 +85,21 @@ sob demanda e guardadas em cache em `dados\cache`; o registro fica em `dados\fon
 
 | Ferramenta | Versão | O que faz |
 |---|---|---|
-| BRFP Super Tool | 3.1 | Janela única, trilho, início com versões e guias; Dados do jogo compartilhados (banco de qualquer versão, FIFA 16 … FC 27, idioma, internationals); Python embutido, Componentes (com o servidor local da Transfermarkt) e pacote para outro computador. |
-| Editor de Estádios | 3.0 | Exports do FET em 3D: ocultar/mover peças, texturas do jogo, luzes, torcida, banco e áreas técnicas, stadiums.txt. |
+| BRFP Super Tool | 3.6 | Janela única, trilho, início com versões e guias; Dados do jogo compartilhados (banco de qualquer versão, FIFA 16 … FC 27, idioma, internationals); Python embutido, Componentes (com o servidor local da Transfermarkt) e pacote para outro computador. |
+| Editor de Estádios | 3.4 | Exports do FET em 3D: ocultar/mover peças, texturas do jogo, luzes, torcida, banco e áreas técnicas, stadiums.txt; partições novas do FBX com material no MeshVariationDb. |
 | Editor de Placares | 2.1 | Overlays APT do jogo e de mods: textos, cores, imagens, posições, animações e fontes; grava para o Live Editor. |
 | Editor de Compdata | 2.1 | Competições → estágios → grupos com renumeração automática; nomes vindos do banco e do idioma importados. |
-| Conversor de Faces | 1.2 | Cabeças (FBX do FET) FC 26 ↔ FC 27: identifica o jogo, pasta de saída, prévia 3D; roda no Python embutido e baixa numpy/SciPy se faltarem. |
-| Conversor de Corpos | 1.0 | Textura do corpo (bodyupper: pele, tatuagens, normal) FC 26 ↔ FC 27: identifica o layout de cada imagem, refaz a UV do outro jogo com cada tatuagem no mesmo lugar do corpo, prévia no corpo em 3D e plana. |
-| Criador de Kits | 1.0 | Uniforme do FC 27 a partir de um kit doador do FET: recolore camisa, calção e meião, desenha o padrão do tronco, coloca patrocinadores, escudo e marca (com o hotspot); uma foto da camisa preenche cores, listras e logos; prévia 3D com as malhas do FET. |
-| Criador de Minifaces | 1.2 | Foto → miniface do jogo (p&lt;ID&gt;.png 180×180): tira o fundo, enquadra o rosto e liga ao jogador pelo time; recebe as fotos do Criador de Ligas e Times já ligadas aos IDs. |
-| Editor de Banco | 1.0 | Times (elenco, escalação, formação, capitão, cobradores, tática, cores, técnico), jogadores, ligas, árbitros, técnicos e qualquer tabela; transferências, empréstimos, liberar; verificação de erros com correção; grava um banco novo. |
-| Criador de Ligas e Times | 2.2 | Ligas, times, seleções e jogadores da API-Football ou da Transfermarkt (notas calibradas no banco — pelo valor de mercado na Transfermarkt —, feminino, aparência pelas fotos, tática, técnico, estádio) e atualização do banco: elencos, empréstimos, saídas e participantes das ligas. |
+| Conversor de Faces | 1.4 | Cabeças (FBX do FET) FC 26 ↔ FC 27: identifica o jogo, pasta de saída, prévia 3D; roda no Python embutido e baixa numpy/SciPy se faltarem. |
+| Conversor de Corpos | 1.1 | Textura do corpo (bodyupper: pele, tatuagens, normal) FC 26 ↔ FC 27: identifica o layout de cada imagem, refaz a UV do outro jogo com cada tatuagem no mesmo lugar do corpo, prévia no corpo em 3D e plana. |
+| Criador de Kits | 1.1 | Uniforme do FC 27 a partir de um kit doador do FET: recolore camisa, calção e meião, desenha o padrão do tronco, coloca patrocinadores, escudo e marca (com o hotspot); uma foto da camisa preenche cores, listras e logos; prévia 3D com as malhas do FET. |
+| Criador de Minifaces | 1.3 | Foto → miniface do jogo (p&lt;ID&gt;.png 180×180): tira o fundo, enquadra o rosto e liga ao jogador pelo time; recebe as fotos do Criador de Ligas e Times já ligadas aos IDs. |
+| Editor de Banco | 1.1 | Times (elenco, escalação, formação, capitão, cobradores, tática, cores, técnico), jogadores, ligas, árbitros, técnicos e qualquer tabela; transferências, empréstimos, liberar; verificação de erros com correção; grava um banco novo. |
+| Criador de Ligas e Times | 2.4 | Ligas, times, seleções e jogadores da API-Football ou da Transfermarkt (notas calibradas no banco — pelo valor de mercado na Transfermarkt —, feminino, aparência pelas fotos, tática, técnico, estádio) e atualização do banco: elencos, empréstimos, saídas e participantes das ligas. |
 | Atualizador de Squads | 1.1 | Squad do mod + squad mais recente da EA → squad atualizado: times brasileiros inteiros do mod (sem os genéricos da EA), times, ligas e competições novos, jogadores criados pelo mod; duplicados unidos, IDs reusados trocados, escalações refeitas. |
 | Conversor de Tabelas | 1.1 | Tabelas do banco entre qualquer par de versões (FIFA 16 … FC 27): colunas novas, renomeadas e calculadas, escalas, faixas; destino pelo esquema guardado; grava .txt ou um .db novo. |
 | Estádios FC 27 | 1.0 | Substitui o Conversor PES → FC. **Duplicar estádio**: estádios do FC 27 com quantas cópias quiser, cada uma com ID, nome e identidade próprios, num projeto novo ou no seu projeto do FET. **Converter FIFA 16 → FC 27**: sempre sobre o El Grandioso (181), com modelo, texturas, telão, gramado, torcida, glares e personagens do FIFA 16; pré-cálculo de luz de outro estádio (experimental). Precisa do FIFA Editor Tool e do .NET 8. |
+| Conversor de Kits PES → FC | 1.1 | Kits do PES 2021 (camisa, mangas, gola, calção e meião numa textura só) → kits do FC 27 na pasta do kit do FET, refeitos pelo uniforme em 3D dos dois jogos, com o tecido de um kit base; prévia plana e em 3D. |
+| Conversor de Placares PES → FC | 1.0 | Placar de um pacote do PES 2021 (game2dPes.bin e companhia) → placar do FC usado como molde (Generic ou os do pack do LTA), com nomes, placar, relógio e a fonte dos números do PES; grava como projeto do Editor de Placares. |
 | RDBM 26 · Add-on FC 27 | 1.0.0 | Programa à parte: abre squads do FC 27 no RDBM 26. O Super Tool abre o add-on e passa os comandos. |
 
 A versão de cada uma aparece no trilho, nos cartões do Início, no selo ao lado do nome (no topo da ferramenta) e em
@@ -126,8 +128,7 @@ stadium conversor\
       compdata\             Editor de Compdata (README.md)
       faces\                Conversor de Faces (LEIAME.md; motor\ = conversor em numpy e as faces de referência)
       corpos\               Conversor de Corpos (LEIAME.md; motor\ = conversor e os corpos de referência; cache\mapas)
-      kits\                 Criador de Kits (LEIAME.md; motor\ = recolorir, foto e molde; motor
-eferencia = malhas do 3D)
+      kits\                 Criador de Kits (LEIAME.md; motor\ = recolorir, foto e molde; motor\referencia = malhas do 3D)
       minifaces\            Criador de Minifaces (LEIAME.md; motor\ = OpenCV)
       tabelas\              Conversor de Tabelas (LEIAME.md)
       banco\                Editor de Banco (LEIAME.md; a edição em andamento fica em banco\cache)
