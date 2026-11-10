@@ -57,6 +57,13 @@ def caminho_asset(ref):
     return (ref or "").split(BS)[0]
 
 
+RX_GUID = re.compile(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
+
+
+def eh_guid(g):
+    return bool(g) and bool(RX_GUID.match(g))
+
+
 def guid_ref(ref):
     return (ref or "").split(BS)[-1]
 

@@ -401,7 +401,7 @@ export class Viewport extends EventTarget {
       if (lista) mv = porGuid ? (xg ? lista.find((m) => g(m.material) === xg) : null) : lista[k];
       const reg = mv?.variacao ? this.modelo.materiais.get(mv.variacao) : null;
       out.push({ indice: k, chave: mv?.variacao || `${chave}|${k}`, reg: reg || { info: mv || xml[k] || {} }, editavel: !!reg, outroMvdb,
-        particaoNova: !!lista && !mv, semGuid: !xg });
+        particaoNova: !!lista && !mv, semGuid: !xml[k], particaoNula: !!xml[k] && !xg });
       k++;
     }
     return out;

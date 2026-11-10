@@ -457,6 +457,8 @@ class Cena:
         arr = prim.find("array[@name='Materials']")
         for it in (arr if arr is not None else []):
             g = it.get("ref")
+            if not X.eh_guid(g):      # partição nova do FBX: o FET exporta o material como ref="null"
+                g = None
             mm = insts.get(g)
             mats.append(dict(guid=g, **(self.material(mm) if mm is not None else {})))
         info["materiais"] = mats

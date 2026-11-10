@@ -255,8 +255,10 @@ export async function escolherTextura(app, { param, atual }) {
   corpo.append(nota(explicacao), barra, info, grade);
   let escolhida = null;
   let lista = [];
+  for (const t of porChave.values()) t.outro = md.outroEstadio(t.asset);
   const ordenar = () => {
-    lista = [...porChave.values()].sort((a, b) => (!!b.usada - !!a.usada) || (!!(b.png || b.jogo) - !!(a.png || a.jogo))
+    for (const t of porChave.values()) if (t.outro === undefined) t.outro = md.outroEstadio(t.asset);
+    lista = [...porChave.values()].sort((a, b) => (!!b.usada - !!a.usada) || (!!a.outro - !!b.outro) || (!!(b.png || b.jogo) - !!(a.png || a.jogo))
       || (b.asset.includes('/worlds/') - a.asset.includes('/worlds/')) || a.asset.localeCompare(b.asset));
   };
   ordenar();
@@ -291,7 +293,8 @@ export async function escolherTextura(app, { param, atual }) {
         img.append(im);
       } else img.textContent = 'sem imagem';
       cart.append(img, el('b', {}, t.asset.split('/').pop()), el('small', {}, t.asset.replace(/^content\/worlds\//i, '').split('/').slice(0, -1).join('/')));
-      if (t.usada) cart.append(el('small', { style: { color: 'var(--sucesso)' } }, '● já usada neste estádio'));
+      if (t.usada && !t.outro) cart.append(el('small', { style: { color: 'var(--sucesso)' } }, '● já usada neste estádio'));
+      if (t.outro) cart.append(el('small', { style: { color: 'var(--erro, #f0565a)' } }, `⚠ do estádio ${t.outro}: não carrega aqui`));
       cart.onclick = () => { grade.querySelectorAll('.sel').forEach((x) => x.classList.remove('sel')); cart.classList.add('sel'); escolhida = t; m.caixa.querySelector('.btn-primario').disabled = false; };
       cart.ondblclick = () => { escolhida = t; m.caixa.querySelector('.btn-primario').click(); };
       grade.append(cart);
@@ -303,6 +306,9 @@ export async function escolherTextura(app, { param, atual }) {
   const m = modal({ titulo: 'Escolher textura', corpo, largo: true,
     botoes: [{ rotulo: 'Cancelar', valor: null }, { rotulo: 'Usar esta textura', classe: 'btn-primario', padrao: true, desabilitado: true, fn: async (bt) => {
       if (!escolhida) return false;
+      if (escolhida.outro && !await confirmar('Usar textura de outro estádio?',
+        `<b>${esc(escolhida.asset.split('/').pop())}</b> fica na pasta do estádio <b>${esc(escolhida.outro)}</b>, e o jogo só carrega essa textura quando aquele estádio está em campo. Aqui ela não aparece (o material fica sem textura no jogo). Prefira uma textura comum (<i>content/worlds/textures/…</i>) ou uma deste estádio.`,
+        { rotulo: 'Usar mesmo assim' })) return false;
       if (!escolhida.ref) {
         bt.disabled = true;
         try {
