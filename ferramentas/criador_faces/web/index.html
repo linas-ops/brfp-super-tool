@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Criador de Faces</title>
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="comum/brfp.css">
+  <link rel="stylesheet" href="app.css">
+  <script type="importmap">
+    { "imports": { "three": "./comum/vendor/three/three.module.js", "three/addons/": "./comum/vendor/three/addons/" } }
+  </script>
+</head>
+<body>
+  <div id="app">
+    <header id="topo">
+      <div class="marca" title="Criador de Faces">
+        <span class="marca-ic"></span>
+        <span class="marca-txt">Criador de Faces</span>
+        <span class="marca-versao" id="versao"></span>
+      </div>
+      <nav id="menus" aria-label="Menu principal"></nav>
+      <div class="titulo-centro" id="titulo"></div>
+      <div class="topo-acoes">
+        <span class="chip clicavel" id="chip-conta" title="Saldo da conta do KeenFace (clique para atualizar)" hidden></span>
+        <button id="btn-criar" class="btn-primario" title="Enviar as fotos ao KeenFace e criar a cabeça (Ctrl+Enter)">
+          <span id="btn-criar-ic"></span><span>Criar cabeça</span>
+        </button>
+      </div>
+    </header>
+
+    <aside id="painel-esq" class="painel" aria-label="Fotos">
+      <div class="painel-cab">
+        <h2>Fotos do jogador</h2>
+        <div class="painel-cab-acoes">
+          <button id="btn-add" class="btn-icone peq" title="Adicionar fotos… (Ctrl+O)"></button>
+          <button id="btn-limpar" class="btn-icone peq" title="Tirar todas as fotos da lista"></button>
+        </div>
+      </div>
+      <div id="fotos" class="fotos" aria-label="Fotos da cabeça nova"></div>
+      <div class="painel-rodape"><span id="resumo-fotos"></span></div>
+    </aside>
+    <div class="divisor" id="div-esq"></div>
+
+    <main id="viewport">
+      <section id="vista" class="vista">
+        <canvas id="tela3d" aria-label="Prévia 3D da cabeça"></canvas>
+        <div class="barra-flutuante dir" id="barra3d" hidden>
+          <button class="btn-icone" id="btn-textura" title="Mostrar a textura (T)"></button>
+          <button class="btn-icone" id="btn-arame" title="Ver a malha (W)"></button>
+          <button class="btn-icone" id="btn-girar" title="Girar sozinha (G)"></button>
+          <button class="btn-icone" id="btn-enquadrar" title="Enquadrar (F)"></button>
+        </div>
+        <div class="legenda-vista" id="legenda3d" hidden></div>
+        <div id="inicio-vista" class="inicio-vista"></div>
+        <div id="cartao-tarefa" class="cartao-tarefa" hidden></div>
+      </section>
+      <section id="cabecas" class="cabecas">
+        <div class="cabecas-cab">
+          <h2>Minhas cabeças</h2>
+          <span class="mudo peq-txt" id="cabecas-resumo"></span>
+          <button class="btn-fantasma peq" id="btn-sincronizar" title="Conferir no KeenFace o status das cabeças e trazer as feitas em outro computador"></button>
+        </div>
+        <div id="lista-cabecas" class="lista-cabecas"></div>
+      </section>
+    </main>
+    <div class="divisor" id="div-dir"></div>
+
+    <aside id="painel-dir" class="painel" aria-label="KeenFace">
+      <div id="config" class="propriedades"></div>
+    </aside>
+
+    <footer id="status">
+      <span class="status-esq contagem" id="status-esq"></span>
+      <span class="status-dir">
+        <span id="status-progresso" hidden><span class="barra-progresso mini"><div id="progresso-barra"></div></span><span id="progresso-txt"></span></span>
+        <span class="chip" id="chip-chave"></span>
+      </span>
+    </footer>
+  </div>
+  <div id="camada-soltar" hidden><div>Solte as fotos para adicionar</div></div>
+  <div id="camada-modal"></div>
+  <div id="menu-contexto" class="menu-flutuante" hidden></div>
+  <div id="toasts" aria-live="polite"></div>
+  <script type="module" src="app.js"></script>
+</body>
+</html>

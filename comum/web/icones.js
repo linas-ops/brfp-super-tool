@@ -73,6 +73,7 @@ const P = {
   placar: '<rect x="2.5" y="6" width="19" height="12" rx="2"/><path d="M12 6v12"/><path d="M5.5 10h3v4h-3zM15.5 10h3v4h-3z"/>',
   trofeu: '<path d="M8 4h8v5a4 4 0 0 1-8 0z"/><path d="M8 6H5.5a2 2 0 0 0 2 4H8M16 6h2.5a2 2 0 0 1-2 4H16"/><path d="M12 13v3.5M9 20.5h6M10 16.5h4v4h-4z"/>',
   rosto: '<path d="M12 3c-4 0-6.5 3-6.5 7.5 0 3 1 5.4 2.6 7 1 1 2.3 2.5 3.9 2.5s2.9-1.5 3.9-2.5c1.6-1.6 2.6-4 2.6-7C18.5 6 16 3 12 3z"/><circle cx="9.6" cy="10.6" r=".9" fill="currentColor"/><circle cx="14.4" cy="10.6" r=".9" fill="currentColor"/><path d="M10 15c1.2.8 2.8.8 4 0"/>',
+  rostoFoto: '<path d="M9.5 2.5c-3.5 0-5.6 2.6-5.6 6.5 0 2.6.9 4.7 2.2 6 .9.9 2 2.2 3.4 2.2s2.5-1.3 3.4-2.2c1.3-1.3 2.2-3.4 2.2-6C15.1 5.1 13 2.5 9.5 2.5z"/><circle cx="7.6" cy="8.8" r=".8" fill="currentColor"/><circle cx="11.4" cy="8.8" r=".8" fill="currentColor"/><path d="M8 12.4c.9.6 2.1.6 3 0"/><rect x="13.5" y="15.2" width="8" height="6" rx="1.2"/><path d="M15.6 15.2l.8-1.4h2.2l.8 1.4"/><circle cx="17.5" cy="18.2" r="1.4"/>',
   converter: '<path d="M4 8h14l-3.5-3.5M20 16H6l3.5 3.5"/>',
   bancoDados: '<ellipse cx="12" cy="5.5" rx="7.5" ry="2.8"/><path d="M4.5 5.5v13c0 1.5 3.4 2.8 7.5 2.8s7.5-1.3 7.5-2.8v-13M4.5 12c0 1.5 3.4 2.8 7.5 2.8s7.5-1.3 7.5-2.8"/>',
   casa: '<path d="M3 11 12 3.5 21 11"/><path d="M5.5 9.5V20h13V9.5"/><path d="M10 20v-5.5h4V20"/>',
