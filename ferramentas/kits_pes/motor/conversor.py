@@ -47,7 +47,8 @@ _MAPAS = {}
 
 
 def mapas():
-    """{peca: {uv (H×W×2, v para cima), parte (H×W), escala (px do PES em 2048 por px do FC)}, "ilhas": H×W bool}."""
+    """{peca: {uv (H×W×2, v para cima), parte (H×W), escala (px do PES em 2048 por px do FC)}, "ilhas" e "buraco":
+    máscaras 2048×2048 da textura do PES (onde ela é usada; buraco da gola no tronco)}."""
     if _MAPAS:
         return _MAPAS
     if not os.path.isfile(MAPAS):
@@ -59,6 +60,8 @@ def mapas():
             _MAPAS[p] = {"uv": np.stack([u, v], -1).astype(np.float32) / 65535.0, "parte": z[p + "_parte"],
                          "escala": z[p + "_escala"].astype(np.float32) / 8.0}
         _MAPAS["ilhas"] = np.unpackbits(z["pes_ilhas"], axis=1)[:, :2048].astype(bool)
+        _MAPAS["buraco"] = (np.unpackbits(z["pes_buraco"], axis=1)[:, :2048].astype(bool) if "pes_buraco" in z.files
+                            else np.zeros((2048, 2048), bool))
     return _MAPAS
 
 
@@ -121,6 +124,53 @@ def preencher_fora(img, cobertos):
     return img[iy, ix]
 
 
+def tapar_buraco(img, buraco, margem=3, janela=16):
+    """Buraco da gola no tronco do PES: em cima o decote (onde o kit do PES desenha a gola: sempre refeito) e embaixo
+    a carcela (refeita só quando o desenho dela não é o do tronco em volta). Ali sobe o desenho do tronco da frente,
+    coluna por coluna (mediana de `janela` linhas logo abaixo): as listras e a cor do tronco continuam até o decote do
+    FC, sem puxar os logos da nuca."""
+    larg = buraco.sum(1)
+    if not larg.any():
+        return img
+    largas = np.nonzero(larg >= 0.75 * larg.max())[0]
+    refazer = buraco.copy()
+    carcela = buraco.copy()
+    carcela[:largas[-1] + 1] = False
+    if carcela.any():
+        ys, xs = np.nonzero(carcela)
+        w = xs.max() - xs.min() + 1
+        lados = np.zeros_like(buraco)
+        lados[ys.min():ys.max() + 1, max(0, xs.min() - w):xs.max() + 1 + w] = True
+        lados &= ~buraco
+        if lados.any() and np.abs(img[carcela].mean(0) - img[lados].mean(0)).max() < 30:
+            refazer &= ~carcela             # a carcela já tem o desenho do tronco: fica
+    out = img.copy()
+    h = img.shape[0]
+    for x in np.nonzero(refazer.any(0))[0]:
+        ys = np.nonzero(refazer[:, x])[0]
+        y0 = ys[-1] + 1 + margem
+        abaixo = img[y0:y0 + janela, x] if y0 < h else img[max(0, ys[0] - margem - janela):max(0, ys[0] - margem), x]
+        if len(abaixo):
+            out[ys, x] = np.median(abaixo, 0)
+    return out
+
+
+def cor_dominante(px):
+    """Cor mais comum (média dos pixels do tom mais frequente)."""
+    q = np.clip(px, 0, 255).astype(np.int64) // 16
+    k = q[:, 0] * 256 + q[:, 1] * 16 + q[:, 2]
+    return px[k == np.bincount(k).argmax()].mean(0)
+
+
+def _na_textura(masc, h, w):
+    """Máscara 2048×2048 no tamanho da textura do PES."""
+    if (h, w) == masc.shape:
+        return masc
+    iy = np.minimum((np.arange(h) + 0.5) * masc.shape[0] / h, masc.shape[0] - 1).astype(np.int64)
+    ix = np.minimum((np.arange(w) + 0.5) * masc.shape[1] / w, masc.shape[1] - 1).astype(np.int64)
+    return masc[iy][:, ix]
+
+
 def piramide(img, niveis=6):
     """Níveis de mipmap (média 2×2)."""
     out = [img]
@@ -163,13 +213,9 @@ def converter_texturas(img, progresso=lambda m: None):
     """Textura do PES (H×W×3, 0–255) -> {peca: H×W×3 float32} no layout do FC 27 (sem a braçadeira)."""
     M = mapas()
     h, w = img.shape[:2]
-    ilhas = M["ilhas"]
-    if (h, w) != ilhas.shape:
-        iy = np.minimum((np.arange(h) + 0.5) * ilhas.shape[0] / h, ilhas.shape[0] - 1).astype(np.int64)
-        ix = np.minimum((np.arange(w) + 0.5) * ilhas.shape[1] / w, ilhas.shape[1] - 1).astype(np.int64)
-        ilhas = ilhas[iy][:, ix]
-    niv = piramide(preencher_fora(img[..., :3].astype(np.float32), ilhas))
     fator = max(w, h) / 2048.0
+    rgb = tapar_buraco(img[..., :3].astype(np.float32), _na_textura(M["buraco"], h, w), max(1, round(3 * fator)), max(4, round(16 * fator)))
+    niv = piramide(preencher_fora(rgb, _na_textura(M["ilhas"], h, w)))
     out = {}
     for peca in PECAS:
         progresso(f"Montando {'a' if peca == 'jersey' else 'o'} {NOME_PECA[peca]}")
@@ -181,6 +227,9 @@ def converter_texturas(img, progresso=lambda m: None):
         for i0 in range(0, H * W, BLOCO):
             cor[i0:i0 + BLOCO] = amostrar_mip(niv, uv[i0:i0 + BLOCO].astype(np.float64), peg[i0:i0 + BLOCO])
         out[peca] = cor.reshape(H, W, 3)
+        gola = m["parte"] == GOLA
+        if gola.any():                 # a gola do FC não vem do PES: fica com a cor do tronco
+            out[peca][gola] = cor_dominante(out[peca][m["parte"] == TRONCO])
     return out
 
 
