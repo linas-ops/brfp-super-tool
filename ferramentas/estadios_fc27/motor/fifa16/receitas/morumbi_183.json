@@ -1,0 +1,33 @@
+{
+ "_sobre": "Receita do Morumbi (FIFA 16, estádio 183) que gerou a v3, testada em partida em 31/10/2026. Os mesmos valores da conversão confirmada; os nomes internos (prefixo e identidade) também. Desde 01/11/2026 a peça 9 (bannergroup20) recebe os banners dos times do FC 27 e valem as correções do conversor (pista do El Grandioso escondida, reservas nas cadeiras, luzes da torcida); a v3 sai igual com descartar 9, papel {}, pista_el_grandioso manter, reservas v3 e luzes_torcida manter.",
+ "fifa16_id": 183,
+ "nome": "Estádio do Morumbi",
+ "prefixo": "morumbi",
+ "identidade": "morumbi703",
+ "identidade_id": 703,
+ "pasta_nome": "morumbi",
+ "descartar": {
+  "0": "placa digital (o FC 27 tem as próprias placas)",
+  "1": "placa estática (idem)",
+  "2": "estrutura das placas",
+  "3": "anúncios das placas de 2015",
+  "7": "linhas da área técnica (o gramado do FC 27 já tem)",
+  "139": "gramado do campo (o FC 27 desenha o próprio)",
+  "140": "céu (o FC 27 tem o próprio)"
+ },
+ "papel": {"9": "banner"},
+ "telao": [29],
+ "grama": [110],
+ "chao": {"110": -0.06, "77": 0.002, "78": 0.004, "79": 0.004, "80": 0.004, "75": 0.006, "135": 0.006, "133": 0.006, "26": 0.008,
+          "4": 0.010, "13": 0.010, "72": 0.010, "98": 0.010, "118": 0.010, "132": 0.010, "134": 0.010, "137": 0.010, "56": 0.010},
+ "um_lado": [115, 116, 117],
+ "faces": "view",
+ "sombra_mesclada": false,
+ "max_vertices": 60000,
+ "pista": [77],
+ "recorte_bancos": {"z": -37.8, "x": 30.0},
+ "placas_madeira_bancos": "abaixo_do_piso",
+ "torcida": {"cadeiras": "fifa16", "lado_casa": "-x", "tier2_acima_de": 14.0},
+ "personagens": "fifa16",
+ "luz": 181
+}

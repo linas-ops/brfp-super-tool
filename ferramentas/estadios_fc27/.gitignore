@@ -1,0 +1,3 @@
+# saídas de build dos projetos C# (os binários usados ficam em motor/bin)
+motor/csharp/*/bin/
+motor/csharp/*/obj/

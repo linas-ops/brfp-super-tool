@@ -35,15 +35,15 @@ Python 3.12 do python.org, isolado — não usa nem altera o Python que estiver 
    verificado"), clique em **Mais informações › Executar assim mesmo** (ou **Executar**). Para não ver o aviso: antes de
    extrair, botão direito no .zip › Propriedades › **Desbloquear**.
 
-O pacote leva o motor do Conversor PES → FC e o RDBM 26 · Add-on FC 27 (ficam em `ferramentas\conversor_pes\motor` e
-`ferramentas\rdbm`) e **nada deste computador**: preferências, banco e idioma importados, caches, saídas, backups e o
+O pacote leva o RDBM 26 · Add-on FC 27 (fica em `ferramentas\rdbm`) e **nada deste computador**: preferências, banco e idioma importados, caches, saídas, backups e o
 `addon.ini` ficam de fora — cada computador importa os próprios dados.
 
 ## Componentes (novo na 2.1)
 
 - **Python embutido**: versão, pasta e se está em uso (o .bat sempre usa ele quando existe).
 - **Pacotes das ferramentas**: numpy e SciPy (Conversor de Faces), numpy, SciPy e Pillow (Conversor de Corpos), numpy,
-  SciPy, OpenCV e Pillow (Criador de Kits), OpenCV, Pillow e numpy (Criador de Minifaces). Versões
+  SciPy, OpenCV e Pillow (Criador de Kits), OpenCV, Pillow e numpy (Criador de Minifaces), numpy e zstandard
+  (Estádios FC 27). Versões
   fixas do PyPI, conferidas pelo SHA-256 (`comum\componentes.json`), instaladas em `runtime\python\Lib\site-packages`.
 - **Transfermarkt API (servidor local)** (novo na 2.4, opcional): a [transfermarkt-api](https://github.com/felipeall/transfermarkt-api)
   5.0.0 (felipeall, licença MIT) + FastAPI, uvicorn, httpx, pydantic e mais 20 bibliotecas, ≈4 MB. O projeto fica em
@@ -53,8 +53,8 @@ O pacote leva o motor do Conversor PES → FC e o RDBM 26 · Add-on FC 27 (ficam
   Se faltarem, a própria ferramenta mostra **Baixar os componentes…** (o chip "Motor indisponível" também abre esse
   aviso); instalado por qualquer janela, as outras ferramentas percebem sozinhas.
 - **Programas do computador**: Edge/Chrome (janela do Super Tool), texconv (vem junto), Visual C++ 2015–2022 (o texconv
-  precisa; normalmente já vem com o jogo), Blender 5.2 (Conversor PES), RDBM 26 e .NET Framework 4.8 (Add-on FC 27). **Localizar…**
-  indica o Blender ou o RDBM quando não estão no lugar padrão; **Baixar** abre a página oficial.
+  precisa; normalmente já vem com o jogo), .NET 8 Runtime (Estádios FC 27), RDBM 26 e .NET Framework 4.8 (Add-on FC 27).
+  **Localizar…** indica o RDBM quando não está no lugar padrão; **Baixar** abre a página oficial.
 - **Levar para outro computador**: o pacote .zip descrito acima.
 
 Os diálogos de abrir, salvar e escolher pasta são os nativos do Windows (o mesmo do Explorer), em todas as ferramentas.
@@ -97,7 +97,7 @@ sob demanda e guardadas em cache em `dados\cache`; o registro fica em `dados\fon
 | Criador de Ligas e Times | 2.2 | Ligas, times, seleções e jogadores da API-Football ou da Transfermarkt (notas calibradas no banco — pelo valor de mercado na Transfermarkt —, feminino, aparência pelas fotos, tática, técnico, estádio) e atualização do banco: elencos, empréstimos, saídas e participantes das ligas. |
 | Atualizador de Squads | 1.1 | Squad do mod + squad mais recente da EA → squad atualizado: times brasileiros inteiros do mod (sem os genéricos da EA), times, ligas e competições novos, jogadores criados pelo mod; duplicados unidos, IDs reusados trocados, escalações refeitas. |
 | Conversor de Tabelas | 1.1 | Tabelas do banco entre qualquer par de versões (FIFA 16 … FC 27): colunas novas, renomeadas e calculadas, escalas, faixas; destino pelo esquema guardado; grava .txt ou um .db novo. |
-| Conversor PES → FC | 2.0 | Estádios do PES 2021 → FC 26 sem comandos: assistente de nova conversão, configuração em formulário, etapas explicadas, lista do que importar no FET, prévias, ferramentas. |
+| Estádios FC 27 | 1.0 | Substitui o Conversor PES → FC. **Duplicar estádio**: estádios do FC 27 com quantas cópias quiser, cada uma com ID, nome e identidade próprios, num projeto novo ou no seu projeto do FET. **Converter FIFA 16 → FC 27**: sempre sobre o El Grandioso (181), com modelo, texturas, telão, gramado, torcida, glares e personagens do FIFA 16; pré-cálculo de luz de outro estádio (experimental). Precisa do FIFA Editor Tool e do .NET 8. |
 | RDBM 26 · Add-on FC 27 | 1.0.0 | Programa à parte: abre squads do FC 27 no RDBM 26. O Super Tool abre o add-on e passa os comandos. |
 
 A versão de cada uma aparece no trilho, nos cartões do Início, no selo ao lado do nome (no topo da ferramenta) e em
@@ -126,15 +126,16 @@ stadium conversor\
       compdata\             Editor de Compdata (README.md)
       faces\                Conversor de Faces (LEIAME.md; motor\ = conversor em numpy e as faces de referência)
       corpos\               Conversor de Corpos (LEIAME.md; motor\ = conversor e os corpos de referência; cache\mapas)
-      kits\                 Criador de Kits (LEIAME.md; motor\ = recolorir, foto e molde; motoreferencia = malhas do 3D)
+      kits\                 Criador de Kits (LEIAME.md; motor\ = recolorir, foto e molde; motor
+eferencia = malhas do 3D)
       minifaces\            Criador de Minifaces (LEIAME.md; motor\ = OpenCV)
       tabelas\              Conversor de Tabelas (LEIAME.md)
       banco\                Editor de Banco (LEIAME.md; a edição em andamento fica em banco\cache)
       criador\              Criador de Ligas e Times (LEIAME.md; chave e cache da API ficam em dados\)
       squads\               Atualizador de Squads (LEIAME.md; relatórios em squads\saida)
-      conversor_pes\        interface do Conversor PES → FC (no pacote, o motor fica em conversor_pes\motor)
+      estadios_fc27\        Estádios FC 27 (LEIAME.md; motor\ = duplicação, conversão do FIFA 16 e os jobs C# do SDK;
+                            cache\ = SDK do FET preparado, índice do jogo e trabalhos, fica fora do pacote)
       rdbm\                 (só no pacote) RDBM 26 · Add-on FC 27
-  conversor\                motor do Conversor PES → FC (configs, etapas, Blender) — saída em saida\ e work\
   RDBM26 Add-on FC27\       add-on do RDBM (atalho "RDBM26 FC27" na Área de Trabalho)
 ```
 

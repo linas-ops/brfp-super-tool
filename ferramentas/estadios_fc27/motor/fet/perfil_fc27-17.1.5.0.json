@@ -1,0 +1,21 @@
+{
+  "schema": 1,
+  "game": "FC27",
+  "editor_version": [17, 1, 5, 0],
+  "cache_sha256": "00ab3ee1e067a97419773c770bace8345e7f72a1ade7a4ca839eb51a04c7ea5d",
+  "sdk_sha256": "471213ea827adfcacd13f2afd833084a44006aee000f5b3b211e812889d0bfe6",
+  "cache_ebx_inspected": 1014893,
+  "scope": "Partition identity only. Native metadata scan of the exact cache; no primary-export or runtime rule is implied.",
+  "rules": [
+    {"type": "FifaPhysicsResourceAsset", "partition_strategy": "md5-name-lower-utf8-guid-le", "native_total": 1224, "native_matches": 1224},
+    {"type": "NetworkRegistryAsset", "partition_strategy": "md5-name-lower-utf8-guid-le", "native_total": 1442, "native_matches": 1442},
+    {"type": "MeshVariationDatabase", "partition_strategy": "md5-name-lower-utf8-guid-le", "native_total": 23819, "native_matches": 23819},
+    {"type": "LevelDescriptionAsset", "partition_strategy": "md5-name-lower-utf8-guid-le", "native_total": 823, "native_matches": 823}
+  ],
+  "examples": [
+    {"type": "FifaPhysicsResourceAsset", "name": "content/worlds/stadiums/bernabeu_2/bernabeu_2_fifaPhysicsData36_ID_nullMaterial", "partition": "1677c63a-721d-01f7-630b-6eb48a143c8e"},
+    {"type": "MeshVariationDatabase", "name": "content/worlds/stadiums/bernabeu_2/tunnel/MeshVariationDb_Win32", "partition": "5b279fc5-ab67-e43d-233c-7f6079124927"},
+    {"type": "NetworkRegistryAsset", "name": "fc/fcgame/main/content/worlds/stadiums/bernabeu_2/bernabeu_2_networkregistry_Win32", "partition": "585f9475-119f-054e-1074-7d7b7c281fc5"},
+    {"type": "LevelDescriptionAsset", "name": "content/worlds/stadiums/bernabeu_2/bernabeu_2/description", "partition": "b0ac3387-dea6-04f8-4f7e-e31eb365e279"}
+  ]
+}

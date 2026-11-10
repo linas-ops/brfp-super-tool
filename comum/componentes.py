@@ -715,6 +715,16 @@ def achar_navegador():
     return None
 
 
+def dotnet8():
+    """Pasta do Microsoft.NETCore.App 8.x mais novo (o Estádios FC 27 roda o SDK do FET nele) ou None."""
+    base_dir = os.path.join(os.environ.get("ProgramFiles", r"C:\Program Files"), "dotnet", "shared", "Microsoft.NETCore.App")
+    try:
+        vers = [n for n in os.listdir(base_dir) if re.fullmatch(r"8\.\d+\.\d+", n)]
+    except OSError:
+        return None
+    return os.path.join(base_dir, max(vers, key=_versao_tupla)) if vers else None
+
+
 def dotnet48():
     if os.name != "nt":
         return False
@@ -755,7 +765,7 @@ def texconv():
 
 
 def programas(addon_dir=None):
-    bl = achar_blender()
+    net8 = dotnet8()
     nav = achar_navegador()
     rd = achar_rdbm(addon_dir)
     tx = texconv()
@@ -764,15 +774,13 @@ def programas(addon_dir=None):
          "detalhe": nav["nome"] if nav else "sem Edge/Chrome: abre no navegador padrão", "usado": "Super Tool",
          "obrigatorio": False},
         {"id": "texconv", "nome": "texconv (DirectXTex)", "ok": os.path.isfile(tx), "caminho": tx, "detalhe": "embutido",
-         "usado": "Editor de Estádios, Conversor PES → FC", "obrigatorio": True},
+         "usado": "Editor de Estádios, Conversor de Kits PES → FC, Conversor de Corpos", "obrigatorio": True},
         {"id": "vcredist", "nome": "Visual C++ 2015–2022 (x64)", "ok": vcredist(), "caminho": "",
-         "detalhe": "instalado" if vcredist() else "não encontrado", "usado": "texconv (texturas do Editor de Estádios e do Conversor PES)",
+         "detalhe": "instalado" if vcredist() else "não encontrado", "usado": "texconv (texturas do Editor de Estádios e dos conversores)",
          "obrigatorio": False, "link": "https://aka.ms/vs/17/release/vc_redist.x64.exe"},
-        {"id": "blender", "nome": "Blender 5.2", "ok": bool(bl), "caminho": bl["exe"] if bl else "",
-         "detalhe": ("versão " + bl["versao"]) if bl and bl["versao"] else "não encontrado",
-         "aviso": bool(bl) and _versao_tupla(bl["versao"]) < (5, 2),
-         "usado": "Conversor PES → FC", "obrigatorio": False, "link": "https://www.blender.org/download/",
-         "localizar": True},
+        {"id": "dotnet8", "nome": ".NET 8 (Runtime)", "ok": bool(net8), "caminho": net8 or "",
+         "detalhe": os.path.basename(net8) if net8 else "não encontrado", "usado": "Estádios FC 27 (SDK do FIFA Editor Tool)",
+         "obrigatorio": False, "link": "https://dotnet.microsoft.com/download/dotnet/8.0"},
         {"id": "rdbm", "nome": "RDBM 26", "ok": bool(rd), "caminho": rd or "", "detalhe": "instalado" if rd else "não encontrado",
          "usado": "RDBM 26 · Add-on FC 27", "obrigatorio": False, "localizar": True},
         {"id": "dotnet", "nome": ".NET Framework 4.8", "ok": dotnet48(), "caminho": "",

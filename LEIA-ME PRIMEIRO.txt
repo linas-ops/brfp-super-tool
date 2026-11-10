@@ -2,7 +2,7 @@
 ===============
 
 Ferramentas de modding do BRFP (EA SPORTS FC 26 / FC 27) numa janela só: estádios, placares, compdata,
-faces, corpos (tatuagens), minifaces, tabelas do banco e o conversor de estádios do PES.
+faces, corpos (tatuagens), minifaces, tabelas do banco e o Estadios FC 27 (duplicar estadios e converter os do FIFA 16).
 
 COMO ABRIR
 ----------
@@ -21,6 +21,7 @@ PRIMEIROS PASSOS
   idioma (LanguageStrings1/2.txt exportados pelo FET). Todas as ferramentas usam.
 - "Componentes" (chip, embaixo à esquerda): mostra o que está pronto. O Conversor de Faces e o Criador de
   Minifaces baixam os pacotes deles na primeira vez que forem abertos (botão "Baixar os componentes...").
-- O Conversor PES -> FC precisa do Blender 5.2 (blender.org) e o Add-on FC 27 precisa do RDBM 26 instalado.
+- O Estadios FC 27 precisa do FIFA Editor Tool (com o FC 27 aberto nele uma vez) e do .NET 8 Runtime
+  (dotnet.microsoft.com); o Add-on FC 27 precisa do RDBM 26 instalado.
 
 Guia completo: LEIAME.md (também em "Guia do Super Tool", no Início).

@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Compila contra as DLLs do SDK do FET já preparadas para .NET 8 (motor/ambiente.py, pasta cache/sdk/...):
+       dotnet build -c Release -p:SdkDir=<pasta preparada> -o <saída>. As DLLs do FET não vão no repositório. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>disable</Nullable>
+    <NoWarn>CA1416;CS8632;CS0168;CS0219</NoWarn>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <GenerateDependencyFile>false</GenerateDependencyFile>
+    <UseAppHost>false</UseAppHost>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="Sdk"><HintPath>$(SdkDir)\Sdk.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="Compat"><HintPath>$(SdkDir)\Compat.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="System.IO.Hashing"><HintPath>$(SdkDir)\System.IO.Hashing.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="Serilog"><HintPath>$(SdkDir)\Serilog.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="Microsoft.IO.RecyclableMemoryStream"><HintPath>$(SdkDir)\Microsoft.IO.RecyclableMemoryStream.dll</HintPath><Private>false</Private></Reference>
+  </ItemGroup>
+</Project>

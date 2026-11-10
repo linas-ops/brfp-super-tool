@@ -298,6 +298,16 @@
    "url": "https://files.pythonhosted.org/packages/96/9f/9e56db2a3492275be809082c6f63a7a063f52b3e1812aae1eb03ec33f64c/wrapt-2.5.0-cp312-cp312-win_amd64.whl",
    "sha256": "ab45839c912777e2738fed369636589c8b2a6d9c44ca56de0fd0814581d467c2",
    "tamanho": 105786
+  },
+  "zstandard": {
+   "nome": "zstandard",
+   "distribuicao": "zstandard",
+   "modulo": "zstandard",
+   "versao": "0.25.0",
+   "arquivo": "zstandard-0.25.0-cp312-cp312-win_amd64.whl",
+   "url": "https://files.pythonhosted.org/packages/79/3b/fa54d9015f945330510cb5d0b0501e8253c127cca7ebe8ba46a965df18c5/zstandard-0.25.0-cp312-cp312-win_amd64.whl",
+   "sha256": "ffef5a74088f1e09947aecf91011136665152e0b4b359c42be3373897fb39b01",
+   "tamanho": 506276
   }
  },
  "grupos": {
@@ -314,6 +324,21 @@
     "numpy",
     "scipy",
     "pillow"
+   ]
+  },
+  "placares_pes": {
+   "nome": "Conversor de Placares PES → FC",
+   "pacotes": [
+    "numpy",
+    "opencv",
+    "pillow"
+   ]
+  },
+  "estadios_fc27": {
+   "nome": "Estádios FC 27",
+   "pacotes": [
+    "numpy",
+    "zstandard"
    ]
   },
   "minifaces": {

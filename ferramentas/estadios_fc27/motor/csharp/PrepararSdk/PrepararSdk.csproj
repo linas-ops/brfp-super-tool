@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>disable</Nullable>
+    <GenerateDependencyFile>false</GenerateDependencyFile>
+    <UseAppHost>false</UseAppHost>
+    <!-- Mono.Cecil (MIT): o mesmo arquivo vai em motor/bin com a licença (motor/bin/LICENCA_Mono.Cecil.txt). -->
+    <CecilDll Condition="'$(CecilDll)'==''">$(MSBuildThisFileDirectory)..\..\bin\Mono.Cecil.dll</CecilDll>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="Mono.Cecil"><HintPath>$(CecilDll)</HintPath></Reference>
+  </ItemGroup>
+</Project>

@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Estádios FC 27</title>
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="comum/brfp.css">
+  <link rel="stylesheet" href="app.css">
+</head>
+<body>
+  <div id="app">
+    <header id="topo">
+      <div class="marca" title="Estádios FC 27: duplicar estádios e converter estádios do FIFA 16">
+        <span class="marca-ic"></span>
+        <span class="marca-txt">Estádios FC 27</span>
+        <span class="marca-versao" id="versao"></span>
+      </div>
+      <nav class="abas-topo" id="abas" aria-label="Ferramentas">
+        <button data-aba="duplicar" class="aba-topo ativa"><span class="ic-aba" data-ic="copias"></span>Duplicar estádio</button>
+        <button data-aba="converter" class="aba-topo"><span class="ic-aba" data-ic="converter"></span>Converter FIFA 16 → FC 27</button>
+        <button data-aba="resultados" class="aba-topo"><span class="ic-aba" data-ic="relatorio"></span>Projetos gerados</button>
+      </nav>
+      <div class="titulo-centro"></div>
+      <div class="topo-acoes">
+        <button id="chip-ambiente" class="chip clicavel" title="FIFA Editor Tool, jogo, .NET 8, SDK e índice">Ambiente…</button>
+        <button id="btn-guia" class="btn-icone" title="Guia da ferramenta"></button>
+      </div>
+    </header>
+
+    <main id="conteudo" class="conteudo">
+      <section id="pag-duplicar" class="pagina conteudo-interno"></section>
+      <section id="pag-converter" class="pagina conteudo-interno" hidden></section>
+      <section id="pag-resultados" class="pagina conteudo-interno" hidden></section>
+    </main>
+
+    <footer id="status">
+      <div class="status-esq" id="status-esq">Pronto</div>
+      <div class="status-dir" id="status-dir"></div>
+    </footer>
+  </div>
+  <div id="camada-modal"></div>
+  <div id="toasts"></div>
+  <script type="module" src="app.js"></script>
+</body>
+</html>

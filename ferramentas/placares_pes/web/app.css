@@ -1,0 +1,75 @@
+/* Conversor de Placares PES → FC — só o que é específico; o resto vem de comum/brfp.css. */
+#app {
+  display: grid; height: 100vh;
+  grid-template-columns: var(--esq) 4px 1fr 4px var(--dir);
+  grid-template-rows: var(--topo) 1fr var(--rodape);
+  grid-template-areas: "topo topo topo topo topo" "esq div1 vp div2 dir" "status status status status status";
+  --esq: 290px; --dir: 340px;
+}
+#topo { grid-area: topo; }
+#painel-esq { grid-area: esq; display: flex; flex-direction: column; min-height: 0; }
+#div-esq { grid-area: div1; }
+#viewport { grid-area: vp; position: relative; min-width: 0; min-height: 0; overflow: auto; background: radial-gradient(900px 600px at 50% 30%, #1a2030 0%, #0e1013 70%); }
+#div-dir { grid-area: div2; }
+#painel-dir { grid-area: dir; overflow: auto; }
+#status { grid-area: status; }
+.marca-ic, .bv-hero-ic { background-image: url(favicon.svg); }
+
+.pasta-atual { padding: 6px 12px 8px; font: 11.5px var(--mono); color: var(--texto-3); word-break: break-all; border-bottom: 1px solid var(--borda); }
+.pasta-atual:empty { display: none; }
+#lista { flex: 1; overflow: auto; }
+.placar-item { display: grid; grid-template-columns: 1fr auto; gap: 4px 8px; width: 100%; padding: 9px 12px; border: 0; border-left: 2px solid transparent; border-bottom: 1px solid rgba(44, 50, 59, .6); background: none; color: var(--texto); text-align: left; cursor: pointer; }
+.placar-item:hover { background: var(--hover); }
+.placar-item.sel { background: var(--selecao-suave); border-left-color: var(--selecao); }
+.placar-item b { font-weight: 600; font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.placar-item .est { color: var(--texto-3); display: grid; place-items: center; }
+.placar-item .est.ok { color: var(--sucesso); }
+.placar-item .est.erro { color: var(--perigo); }
+.placar-item .mini { grid-column: 1 / -1; height: 26px; border-radius: 4px; background: #16301f center / contain no-repeat; }
+.placar-item small { grid-column: 1 / -1; color: var(--texto-3); font-size: 11.5px; }
+
+.soltar { position: absolute; inset: 0; display: grid; place-items: center; padding: 24px; }
+.soltar-caixa { max-width: 560px; text-align: center; color: var(--texto-2); line-height: 1.55; padding: 34px 30px; border: 1.5px dashed var(--borda-forte); border-radius: 16px; background: rgba(18, 20, 24, .5); }
+.soltar-caixa .ic-grande { width: 64px; height: 64px; margin: 0 auto 12px; color: var(--texto-3); }
+.soltar-caixa h2 { margin: 0 0 6px; font-size: 17px; color: var(--texto); font-weight: 600; }
+.soltar-caixa p { margin: 0; }
+.soltar-caixa .acoes { display: flex; gap: 8px; justify-content: center; margin: 18px 0 12px; flex-wrap: wrap; }
+.soltar-caixa small { color: var(--texto-3); font-size: 12px; }
+
+.previas { padding: 18px; display: flex; flex-direction: column; gap: 18px; }
+.previa-bloco { background: rgba(26, 29, 35, .85); border: 1px solid var(--borda); border-radius: var(--raio-g); overflow: hidden; }
+.previa-bloco > header { display: flex; align-items: baseline; gap: 10px; padding: 10px 14px; border-bottom: 1px solid var(--borda); }
+.previa-bloco h3 { margin: 0; font-size: 13px; font-weight: 600; }
+.previa-bloco .dica { color: var(--texto-3); font-size: 12px; }
+.previa-img { padding: 16px; display: grid; place-items: center; min-height: 80px; }
+.previa-img img { max-width: 100%; image-rendering: auto; }
+.previa-img img[src=""] { display: none; }
+.previa-tela { padding: 0 16px 16px; display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
+.previa-tela img { width: 100%; max-width: 960px; border: 1px solid var(--borda); border-radius: var(--raio); }
+.previa-tela span { color: var(--texto-3); font-size: 11.5px; }
+.xadrez { background: repeating-conic-gradient(#20242c 0 25%, #191c22 0 50%) 0 0 / 16px 16px; }
+.aviso-previa { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); padding: 10px 14px; border-radius: 999px; background: rgba(26, 29, 35, .94); border: 1px solid var(--borda-forte); color: var(--texto-2); display: flex; gap: 8px; align-items: center; box-shadow: var(--sombra); z-index: 5; }
+
+.prop-cab { padding: 14px 14px 10px; border-bottom: 1px solid var(--borda); }
+.prop-cab h3 { margin: 0; font-size: 15px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.prop-cab .sub { color: var(--texto-3); font-size: 12px; margin-top: 3px; word-break: break-all; }
+.caminho-saida { font: 11.5px var(--mono); color: var(--texto-2); word-break: break-all; background: var(--bg); border: 1px solid var(--borda); border-radius: var(--raio); padding: 6px 8px; }
+.linha-num { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.linha-num .campo { margin: 0; }
+.linha-num input { width: 100%; }
+.opcoes-radio { display: flex; flex-direction: column; gap: 6px; }
+.opcoes-radio label { display: flex; gap: 8px; align-items: flex-start; font-size: 12.5px; color: var(--texto-2); cursor: pointer; }
+.opcoes-radio label b { color: var(--texto); font-weight: 600; }
+.opcoes-radio small { display: block; color: var(--texto-3); font-size: 11.5px; }
+.lista-resumo { margin: 0; padding-left: 18px; color: var(--texto-2); font-size: 12px; line-height: 1.55; }
+select.seletor.largo { width: 100%; }
+.amostra-fonte { background: #12151a; border: 1px solid var(--borda); border-radius: var(--raio); padding: 6px; }
+.amostra-fonte img { display: block; max-width: 100%; }
+.previa-bloco > header .btn { margin-left: auto; }
+.telas { padding: 14px; display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 12px; }
+.tela-mini { margin: 0; background: var(--painel); border: 1px solid var(--borda); border-radius: var(--raio); overflow: hidden; }
+.tela-mini.convertida { border-color: var(--acento); }
+.tela-img { height: 130px; display: grid; place-items: center; padding: 6px; }
+.tela-img img { max-width: 100%; max-height: 100%; }
+.tela-mini figcaption { padding: 6px 9px; display: flex; justify-content: space-between; gap: 8px; font-size: 12px; }
+.tela-mini figcaption small { color: var(--texto-3); }

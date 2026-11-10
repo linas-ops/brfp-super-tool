@@ -4,8 +4,8 @@
     leve      sem runtime: o BRFP Super Tool.bat baixa o Python na primeira vez e cada ferramenta baixa os pacotes
               de que precisa quando for aberta
 
-O pacote leva também o motor do Conversor PES → FC e o RDBM 26 · Add-on FC 27 quando eles estão na pasta de trabalho
-(ficam em ferramentas/conversor_pes/motor e ferramentas/rdbm). Nunca leva o que é deste computador: preferências,
+O pacote leva também o RDBM 26 · Add-on FC 27 quando ele está na pasta de trabalho
+(fica em ferramentas/rdbm). Nunca leva o que é deste computador: preferências,
 banco e idioma importados, caches, o perfil da janela, saídas, backups, componentes_locais.json, addon.ini.
 
 Edição (--edicao placares, ver comum/edicao.py): o Super Tool com só as ferramentas da edição, numa pasta com outro nome
@@ -31,7 +31,8 @@ import edicao  # noqa: E402
 RAIZ_ZIP = "BRFP Super Tool"
 # pastas e arquivos deste computador (em qualquer nível, fora de runtime/); .worktrees e .claude são cópias de trabalho
 PASTAS_FORA = {".perfil_janela", "dados", "cache", "__pycache__", "exportados", "saida", "autosalvo", "downloads",
-               "backups", "work", ".git", ".vscode", ".idea", ".worktrees", ".claude"}
+               "backups", "work", ".git", ".vscode", ".idea", ".worktrees", ".claude",
+               "projetos"}  # projetos: edições salvas do Editor de Placares (ferramentas/placares/projetos)
 ARQUIVOS_FORA = {"preferencias.json", "componentes_locais.json", "addon.ini", "addon.log", "local.json", "thumbs.db",
                  "desktop.ini", ".git"}
 EXTENSOES_FORA = (".pyc", ".pyo", ".tmp", ".parcial", ".log", ".bak")
@@ -102,10 +103,7 @@ def lista(tipo, ed=None):
             raise componentes.ErroComponente("Faltam pacotes no Python embutido (" + ", ".join(sorted(set(faltam))) +
                                              "). Instale tudo em Componentes antes de gerar o pacote completo.")
         itens += _varrer(componentes.RUNTIME, RAIZ_ZIP + "/runtime", runtime=True)
-    # motor do Conversor PES e add-on do RDBM que ficam fora da pasta do Super Tool (na pasta de trabalho)
-    conv = base.pasta_conversor()
-    if os.path.isfile(os.path.join(conv, "converter.py")) and not _dentro(conv, SUPERTOOL):
-        itens += _varrer(conv, RAIZ_ZIP + "/ferramentas/conversor_pes/motor")
+    # add-on do RDBM que fica fora da pasta do Super Tool (na pasta de trabalho)
     rdbm = base.pasta_rdbm()
     if os.path.isfile(os.path.join(rdbm, "RDBM26_FC27.exe")) and not _dentro(rdbm, SUPERTOOL):
         itens += _varrer(rdbm, RAIZ_ZIP + "/ferramentas/rdbm", excluir_pastas=("perfil",))

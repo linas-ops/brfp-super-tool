@@ -96,18 +96,6 @@ def dialogo(modo, titulo="", inicial=None, tipos=None, multiplo=False, nome="", 
     return dialogos.escolher(modo, titulo, inicial or raiz_trabalho(), tipos, multiplo, nome, extensao)
 
 
-def pasta_conversor():
-    """Motor do Conversor PES → FC: <pasta de trabalho>/conversor (onde ele é desenvolvido) ou o que vem no pacote."""
-    e = os.environ.get("BRFP_CONVERSOR")
-    if e:
-        return e
-    pacote = os.path.join(SUPERTOOL, "ferramentas", "conversor_pes", "motor")
-    for c in (os.path.join(raiz_trabalho(), "conversor"), pacote):
-        if os.path.isfile(os.path.join(c, "converter.py")):
-            return c
-    return pacote
-
-
 def pasta_rdbm():
     """RDBM 26 · Add-on FC 27: <pasta de trabalho>/RDBM26 Add-on FC27 ou ferramentas/rdbm (pacote)."""
     pacote = os.path.join(SUPERTOOL, "ferramentas", "rdbm")
