@@ -1,4 +1,7 @@
-# Editor de Banco — versão 1.1
+# Editor de Banco — versão 1.2
+
+1.2: corrige o erro "module 'edicao' has no attribute 'ErroEdicao'" ao abrir (desde a 3.6 o Super Tool tem outro
+`edicao.py`, o das edições, que era carregado no lugar do editor).
 
 Edita o banco do jogo importado em **Dados do jogo** (Super Tool) — qualquer versão: FIFA 16, 21, 22, 23, FC 24, 25, 26 e 27.
 O banco original **nunca é alterado**: as mudanças ficam numa edição (salva sozinha, com desfazer) e **Gravar banco**

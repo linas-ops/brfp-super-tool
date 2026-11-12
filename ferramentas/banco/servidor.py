@@ -15,14 +15,15 @@ import time
 import traceback
 
 AQUI = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, AQUI)
+# o edicao.py daqui vem antes do comum (lá há outro edicao.py, o das edições do Super Tool, sem ErroEdicao/Edicao)
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(AQUI)), "comum"))
+sys.path.insert(0, AQUI)
 
 import base  # noqa: E402
 import dados  # noqa: E402
 import edicao as E  # noqa: E402
 
-VERSAO = "1.1"
+VERSAO = "1.2"
 PREFS = base.Prefs(os.path.join(AQUI, "preferencias.json"), {"saida": ""})
 CACHE = os.path.join(AQUI, "cache")
 LOCK = threading.RLock()

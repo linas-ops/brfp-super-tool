@@ -522,7 +522,8 @@ def gerar_atributos(perfil, j, overall, genero=0):
         for k in GK_ATR:
             if k in out:
                 out[k] = int(min(out[k], 6 + int(semente("gk", j["id"], k) * 10)))
-    out["skillmoves"] = int(max(1, min(5, round(base["sm"] + (0.6 if (st.get("dribles_certos") or 0) > 40 else 0)))))
+    # o banco guarda as estrelas de dribles - 1 (0 a 4): goleiro 0 = 1 estrela
+    out["skillmoves"] = int(max(0, min(4, round(base["sm"] + (0.6 if (st.get("dribles_certos") or 0) > 40 else 0)))))
     out["weakfootabilitytypecode"] = int(max(1, min(5, round(base["wf"]))))
     return out
 

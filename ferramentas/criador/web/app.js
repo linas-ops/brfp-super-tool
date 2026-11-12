@@ -610,10 +610,27 @@ function desenharPrevia(i, t, corpo) {
     el('div', { class: 'acoes-linha' },
       el('button', { class: 'btn peq', disabled: !fortes.length || t.usar_db_todos, title: 'Os jogadores do banco vão para este time (saem do clube atual); nenhum é criado em dobro', onclick: () => ajustar(i.id, null, { _usar_db_todos: true }) }, icone('ligar', 12), 'Usar os do banco'),
       el('button', { class: 'btn-fantasma peq', disabled: !t.usar_db_todos && !usando, title: 'Cria todos de novo, com os dados da fonte', onclick: async () => { await ajustar(i.id, null, { _usar_db_todos: false }); for (const j of t.jogadores.filter((x) => (aj[String(x.api_id)] || {}).usar_db !== undefined)) await api('ajustar', { id: i.id, api_id: j.api_id, usar_db: null }); desenharPrincipal(); } }, icone('mais', 12), 'Criar todos novos'))) : null;
+  const op = S.e.opcoes;
+  const criados = t.jogadores.filter((j) => !j.usar_db && j.origem !== 'livre');
+  const comFicha = criados.filter((j) => j.ficha);
+  const duvida = criados.filter((j) => !j.ficha && Object.keys(j.fichas || {}).length).length;
+  const pes = i.pes || {};
+  const barraFichas = (op.fichas_sofifa || op.fichas_pes || op.fichas_pesdb) ? el('div', { class: 'barra-banco barra-fichas' },
+    el('span', { html: icone('busca', 14) }),
+    el('span', {}, comFicha.length ? `${comFicha.length} de ${criados.length} jogador(es) novo(s) com ficha: ${comFicha.filter((j) => j.ficha.fonte === 'sofifa').length} do sofifa (ID da EA em ${criados.filter((j) => j.playerid_ea).length}) e ${comFicha.filter((j) => j.ficha.fonte === 'pes').length} do PES.` : 'Nenhum jogador novo com ficha do sofifa ou do PES.',
+      duvida ? el('span', { class: 'alerta-txt' }, ` ${duvida} talvez (selo com ?): confira na ficha.`) : null,
+      op.fichas_sofifa && !S.e.sofifa?.baixada ? el('span', { class: 'alerta-txt' }, ' A base do sofifa ainda não foi baixada.') : null,
+      op.fichas_pes && !S.e.pes_base?.baixada ? el('span', { class: 'alerta-txt' }, ' A base do PES ainda não foi baixada.') : null,
+      op.fichas_pesdb ? el('span', { class: 'mudo' }, pes.buscados ? ` pesdb.net: ${pes.achados} de ${pes.buscados} achados.` : ' pesdb.net: ainda não buscado.') : null),
+    el('div', { class: 'acoes-linha' },
+      op.fichas_sofifa && !S.e.sofifa?.baixada ? el('button', { class: 'btn peq', disabled: S.e.tarefa.ativa, onclick: baixarSofifa }, icone('baixar', 12), 'Baixar a base do sofifa (96 MB)') : null,
+      op.fichas_pes && !S.e.pes_base?.baixada ? el('button', { class: 'btn peq', disabled: S.e.tarefa.ativa, onclick: baixarPes }, icone('baixar', 12), 'Baixar a base do PES (95 MB)') : null,
+      op.fichas_pesdb ? el('button', { class: 'btn-fantasma peq', disabled: S.e.tarefa.ativa, title: 'Procura no pesdb.net (eFootball e PES antigos) os jogadores novos que ainda não foram buscados (1 pedido a cada 2 s; o site bloqueia por 1 hora depois de ~250 pedidos)', onclick: () => buscarPes([i.id], false) }, icone('busca', 12), pes.buscados ? 'Buscar os que faltam no pesdb.net' : 'Buscar no pesdb.net') : null,
+      op.fichas_pesdb && pes.buscados ? el('button', { class: 'btn-fantasma peq', disabled: S.e.tarefa.ativa, title: 'Busca de novo todos (o que já veio do site fica no cache)', onclick: () => buscarPes([i.id], true) }, icone('recarregar', 12), 'De novo') : null)) : null;
   corpo.append(el('div', { class: 'cartao' }, el('header', {}, el('div', {}, el('h3', {}, 'Elenco gerado'), el('p', { class: 'dica' }, 'Titulares marcados em azul (na ordem da formação). Tudo o que vai para o jogo se muda aqui; o nome abre a ficha com nomes, ID, posições, aparência e atributos. Valores mudados ficam em azul. O × no começo da linha tira o jogador do elenco (ele não é criado).')),
     el('div', { class: 'acoes-linha' }, S.e.fotos_ok ? el('button', { class: 'btn peq', title: 'Baixa as fotos (não gasta chamadas) e lê pele, cabelo e barba', onclick: () => analisarFotos([i.id]) }, icone('rosto', 12), i.fotos ? `Fotos analisadas (${i.fotos})` : 'Analisar as fotos') : null,
       el('button', { class: 'btn-fantasma peq', disabled: !nAj && !t.usar_db_todos, onclick: () => ajustar(i.id, null, { limpar: true }) }, icone('restaurar', 12), 'Voltar ao gerado'))),
-  barraBanco,
+  barraBanco, barraFichas,
   el('div', { class: 'cartao-corpo justo', style: { overflowX: 'auto' } }, el('table', { class: 'tabela elenco' },
     el('thead', {}, el('tr', {}, ...['', 'Nº', 'Foto', 'Jogador', 'Posição', 'Geral', 'Pot.', 'Nasc.', 'Nacion.', 'Alt.', 'Peso', 'Pé', 'PR', 'Dri', 'Pele', 'Min.', tm ? 'Valor' : 'Nota', 'Gols', ''].map((h) => el('th', { title: { PR: 'Perna ruim (1–5)', Dri: 'Dribles (1–5)', Pele: 'Aparência (tom de pele)', 'Pot.': 'Potencial', Valor: 'Valor de mercado na Transfermarkt (é dele que sai a nota)' }[h] || '' }, h)))), tb))));
 }
@@ -634,6 +651,7 @@ function linhaJogador(i, t, j, a, titular, muda) {
   const livre = j.origem === 'livre';
   const seloBanco = livre ? el('span', { class: 'selo-db usa', title: `Jogador sem contrato do banco (ID ${j.playerid}) que completa o elenco: entra neste time e sai do Sem Contrato` }, 'SEM CONTRATO')
     : nb ? el('span', { class: `selo-db ${j.usar_db ? 'usa' : ''}`, title: `${j.usar_db ? 'Usando o jogador do banco' : 'Já existe no banco'}: ${nb.nome} · ${nb.clube_nome || (nb.idolo ? 'ídolo (Liga Clássica)' : 'sem clube')} · ID ${nb.playerid} · geral ${nb.overall}${nb.forte ? '' : ' (confira: nome ou nascimento não batem por completo)'}` }, j.usar_db ? 'DO BANCO' : 'NO BANCO') : null;
+  const seloFicha = j.usar_db || livre ? null : seloDaFicha(j);
   const trocaBanco = nb && !nb.idolo && !livre ? el('button', { class: 'link-banco', title: j.usar_db ? 'Criar um jogador novo com os dados da fonte' : `Usar ${nb.nome} do banco (sai do ${nb.clube_nome || 'clube atual'} e vem para este time; nada é criado em dobro)`,
     onclick: (ev) => { ev.stopPropagation(); muda(j, { usar_db: !j.usar_db }); } }, j.usar_db ? 'criar novo' : 'usar o do banco') : null;
   const camisaInp = num('camisa', j.camisa, 1, 99, '44px');
@@ -643,8 +661,8 @@ function linhaJogador(i, t, j, a, titular, muda) {
     el('td', {}, j.foto ? el('img', { class: 'foto-j', src: im(j.foto), alt: '', loading: 'lazy', title: 'Abrir a ficha', onclick: () => modalJogador(i, t, j, a), onerror: (e) => { e.target.replaceWith(el('span', { class: 'foto-j vazia', html: icone('pessoa', 14) })); } })
       : el('span', { class: 'foto-j vazia', title: 'Sem foto na fonte', html: icone('pessoa', 14) })),
     el('td', { class: 'nome clicavel', title: 'Abrir a ficha (nomes, ID, posições, aparência e atributos)', onclick: () => modalJogador(i, t, j, a) },
-      el('b', {}, j.nome, j.capitao || a.capitao ? el('span', { class: 'selo-c', title: 'Capitão' }, 'C') : null, seloBanco),
-      el('small', {}, `${j.primeiro} ${j.sobrenome}`.trim() + ` · ID ${j.playerid}${j.playerid_manual ? ' (escolhido)' : ''}${j.usar_db ? ` · do ${j.clube || 'banco'}` : ''}` + (j.nome_api && j.nome_api !== j.nome ? ` · API: ${j.nome_api}` : ''), trocaBanco ? ' · ' : '', trocaBanco)),
+      el('b', {}, j.nome, j.capitao || a.capitao ? el('span', { class: 'selo-c', title: 'Capitão' }, 'C') : null, seloBanco, seloFicha),
+      el('small', {}, `${j.primeiro} ${j.sobrenome}`.trim() + ` · ID ${j.playerid}${j.playerid_manual ? ' (escolhido)' : j.playerid_ea ? ' (da EA)' : ''}${j.usar_db ? ` · do ${j.clube || 'banco'}` : ''}` + (j.nome_api && j.nome_api !== j.nome ? ` · API: ${j.nome_api}` : ''), trocaBanco ? ' · ' : '', trocaBanco)),
     el('td', {}, pos, el('div', { class: 'origem-pos' }, j.pos_origem, j.posicoes2?.length ? ` · ${j.posicoes2.map((p) => POS[p]).join('/')}` : '')),
     el('td', {}, num('overall', j.overall, 40, 99, '52px', j.overall_auto)),
     el('td', {}, num('potencial', j.potential, 40, 99, '52px', j.potential_auto)),
@@ -665,6 +683,64 @@ function linhaJogador(i, t, j, a, titular, muda) {
   }
   return linha;
 }
+
+// ---------------------------------------------------------------- fichas de outros jogos (sofifa e PES)
+const NOME_FONTE = { sofifa: 'sofifa', pes: 'PES' };
+function descFicha(f) {
+  return `${f.nome}${f.clube ? ` · ${f.clube}` : ''}${f.idade ? ` · ${f.idade} anos na época` : ''} · geral ${f.overall}${f.overall_pes ? ` (PES ${f.overall_pes})` : ''}${f.pos !== null && f.pos !== undefined ? ` · ${POS[f.pos] || ''}` : ''} · ID ${f.fonte === 'pes' ? 'Konami ' : 'EA '}${f.id}`;
+}
+function tituloFicha(j, f) {
+  return `${NOME_FONTE[f.fonte]} · ${f.versao}: ${descFicha(f)}.\n` + (j.ficha_nota === 'estimada'
+    ? `Ficha antiga: a nota é a estimada (${j.overall_auto}; a da ficha era ${f.overall}), com o perfil de atributos da ficha.`
+    : 'Nota, posições, pé, perna ruim, dribles, físico e atributos vêm da ficha.')
+    + (j.playerid_ea ? `\nplayerid ${j.playerid}: o ID do jogador na EA.` : '') + (j.ficha_aviso ? `\n${j.ficha_aviso}.` : '') + '\nClique no nome para trocar ou desligar.';
+}
+function seloDaFicha(j) {
+  const f = j.ficha;
+  if (f) return el('span', { class: `selo-ficha ${f.fonte}`, title: tituloFicha(j, f) }, f.versao);
+  const achadas = Object.values(j.fichas || {});
+  if (!achadas.length) return null;
+  return el('span', { class: 'selo-ficha duvida', title: `Pode ser: ${achadas.map((x) => `${x.versao} · ${descFicha(x)}`).join(' / ')}.\nNão foi usada (o nascimento não bate ou falta, ou há outro parecido). Confira na ficha do jogador.` }, `${achadas[0].versao}?`);
+}
+function blocoFichas(i, j, a, fechar) {
+  const muda = async (d) => { fechar(); await ajustar(i.id, j.api_id, d); };
+  const linhas = [];
+  for (const f of Object.values(j.fichas || {})) {
+    const usada = !!j.ficha && j.ficha.fonte === f.fonte;
+    const ver = f.fonte === 'sofifa' && (f.versoes || []).length > 1
+      ? el('select', { class: 'seletor', title: 'Edição do FIFA', onchange: (e) => muda({ ficha: true, ficha_fonte: 'sofifa', ficha_ver: +e.target.value }) },
+        ...f.versoes.map((v) => opt(v.ver, `${v.versao} · ${v.overall}${v.clube ? ` · ${v.clube}` : ''}`, f.ver))) : null;
+    linhas.push(el('div', { class: `ficha-ext ${usada ? 'usada' : ''}` },
+      el('span', { class: `selo-ficha ${f.fonte}` }, f.versao), el('span', {}, descFicha(f)),
+      el('span', { class: 'mudo peq-txt' }, usada ? (j.ficha_nota === 'estimada' ? '— usada (perfil de atributos; nota estimada)' : '— usada') : f.auto ? '— achada' : '— não usada: confira'),
+      el('div', { class: 'acoes-linha' }, ver, f.url ? el('a', { class: 'link-banco', href: f.url, target: '_blank', rel: 'noopener' }, 'abrir') : null,
+        usada ? null : el('button', { class: 'btn peq', onclick: () => muda({ ficha: true, ficha_fonte: f.fonte }) }, 'Usar esta'))));
+    for (const alt of f.alternativas || []) {
+      const ePes = alt.fonte === 'pes';
+      linhas.push(el('div', { class: 'ficha-ext' }, el('span', { class: 'mudo peq-txt' }, 'Ou é este?'), el('span', {}, `${alt.nome} · ${alt.versao}${alt.clube ? ` · ${alt.clube}` : ''} · ${alt.nascimento || (alt.idade ? `${alt.idade} anos na época` : 'sem nascimento')} · geral ${alt.overall}`),
+        el('div', { class: 'acoes-linha' }, el('button', { class: 'btn-fantasma peq', onclick: () => muda(ePes ? { ficha: true, ficha_fonte: 'pes', ficha_pes_id: alt.id } : { ficha: true, ficha_fonte: 'sofifa', ficha_id: alt.id, ficha_ver: null }) }, 'Usar este'))));
+    }
+  }
+  const nada = [];
+  if (!j.fichas?.sofifa) nada.push(S.e.sofifa?.baixada ? (S.e.opcoes.fichas_sofifa ? 'não achei no sofifa' : 'busca no sofifa desligada') : 'base do sofifa não baixada');
+  if (!j.fichas?.pes) {
+    const op = S.e.opcoes;
+    nada.push(!op.fichas_pes && !op.fichas_pesdb ? 'busca no PES desligada'
+      : (op.fichas_pes ? (S.e.pes_base?.baixada ? 'não achei no PES 2021' : 'base do PES não baixada') : '')
+        + (op.fichas_pesdb ? `${op.fichas_pes ? ' nem' : 'não achei'} no pesdb.net${j.pes_buscado ? ` (${j.pes_buscado.length} edições)` : ' (ainda não buscado)'}` : ''));
+  }
+  const auto = a.ficha === undefined && !a.ficha_fonte && !a.ficha_id && !a.ficha_ver && !a.ficha_pes_id;
+  return el('div', { class: 'campo' }, el('label', {}, 'Fichas de outros jogos (sofifa e PES)'),
+    el('div', { class: 'fichas-lista' }, ...linhas,
+      nada.length ? el('div', { class: 'mudo peq-txt' }, nada.join(' · ') + '.') : null,
+      j.ficha_aviso ? nota(esc(j.ficha_aviso) + '.', 'alerta') : null,
+      el('div', { class: 'acoes-linha' },
+        a.ficha === false ? null : el('button', { class: 'btn-fantasma peq', disabled: !linhas.length, onclick: () => muda({ ficha: false, ficha_fonte: null, ficha_id: null, ficha_ver: null, ficha_pes_id: null }) }, 'Não usar fichas'),
+        auto ? null : el('button', { class: 'btn-fantasma peq', onclick: () => muda({ ficha: null, ficha_fonte: null, ficha_id: null, ficha_ver: null, ficha_pes_id: null }) }, icone('restaurar', 12), 'Automático'))));
+}
+async function buscarPes(ids, refazer = false) { aplicar(await tentar(() => api('buscar_pes', { ids, refazer }))); }
+async function baixarSofifa() { aplicar(await tentar(() => api('sofifa_baixar', {}))); }
+async function baixarPes() { aplicar(await tentar(() => api('pes_baixar', {}))); }
 
 function selectNacao(valor, fn, classe = '') {
   const s = el('select', { class: `nacao ${classe}`, onchange: (e) => fn(e.target.value) }, opt('', '—', valor), ...S.nacoes.map((n) => opt(n.id, n.nome, valor)));
@@ -792,19 +868,22 @@ async function modalJogador(i, t, j, a) {
     el('div', { class: 'grade-2' }, el('div', { class: 'campo' }, el('label', {}, `Tom de pele — ${({ foto: 'lido na foto', manual: 'manual', 'nação': 'do jogador genérico escolhido' })[j.aparencia_origem] || ''}`), peles),
       el('div', { class: 'col-gap' }, el('div', { class: 'campo' }, el('label', {}, 'Cor do cabelo (nome aproximado)'), cabelo), el('div', { class: 'campo' }, el('label', {}, 'Barba'), barba))),
     el('details', { class: 'secao', open: !!a.atr }, el('summary', { html: icone('seta', 12, 'seta') + 'Atributos (vazio = o gerado; a nota geral não é recalculada)' }), grade));
+  let mJog = null;
+  if (!j.usar_db && j.origem !== 'livre') corpoM.insertBefore(blocoFichas(i, j, a, () => mJog && mJog.fechar(null)), corpoM.querySelector('details.secao'));
   const nb = j.no_banco;
   if (nb) {
     corpoM.prepend(nota(`${j.usar_db ? '<b>Usando o jogador do banco</b>' : '<b>Já existe no banco</b>'}: ${esc(nb.nome)} · ${esc(nb.clube_nome || (nb.idolo ? 'ídolo (Liga Clássica)' : 'sem clube'))} · ID ${nb.playerid} · geral ${nb.overall}${nb.forte ? ' (mesmo nascimento)' : ' — confira, o nascimento não bate ou falta'}.${j.usar_db ? ' Ele sai do clube atual e vem para este time; nota, atributos e aparência continuam os dele.' : ' Se for ele, use o do banco para não criar o mesmo jogador duas vezes.'}`, j.usar_db ? 'info' : 'alerta'));
   }
-  const r = await modal({ titulo: j.nome, texto: `${POS[j.pos]} · ${j.overall} · ${j.idade ?? '?'} anos · ${j.nacionalidade || ''}`, largo: true, corpo: corpoM,
+  mJog = modal({ titulo: j.nome, texto: `${POS[j.pos]} · ${j.overall} · ${j.idade ?? '?'} anos · ${j.nacionalidade || ''}`, largo: true, corpo: corpoM,
     botoes: [{ rotulo: 'Tirar do elenco', classe: 'btn-fantasma perigo', fn: () => 'tirar' },
       nb && !nb.idolo ? { rotulo: j.usar_db ? 'Criar um novo' : 'Usar o do banco', classe: 'btn-fantasma', fn: () => 'banco' } : null,
-      { rotulo: 'Voltar ao gerado', classe: 'btn-fantasma', fn: () => 'limpar' }, { rotulo: 'Cancelar', valor: null }, { rotulo: 'Aplicar', classe: 'btn-primario', padrao: true, fn: () => 'ok' }].filter(Boolean) }).promessa;
+      { rotulo: 'Voltar ao gerado', classe: 'btn-fantasma', fn: () => 'limpar' }, { rotulo: 'Cancelar', valor: null }, { rotulo: 'Aplicar', classe: 'btn-primario', padrao: true, fn: () => 'ok' }].filter(Boolean) });
+  const r = await mJog.promessa;
   if (!r) return;
   if (r === 'tirar') return ajustar(i.id, j.api_id, { excluir: true });
   if (r === 'banco') return ajustar(i.id, j.api_id, { usar_db: !j.usar_db });
   if (r === 'limpar') {
-    const vazio = Object.fromEntries(['overall', 'pos', 'pe', 'potencial', 'nomes', 'camisa', 'nascimento', 'nacao', 'altura', 'peso', 'perna_ruim', 'dribles', 'playerid', 'posicoes2', 'capitao'].map((k) => [k, null]));
+    const vazio = Object.fromEntries(['overall', 'pos', 'pe', 'potencial', 'nomes', 'camisa', 'nascimento', 'nacao', 'altura', 'peso', 'perna_ruim', 'dribles', 'playerid', 'posicoes2', 'capitao', 'ficha', 'ficha_fonte', 'ficha_ver', 'ficha_id', 'ficha_pes_id'].map((k) => [k, null]));
     vazio.atr = Object.fromEntries(Object.keys(a.atr || {}).map((k) => [k, '']));
     vazio.aparencia = Object.fromEntries(Object.keys(a.aparencia || {}).map((k) => [k, '']));
     return ajustar(i.id, j.api_id, vazio);
@@ -1365,6 +1444,7 @@ function desenharPropriedades() {
     el('div', { class: 'acoes-linha' }, el('button', { class: 'btn-primario peq', disabled: !podeGerar(), onclick: gerar }, icone('bancoDados', 12), 'Gerar banco'),
       el('button', { class: 'btn peq', disabled: !op.saida, onclick: () => tentar(() => api('abrir', {})) }, icone('externo', 12), 'Abrir a pasta')),
   ]));
+  p.append(secao('fichas', 'Fichas do sofifa e do PES', 'busca', secaoFichas()));
   const c = e.calibracao || {};
   const ct = e.calibracao_tm || {};
   p.append(secao('calib', 'Calibração das notas', 'alvo', [
@@ -1373,6 +1453,34 @@ function desenharPropriedades() {
     el('div', { class: 'mudo peq-txt' }, 'Erro médio testado com o time fora da amostra. Recalibrar casa os jogadores do cache (das duas fontes) com os mesmos jogadores do banco e refaz os coeficientes. Colete times que já existem no banco para melhorar.'),
     el('div', { class: 'acoes-linha' }, el('button', { class: 'btn peq', onclick: recalibrar }, icone('alvo', 12), 'Recalibrar com o cache')),
   ]));
+}
+
+function secaoFichas() {
+  const e = S.e;
+  const op = e.opcoes;
+  const sf = e.sofifa || {};
+  const pb = e.pes_base || {};
+  const vers = new Set(op.pes_versoes || []);
+  const chipsPes = el('div', { class: 'versoes-pes' }, ...(e.pes_versoes || []).map((v) => el('button', { class: `chip clicavel ${vers.has(v.id) ? 'ativo' : ''}`,
+    onclick: () => { if (vers.has(v.id)) vers.delete(v.id); else vers.add(v.id); opcoes({ pes_versoes: (e.pes_versoes || []).map((x) => x.id).filter((x) => vers.has(x)) }); } }, v.nome)));
+  return [
+    el('div', { class: 'peq-txt' }, 'Cada jogador novo é procurado no FIFA (sofifa) e no PES. Achou com segurança (mesmo nascimento no sofifa; no PES, nome, idade e nação batendo e ninguém parecido): o jogador ganha as posições, o pé, a perna ruim, os dribles, o físico e os atributos da ficha — e, do sofifa, o ID da EA.'),
+    sf.baixada ? el('div', { class: 'peq-txt', html: `<b>Base do sofifa</b>: ${esc((sf.versoes || []).length ? `${sf.versoes[0].nome} a ${sf.versoes[sf.versoes.length - 1].nome}` : '—')} · ${fmt(sf.fichas)} fichas de ${fmt(sf.jogadores)} jogadores.` })
+      : nota('A base do sofifa ainda não está neste computador: 96 MB, baixada uma vez (o site do sofifa recusa programas, então a busca é feita aqui).', 'alerta'),
+    el('div', { class: 'acoes-linha' }, el('button', { class: sf.baixada ? 'btn-fantasma peq' : 'btn peq', disabled: e.tarefa.ativa, onclick: baixarSofifa }, icone('baixar', 12), sf.baixada ? 'Baixar de novo' : 'Baixar a base (96 MB)'),
+      el('button', { class: 'btn-fantasma peq', disabled: e.tarefa.ativa, title: 'Junta outras edições (CSV no formato do sofifa, ex.: players_22.csv do Kaggle)', onclick: async () => aplicar(await tentar(() => api('sofifa_importar', {}))) }, icone('mais', 12), 'Juntar CSV…')),
+    interruptor({ titulo: 'Procurar no sofifa (FIFA)', descricao: 'Na base do computador: instantâneo e sem limite.', marcado: op.fichas_sofifa, aoMudar: (v) => opcoes({ fichas_sofifa: v }) }).el,
+    pb.baixada ? el('div', { class: 'peq-txt', html: `<b>Base do PES</b>: PES 2021 com o patch VirtuaRED ${esc(pb.patch || '')} (elencos de ${esc((pb.data || '').slice(0, 4))}) · ${fmt(pb.jogadores)} jogadores de ${fmt(pb.times)} times.` })
+      : nota('A base do PES ainda não está neste computador: 95 MB (PES 2021 com o patch VirtuaRED, do projeto PESXplorer), baixada uma vez.', 'alerta'),
+    el('div', { class: 'acoes-linha' }, el('button', { class: pb.baixada ? 'btn-fantasma peq' : 'btn peq', disabled: e.tarefa.ativa, title: 'Baixa a versão mais nova do patch', onclick: baixarPes }, icone('baixar', 12), pb.baixada ? 'Baixar de novo' : 'Baixar a base (95 MB)')),
+    interruptor({ titulo: 'Procurar no PES 2021 (VirtuaRED)', descricao: 'Na base do computador: instantâneo e sem limite. Os atributos do PES são convertidos para os do FC (erro médio de 1,5 na nota e 6 nos atributos).', marcado: op.fichas_pes, aoMudar: (v) => opcoes({ fichas_pes: v }) }).el,
+    interruptor({ titulo: 'Também no pesdb.net ao coletar', descricao: 'Online: eFootball e PES 2016 a 2021, para quem não está na base (as edições mais perto da temporada do elenco). 1 pedido a cada 2 s, e o site bloqueia por 1 hora depois de ~250 pedidos: um elenco leva de 1 a 3 minutos.', marcado: op.fichas_pesdb, aoMudar: (v) => opcoes({ fichas_pesdb: v }) }).el,
+    op.fichas_pesdb ? campo('Edições no pesdb.net', chipsPes) : null,
+    interruptor({ titulo: 'Usar o ID da EA', descricao: 'O jogador novo ganha o playerid do sofifa (se estiver livre no banco).', marcado: op.fichas_id, aoMudar: (v) => opcoes({ fichas_id: v }) }).el,
+    campo('Nota de quem tem ficha', seg(op.fichas_nota || 'auto', [['auto', 'Automática', 'A da ficha se ela for de até 1 ano atrás; numa mais antiga, a nota estimada com o perfil de atributos da ficha'], ['ficha', 'A da ficha', 'Sempre a nota da ficha, mesmo antiga'], ['estimada', 'A estimada', 'A nota da fonte (valor de mercado/estatísticas); a ficha dá o perfil de atributos']], (v) => opcoes({ fichas_nota: v }))),
+    campo('Achado nos dois', seg(op.fichas_preferir || 'recente', [['recente', 'O mais recente'], ['sofifa', 'Sofifa'], ['pes', 'PES']], (v) => opcoes({ fichas_preferir: v }))),
+    el('div', { class: 'mudo peq-txt' }, 'Para desligar tudo, desmarque as buscas. Na ficha de cada jogador dá para trocar a edição, escolher outro ou não usar.'),
+  ];
 }
 
 function propsItem(i) {
@@ -1514,7 +1622,7 @@ function instalarTm() {
   return instalarComponentes({ rota: 'tm_componentes', rotaInstalar: 'tm_componentes_instalar', aoTerminar: async () => { await atualizar(); if (fonteAtual() === TM) { S.nav = novaNav(TM); desenharApi(); } } });
 }
 
-async function opcoes(d) { aplicar(await tentar(() => api('opcoes', d))); if (('espalhamento' in d || 'visual' in d || 'aparencia_fotos' in d) && itemSel()?.tipo === 'time' && S.aba !== 'atualizar') desenharPrincipal(); }
+async function opcoes(d) { aplicar(await tentar(() => api('opcoes', d))); if (['espalhamento', 'visual', 'aparencia_fotos', 'fichas_sofifa', 'fichas_pes', 'fichas_pesdb', 'fichas_nota', 'fichas_id', 'fichas_preferir'].some((k) => k in d) && itemSel()?.tipo === 'time' && S.aba !== 'atualizar') desenharPrincipal(); }
 async function escolherSaida() { const r = await tentar(() => api('dialogo', {})); if (r) aplicar(r); }
 async function recalibrar() {
   const fim = aviso('Recalibrando…', { tempo: 60000 });
@@ -1615,6 +1723,15 @@ function fimTarefa(t) {
   } else if (t.tipo === 'atualizar') {
     aviso(t.erro ? 'A conferência parou' : 'Conferência pronta', { tipo: t.erro ? 'aviso' : 'sucesso', detalhe: t.erro || t.msg, tempo: t.erro ? 10000 : 4000 });
     if (S.aba === 'atualizar') { desenharAtualizarEsq(); desenharAtualizacao(); }
+  } else if (t.tipo === 'sofifa') {
+    aviso(t.erro ? 'Base do sofifa: problema' : 'Base do sofifa pronta', { tipo: t.erro ? 'erro' : 'sucesso', detalhe: t.erro || `${t.msg} Os jogadores novos já são procurados nela.`, tempo: t.erro ? 12000 : 5000 });
+    if (S.aba !== 'atualizar') desenharPrincipal();
+  } else if (t.tipo === 'pes') {
+    aviso(t.erro ? 'A busca no pesdb.net parou' : 'Busca no pesdb.net concluída', { tipo: t.erro ? 'aviso' : 'sucesso', detalhe: t.erro || 'Os achados aparecem com o selo da edição do PES no elenco.', tempo: t.erro ? 10000 : 4000 });
+    if (S.aba !== 'atualizar') desenharPrincipal();
+  } else if (t.tipo === 'pes_base') {
+    aviso(t.erro ? 'Base do PES: problema' : 'Base do PES pronta', { tipo: t.erro ? 'erro' : 'sucesso', detalhe: t.erro || `${t.msg} Os jogadores novos já são procurados nela.`, tempo: t.erro ? 12000 : 5000 });
+    if (S.aba !== 'atualizar') desenharPrincipal();
   } else if (t.tipo === 'gerar') {
     if (t.erro) { aviso('A geração falhou', { tipo: 'erro', detalhe: t.erro, tempo: 12000 }); return; }
     const r = t.resultado || {};
@@ -1639,6 +1756,7 @@ function menus() {
     ['Projeto', () => [
       { rotulo: 'Coletar o que falta', icone: 'baixar', desabilitado: S.e.tarefa.ativa, fn: () => coletar(null) },
       { rotulo: 'Analisar as fotos de todos', icone: 'rosto', desabilitado: S.e.tarefa.ativa || !S.e.fotos_ok, fn: () => analisarFotos(null) },
+      { rotulo: 'Buscar todos no pesdb.net (os que faltam)', icone: 'busca', desabilitado: S.e.tarefa.ativa || !S.e.opcoes.fichas_pesdb, fn: () => buscarPes(null) },
       { rotulo: 'Gerar banco', icone: 'bancoDados', atalho: 'Ctrl+Enter', desabilitado: !podeGerar(), fn: gerar },
       '-',
       { rotulo: 'Pasta de saída…', icone: 'pasta', fn: escolherSaida },

@@ -34,6 +34,7 @@ import apifutebol as A  # noqa: E402
 import base  # noqa: E402
 import coleta as C  # noqa: E402
 import coleta_tm as CT  # noqa: E402
+import fichas as F  # noqa: E402
 import transfermarkt as T  # noqa: E402
 import componentes  # noqa: E402
 import dados  # noqa: E402
@@ -62,11 +63,16 @@ def exige_motor():
         raise base.ErroUsuario(MOTOR["msg"])
 
 
-VERSAO = "2.4"
+VERSAO = "2.5"
 PREFS = base.Prefs(os.path.join(AQUI, "preferencias.json"), {
     "saida": "", "espalhamento": 1.25, "escalacoes": 5, "modo": "temporada", "perfis_faltantes": 10, "baixar_imagens": True,
     "classificacao": True, "jogador_inicio": 460000, "time_inicio": 150000, "liga_inicio": 3000, "visual": "proprio",
-    "aparencia_fotos": True, "minifaces_auto": False, "fonte": "apifootball", "tm_estatisticas": False, "completar_tm": False})
+    "aparencia_fotos": True, "minifaces_auto": False, "fonte": "apifootball", "tm_estatisticas": False, "completar_tm": False,
+    # fichas de outros jogos: sofifa e PES 2021 (bases no computador) e pesdb.net (online, opcional, buscado ao coletar)
+    "fichas_sofifa": True, "fichas_pes": True, "fichas_pesdb": False, "fichas_nota": "auto", "fichas_id": True,
+    "fichas_preferir": "recente", "pes_versoes": [v for v, _, _ in F.VERSOES_PES]})
+OPCOES_FICHAS = ("fichas_sofifa", "fichas_pes", "fichas_pesdb", "fichas_nota", "fichas_id", "fichas_preferir")
+PES = F.PesDb()
 ARQ_PROJETO = os.path.join(AQUI, "cache", "projeto.json")
 LOCK = threading.RLock()
 API = A.Api()
@@ -101,6 +107,7 @@ def tm_status(forcar=False):
     return _TM_STATUS["v"]
 P = {"itens": [], "sel": None, "atualizacoes": [], "selecoes_pares": {}}
 TAREFA = {"ativa": False, "tipo": None, "msg": "", "feito": 0, "total": 0, "erro": None, "fim": 0, "resultado": None}
+PES.ao_esperar = lambda s: TAREFA.update(msg=f"PES: o pesdb.net pediu uma pausa de {s} s (limite de pedidos do site)…")
 _PERFIL = {"sig": None, "perfil": None, "ligas": None, "nacoes": None}
 FEM = re.compile(r"\b(women|womens|feminin[oa]|femenin[oa]|fem\.?|ladies|frauen|w)\b|\(w\)|\bwfc\b|\bgirls\b", re.I)
 
@@ -305,6 +312,8 @@ def resumo_item(it):
         d["ajustados"] = len([k for k in (it.get("ajustes") or {}) if not k.startswith("_")])
         d["avisos"] = (dd or {}).get("avisos") or []
         d["fotos"] = sum(1 for v in (it.get("fotos") or {}).values() if v and v.get("alvo"))
+        fp = it.get("fichas_pes") or {}
+        d["pes"] = {"buscados": len(fp), "achados": sum(1 for v in fp.values() if v and v.get("ficha"))}
     return d
 
 
@@ -340,7 +349,8 @@ def estado_payload():
             "tm": tm_status(), "fontes": FONTES,
             "calibracao": N.carregar_coef() if MOTOR["ok"] else {}, "calibracao_tm": N.carregar_coef_tm() if MOTOR["ok"] else {},
             "motor": {"ok": MOTOR["ok"], "msg": MOTOR["msg"], "instalar": not MOTOR["ok"]},
-            "fotos_ok": _aparencia_disponivel()}
+            "fotos_ok": _aparencia_disponivel(), "sofifa": F.sofifa().estado(), "pes_base": F.pes_local().estado(),
+            "pes_versoes": [{"id": v, "nome": n} for v, n, _ in F.VERSOES_PES]}
 
 
 def api_inicio(_):
@@ -713,7 +723,8 @@ def api_item(d):
 
 
 CAMPOS_JOGADOR = ("overall", "pos", "pe", "potencial", "excluir", "nomes", "camisa", "nascimento", "nacao", "altura", "peso",
-                  "perna_ruim", "dribles", "playerid", "posicoes2", "capitao", "playerid_banco")
+                  "perna_ruim", "dribles", "playerid", "posicoes2", "capitao", "playerid_banco", "ficha_fonte", "ficha_ver",
+                  "ficha_id", "ficha_pes_id")
 
 
 def api_ajustar(d):
@@ -748,6 +759,11 @@ def api_ajustar(d):
                     a.pop("usar_db", None)
                 else:
                     a["usar_db"] = bool(d["usar_db"])
+            if "ficha" in d:                               # ficha do sofifa/PES: True usa, False não usa, None automático
+                if d["ficha"] is None:
+                    a.pop("ficha", None)
+                else:
+                    a["ficha"] = bool(d["ficha"])
             for k in ("atr", "aparencia"):                 # dicionários: mescla (valor vazio volta ao gerado)
                 if k in d:
                     atual = dict(a.get(k) or {})
@@ -897,6 +913,7 @@ def _coletar(ids, refazer):
                         if not it.get("selecao"):
                             _nivel_pelo_valor(it, lig_item)
                     gravar_projeto()
+                    _pes_ao_coletar(iid, op, erros)
                     continue
                 if it.get("selecao"):
                     dd = C.coletar_selecao(API, it["api"], C.ultima_temporada(API, it["temporada"]), int(it.get("escalacoes") or 0),
@@ -915,6 +932,8 @@ def _coletar(ids, refazer):
                     it.update(dados=dd, estado="pronto", erro=None)
                     if not it.get("selecao"):
                         _nivel_pela_classificacao(it, lig_item)
+                gravar_projeto()
+                _pes_ao_coletar(iid, op, erros)
             except (A.ErroApi, T.ErroTm) as ex:
                 with LOCK:
                     it.update(estado="erro", erro=str(ex))
@@ -932,6 +951,22 @@ def _coletar(ids, refazer):
     finally:
         TAREFA.update(ativa=False, fim=time.time())
         gravar_projeto()
+
+
+def _pes_ao_coletar(iid, op, erros):
+    """Com "pesdb.net" ligado, a coleta já procura os jogadores novos no site (o que já foi buscado fica)."""
+    if not op.get("fichas_pesdb"):
+        return
+    try:
+        with LOCK:
+            it = item(iid)
+            it["fichas_pes"] = {}                          # elenco novo: busca de novo
+        _pes_do_item(iid)
+    except F.ErroPes as ex:
+        erros.append(f"PES: {ex}")
+    except Exception as ex:  # noqa: BLE001
+        traceback.print_exc()
+        erros.append(f"PES ({iid}): {type(ex).__name__}: {ex}")
 
 
 _CLASSIF = {}
@@ -1051,7 +1086,8 @@ def _nivel_pela_classificacao(it, lig_item):
 def _projeto(op=None):
     exige_motor()
     op = op or PREFS.ler()
-    return G.Projeto(banco(), dados.idioma_atual(), perfil(), {k: op[k] for k in ("jogador_inicio", "time_inicio", "liga_inicio", "espalhamento") if k in op})
+    return G.Projeto(banco(), dados.idioma_atual(), perfil(), {k: op[k] for k in ("jogador_inicio", "time_inicio", "liga_inicio", "espalhamento")
+                                                               + OPCOES_FICHAS if k in op})
 
 
 def _genero(it):
@@ -1063,7 +1099,7 @@ def _extra(it, op=None):
     ex = {"modelo": it.get("modelo"), "visual": op.get("visual") or "proprio", "posicao_tabela": it.get("posicao_tabela"),
           "teamid": it.get("teamid"), "tatica": it.get("tatica") or {}, "tecnico": it.get("tecnico") or {},
           "estadio": it.get("estadio") or {}, "forca": it.get("forca"), "menos11": it.get("menos11"),
-          "fotos": _alvos_foto(it) if op.get("aparencia_fotos", True) else {}}
+          "fotos": _alvos_foto(it) if op.get("aparencia_fotos", True) else {}, "fichas_pes": it.get("fichas_pes") or {}}
     if it.get("selecao"):
         intl = dados.internationals_atual()
         so = it.get("sel_opcoes") or {}
@@ -1190,6 +1226,134 @@ def _gerar(pasta, nome, itens, atualizacoes):
         TAREFA.update(erro=f"{type(ex).__name__}: {ex}", msg="A geração falhou.")
     finally:
         TAREFA.update(ativa=False, fim=time.time())
+
+
+# ------------------------------------------------------------------ fichas de outros jogos (sofifa e PES)
+def _tarefa(tipo, msg, alvo, *args):
+    with LOCK:
+        if TAREFA["ativa"]:
+            raise base.ErroUsuario("Já há uma tarefa em andamento.")
+        TAREFA.update(ativa=True, tipo=tipo, msg=msg, feito=0, total=100, erro=None, fim=0, resultado=None)
+    threading.Thread(target=alvo, args=args, daemon=True).start()
+    return estado_payload()
+
+
+def api_sofifa_baixar(_):
+    return _tarefa("sofifa", "Baixando a base do sofifa…", _sofifa_baixar)
+
+
+def _sofifa_baixar():
+    try:
+        def prog(msg, feito, total):
+            TAREFA.update(msg=msg, feito=int(100 * feito / total) if total else 100, total=100)
+        r = F.sofifa().baixar(prog)
+        TAREFA.update(msg=f"Base do sofifa pronta: {r['fichas']:,} fichas.".replace(",", "."), feito=100, resultado=r)
+    except Exception as ex:  # noqa: BLE001
+        traceback.print_exc()
+        TAREFA.update(erro=str(ex), msg="A base do sofifa não foi baixada.")
+    finally:
+        TAREFA.update(ativa=False, fim=time.time())
+
+
+def api_pes_baixar(_):
+    return _tarefa("pes_base", "Baixando a base do PES…", _pes_baixar)
+
+
+def _pes_baixar():
+    try:
+        def prog(msg, feito, total):
+            TAREFA.update(msg=msg, feito=int(100 * feito / total) if total else 100, total=100)
+        r = F.pes_local().baixar(prog)
+        TAREFA.update(msg=f"Base do PES pronta: {r['jogadores']:,} jogadores.".replace(",", "."), feito=100, resultado=r)
+    except Exception as ex:  # noqa: BLE001
+        traceback.print_exc()
+        TAREFA.update(erro=str(ex), msg="A base do PES não foi baixada.")
+    finally:
+        TAREFA.update(ativa=False, fim=time.time())
+
+
+def api_sofifa_importar(_):
+    """Junta à base CSVs no formato do sofifa (ex.: players_22.csv do Kaggle, ou um de outra edição)."""
+    arqs = base.dialogo("abrir", "CSV(s) do sofifa para juntar à base", None, tipos=[("CSV do sofifa", "*.csv"), ("Todos", "*.*")],
+                        multiplo=True)
+    if not arqs:
+        return {"cancelado": True, **estado_payload()}
+    return _tarefa("sofifa", "Juntando os CSVs à base do sofifa…", _sofifa_importar, list(arqs))
+
+
+def _sofifa_importar(arqs):
+    try:
+        n = F.sofifa().montar(arqs, ", ".join(os.path.basename(a) for a in arqs) if not F.sofifa().existe()
+                              else (F.sofifa().estado().get("origem") or "") + " + " + ", ".join(os.path.basename(a) for a in arqs))
+        TAREFA.update(msg=f"{n:,} fichas juntadas à base do sofifa.".replace(",", "."), feito=100)
+    except Exception as ex:  # noqa: BLE001
+        traceback.print_exc()
+        TAREFA.update(erro=str(ex), msg="Os CSVs não foram juntados.")
+    finally:
+        TAREFA.update(ativa=False, fim=time.time())
+
+
+def api_buscar_pes(d):
+    """Procura no pesdb.net os jogadores novos dos times escolhidos (ids) ou de todos os coletados."""
+    with LOCK:
+        alvo = [it["id"] for it in P["itens"] if it["tipo"] == "time" and it.get("dados")
+                and (not d.get("ids") or it["id"] in d["ids"] or it.get("liga_item") in d["ids"])]
+    if not alvo:
+        raise base.ErroUsuario("Nada para buscar: colete os times antes.")
+    return _tarefa("pes", "Procurando no PES…", _buscar_pes_tarefa, alvo, bool(d.get("refazer")))
+
+
+def _buscar_pes_tarefa(ids, refazer):
+    erros = []
+    try:
+        for n, iid in enumerate(ids):
+            TAREFA.update(feito=int(100 * n / len(ids)))
+            try:
+                _pes_do_item(iid, refazer)
+            except F.ErroPes as ex:
+                erros.append(str(ex))
+                break
+        TAREFA.update(feito=100, msg="Busca no PES concluída." if not erros else "A busca no PES parou.", erro="\n".join(erros) or None)
+    except Exception as ex:  # noqa: BLE001
+        traceback.print_exc()
+        TAREFA.update(erro=f"{type(ex).__name__}: {ex}", msg="A busca no PES falhou.")
+    finally:
+        TAREFA.update(ativa=False, fim=time.time())
+        gravar_projeto()
+
+
+def _pes_do_item(iid, refazer=False):
+    """Busca no PES os jogadores que serão criados neste time (os que vêm do banco e os tirados do elenco ficam de fora).
+    Cada resultado fica no projeto (fichas_pes), mesmo "não achei", para não buscar de novo."""
+    op = PREFS.ler()
+    with LOCK:
+        it = item(iid)
+    pr = api_previa({"id": iid}).get("time") or {}
+    criados = {str(j["api_id"]) for j in pr.get("jogadores") or [] if not j.get("usar_db") and not j.get("existente")
+               and j.get("origem") not in ("livre",)}
+    jogs = [j for j in (it.get("dados") or {}).get("jogadores") or [] if str(j["id"]) in criados]
+    feitos = it.get("fichas_pes") or {}
+    if not refazer:
+        jogs = [j for j in jogs if str(j["id"]) not in feitos]
+    clube = ((it.get("dados") or {}).get("time") or {}).get("nome") or it.get("nome")
+    import gerador as G
+    ref = F._dias(G.data_ref_tm(it.get("dados") or {}))     # elenco antigo: as edições do PES daquela época
+    novos = {}
+    for k, j in enumerate(jogs):
+        TAREFA.update(msg=f"PES · {it['nome']}: {j.get('nome')} ({k + 1} de {len(jogs)})…")
+        r = PES.buscar(j, op.get("pes_versoes"), clube=None if it.get("selecao") else clube, ref=ref,
+                       progresso=lambda v, j=j: TAREFA.update(msg=f"PES · {it['nome']}: {j.get('nome')} ({v})…"))
+        r["quando"] = datetime.date.today().isoformat()
+        novos[str(j["id"])] = r
+        if k % 5 == 4:                                     # grava aos poucos (a busca pode ser longa)
+            with LOCK:
+                it.setdefault("fichas_pes", {}).update(novos)
+            gravar_projeto()
+            novos = {}
+    with LOCK:
+        it.setdefault("fichas_pes", {}).update(novos)
+    gravar_projeto()
+    return len(jogs)
 
 
 # ------------------------------------------------------------------ aparência pelas fotos
@@ -1663,7 +1827,7 @@ def api_opcoes(d):
     op = PREFS.ler()
     for k in ("saida", "espalhamento", "escalacoes", "modo", "perfis_faltantes", "baixar_imagens", "classificacao",
               "jogador_inicio", "time_inicio", "liga_inicio", "visual", "aparencia_fotos", "minifaces_auto", "fonte", "tm_estatisticas",
-              "completar_tm"):
+              "completar_tm", "pes_versoes") + OPCOES_FICHAS:
         if k in d:
             op[k] = d[k]
     PREFS.gravar(op)
@@ -1751,7 +1915,9 @@ ROTAS_POST = {k: _protegido(v) for k, v in {
     "atualizar_remover": api_atualizar_remover, "atualizar_criar": api_atualizar_criar, "tm_config": api_tm_config,
     "tm_testar": api_tm_testar, "atualizar_preparar_varias": api_atualizar_preparar_varias,
     "atualizar_conferir_varias": api_atualizar_conferir_varias, "atualizar_casar_selecoes": api_atualizar_casar_selecoes,
-    "atualizar_selecoes_projeto": api_atualizar_selecoes_projeto, "atualizar_casar_individual": api_atualizar_casar_individual}.items()}
+    "atualizar_selecoes_projeto": api_atualizar_selecoes_projeto, "atualizar_casar_individual": api_atualizar_casar_individual,
+    "sofifa_baixar": api_sofifa_baixar, "sofifa_importar": api_sofifa_importar, "buscar_pes": api_buscar_pes,
+    "pes_baixar": api_pes_baixar}.items()}
 _G, _P = base.rotas_componentes("criador", ao_concluir=carregar_motor)
 ROTAS_GET.update(_G)
 ROTAS_POST.update(_P)
