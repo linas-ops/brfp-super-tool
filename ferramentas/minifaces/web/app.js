@@ -8,11 +8,14 @@ import { importarReferencias } from './comum/referencias.js';
 const S = {
   itens: [], opcoes: {}, export: {}, analisando: 0, motor: {}, banco: null, time: null, sel: null, item: null, foto: null,
   modo: 'mover', elenco: [], elencoTime: null, times: null, fundoVista: 'xadrez', ref: false, polling: null, ultimoFimExport: null,
+  removebg: {},
 };
 const FUNDOS = [['auto', 'Automático', 'Usa a transparência da foto se houver; senão separa o jogador do fundo.'],
   ['transparencia', 'Transparência', 'Usa o canal alfa da foto (PNG recortado), limpando o halo semitransparente.'],
   ['remover', 'Remover fundo', 'Separa o jogador do fundo pela cor e pelo rosto (GrabCut). Use o pincel para corrigir.'],
+  ['removebg', 'remove.bg', 'Tira o fundo pelo remove.bg (internet), com a chave da sua conta. Cada foto gasta uma chamada uma vez só: o recorte fica guardado neste computador.'],
   ['nenhum', 'Manter tudo', 'Não mexe no fundo (a foto entra inteira no quadro).']];
+const ORIGENS = { pontos: 'detectado (olhos, nariz e boca)', frente: 'detectado', perfil: 'detectado (perfil)', silhueta: 'estimado pela silhueta', nenhum: 'não encontrado' };
 
 async function tentar(fn) { try { return await fn(); } catch (e) { aviso(e.message, { tipo: 'erro' }); return undefined; } }
 const sel = () => S.itens.find((i) => i.id === S.sel) || null;
@@ -21,7 +24,7 @@ const fmt = (n) => Number(n || 0).toLocaleString('pt-BR');
 // ---------------------------------------------------------------- estado
 function aplicar(r) {
   if (!r) return;
-  for (const k of ['itens', 'opcoes', 'export', 'analisando', 'motor', 'banco', 'time']) if (k in r) S[k] = r[k];
+  for (const k of ['itens', 'opcoes', 'export', 'analisando', 'motor', 'banco', 'time', 'removebg']) if (k in r) S[k] = r[k];
   if (r.do_criador) aviso(`${r.do_criador} foto(s) do Criador de Ligas e Times`, { tipo: 'sucesso', detalhe: 'Já ligadas aos IDs dos jogadores novos. Confira o enquadramento e exporte.', tempo: 6000 });
   if (S.sel !== null && !S.itens.some((i) => i.id === S.sel)) S.sel = null;
   if (S.sel === null && S.itens.length) selecionar(S.itens[0].id, false);
@@ -54,7 +57,8 @@ function iniciarPolling() {
     aplicar(r);
     // a foto selecionada terminou de ser analisada: carrega a foto e a prévia
     const agora = sel();
-    if (agora && (!S.item || S.item.id !== agora.id || (antes && antes.estado === 'analisando' && agora.estado !== 'analisando'))) carregarItem(agora.id);
+    if (agora && (!S.item || S.item.id !== agora.id || (antes && antes.estado === 'analisando' && agora.estado !== 'analisando') ||
+      (antes && (antes.previa !== agora.previa || antes.erro !== agora.erro)))) carregarItem(agora.id);
     if (!r.analisando && !r.export.rodando) { clearInterval(S.polling); S.polling = null; }
   }, 700);
 }
@@ -252,20 +256,22 @@ function desenharFoto() {
     t.pontos.forEach((p, i) => { const [X, Y] = paraTela(g, p[0], p[1]); if (i) ctx.lineTo(X, Y); else ctx.moveTo(X, Y); });
     if (t.pontos.length === 1) { const [X, Y] = paraTela(g, t.pontos[0][0], t.pontos[0][1]); ctx.arc(X, Y, t.raio * g.k, 0, Math.PI * 2); ctx.fill(); } else ctx.stroke();
   }
-  // janela da miniface (escurece o resto)
+  // janela da miniface (escurece o resto); pode estar girada (cabeça endireitada)
   const jan = S.arrasto && S.arrasto.janela ? S.arrasto.janela : it.janela;
   if (jan) {
-    const [X0, Y0] = paraTela(g, jan[0], jan[1]);
-    const L = jan[2] * g.k;
+    const cs = cantosJanela(jan).map(([x, y]) => paraTela(g, x, y));
     ctx.save();
     ctx.fillStyle = 'rgba(8,10,14,.55)';
     ctx.beginPath();
     ctx.rect(0, 0, g.W, g.H);
-    ctx.rect(X0 + L, Y0, -L, L);
+    ctx.moveTo(...cs[0]); ctx.lineTo(...cs[3]); ctx.lineTo(...cs[2]); ctx.lineTo(...cs[1]); ctx.closePath();
     ctx.fill('evenodd');
     ctx.strokeStyle = '#4c8dff';
     ctx.lineWidth = 2;
-    ctx.strokeRect(X0, Y0, L, L);
+    ctx.beginPath();
+    cs.forEach((c, i) => (i ? ctx.lineTo(...c) : ctx.moveTo(...c)));
+    ctx.closePath();
+    ctx.stroke();
     ctx.restore();
   }
   // rosto
@@ -279,8 +285,25 @@ function desenharFoto() {
     ctx.strokeRect(X, Y, r[2] * g.k, r[2] * g.k);
     ctx.restore();
   }
+  // pontos do rosto (olhos, nariz e boca) que guiam o enquadramento
+  const pts = it.pontos || (!it.params.rosto && it.analise.pontos) || null;
+  if (pts && !(S.arrasto && S.arrasto.tipo === 'rosto')) {
+    ctx.save();
+    ctx.fillStyle = '#ff9233';
+    ctx.strokeStyle = 'rgba(0,0,0,.6)';
+    for (const [x, y] of pts) { const [X, Y] = paraTela(g, x, y); ctx.beginPath(); ctx.arc(X, Y, 2.6, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); }
+    ctx.restore();
+  }
   const a = it.analise;
-  $('#legenda-foto').textContent = `${a.largura}×${a.altura} · ${a.transparente ? 'com transparência' : 'sem transparência'} · rosto: ${it.params.rosto ? 'marcado à mão' : { frente: 'detectado', perfil: 'detectado (perfil)', silhueta: 'estimado pela silhueta', nenhum: 'não encontrado' }[a.origem] || a.origem}`;
+  const giro = jan && Math.abs(jan[3] || 0) >= 0.5 ? ` · endireitada ${Math.abs(jan[3]).toLocaleString('pt-BR', { maximumFractionDigits: 1 })}°` : '';
+  $('#legenda-foto').textContent = `${a.largura}×${a.altura} · ${a.transparente ? 'com transparência' : 'sem transparência'} · rosto: ${it.params.rosto ? 'marcado à mão' : ORIGENS[a.origem] || a.origem}${giro}`;
+}
+
+// janela [x, y, lado, giro°]: canto de cima à esquerda da miniface na foto, lado e giro da miniface dentro da foto
+function cantosJanela(j) {
+  const t = ((j[3] || 0) * Math.PI) / 180, L = j[2];
+  const ux = [Math.cos(t) * L, Math.sin(t) * L], uy = [-Math.sin(t) * L, Math.cos(t) * L];
+  return [[j[0], j[1]], [j[0] + ux[0], j[1] + ux[1]], [j[0] + ux[0] + uy[0], j[1] + ux[1] + uy[1]], [j[0] + uy[0], j[1] + uy[1]]];
 }
 
 function prepararCanvas() {
@@ -310,7 +333,7 @@ function prepararCanvas() {
     const [x, y] = paraFoto(g, e.offsetX, e.offsetY);
     const a = S.arrasto;
     if (a.tipo === 'mover') {
-      a.janela = [a.janela0[0] + (x - a.x0), a.janela0[1] + (y - a.y0), a.janela0[2]];
+      a.janela = [a.janela0[0] + (x - a.x0), a.janela0[1] + (y - a.y0), a.janela0[2], a.janela0[3] || 0];
     } else if (a.tipo === 'rosto') {
       const s = Math.max(Math.abs(x - a.x0), Math.abs(y - a.y0));
       a.rosto = [x < a.x0 ? a.x0 - s : a.x0, y < a.y0 ? a.y0 - s : a.y0, s];
@@ -330,8 +353,11 @@ function prepararCanvas() {
       const dxs = a.janela[0] - a.janela0[0], dys = a.janela[1] - a.janela0[1];
       if (Math.abs(dxs) + Math.abs(dys) < 0.5) { desenharFoto(); return; }
       const aj = it.params.ajuste;
+      // o quadro pode estar girado (cabeça endireitada): o deslocamento na foto vai para os eixos da miniface
+      const t = ((it.janela[3] || 0) * Math.PI) / 180;
+      const ox = dxs * Math.cos(t) + dys * Math.sin(t), oy = -dxs * Math.sin(t) + dys * Math.cos(t);
       // mover o quadro para a direita = o rosto vai para a esquerda na miniface
-      await enviar({ ajuste: { dx: aj.dx - dxs * 180 / lado, dy: aj.dy - dys * 180 / lado } });
+      await enviar({ ajuste: { dx: aj.dx - ox * 180 / lado, dy: aj.dy - oy * 180 / lado } });
     } else if (a.tipo === 'rosto') {
       if (a.rosto[2] < 8) { desenharFoto(); return; }
       await enviar({ rosto: a.rosto.map((v) => Math.round(v * 10) / 10), ajuste: { zoom: 1, dx: 0, dy: 0 } });
@@ -374,11 +400,13 @@ async function enviar(params, ids = null) {
       Object.assign(it, r.item);
       const li = S.itens.findIndex((x) => x.id === it.id);
       if (li >= 0) S.itens[li] = { ...S.itens[li], ...r.item };
-      mostrarPrevia(r.previa);
+      if (r.previa) mostrarPrevia(r.previa);
       desenharFoto();
       desenharLista();
-      desenharPropriedadesValores();
       desenharVizinhos();
+      if (r.erro) { aviso(r.erro, { tipo: 'erro', tempo: 7000 }); desenharPropriedades(); atualizar(); }
+      else if ('fundo' in params || 'endireitar' in params) desenharPropriedades();
+      else desenharPropriedadesValores();
     } else {
       aplicar(r);
       carregarItem(it.id);
@@ -433,7 +461,7 @@ async function desenharPropriedades() {
     if (it.estado === 'analisando') et.append(el('span', { class: 'etiqueta azul' }, 'analisando…'));
     if (a.largura) et.append(el('span', { class: 'etiqueta' }, `${a.largura}×${a.altura}`), el('span', { class: 'etiqueta' }, a.transparente ? 'fundo transparente' : 'fundo opaco'));
     if (it.estado === 'sem_rosto') et.append(el('span', { class: 'etiqueta vermelha' }, 'rosto não encontrado'));
-    else if (a.origem && a.origem !== 'frente') et.append(el('span', { class: 'etiqueta amarela', title: 'Confira o enquadramento' }, a.origem === 'perfil' ? 'rosto de perfil' : 'rosto estimado'));
+    else if (a.origem && !['frente', 'pontos'].includes(a.origem)) et.append(el('span', { class: 'etiqueta amarela', title: 'Confira o enquadramento' }, a.origem === 'perfil' ? 'rosto de perfil' : 'rosto estimado'));
     if (it.exportado) et.append(el('span', { class: 'etiqueta verde', title: it.exportado }, 'exportada'));
     cab.append(et);
     p.append(cab);
@@ -464,6 +492,8 @@ async function desenharPropriedades() {
       deslizante('Zoom', 'zoom', 0.6, 1.6, 0.01, aj.zoom, (v) => Math.round(v * 100) + '%', (v) => enviar({ ajuste: { zoom: v } })),
       deslizante('Horizontal', 'dx', -60, 60, 1, aj.dx, (v) => Math.round(v) + ' px', (v) => enviar({ ajuste: { dx: v } })),
       deslizante('Vertical', 'dy', -60, 60, 1, aj.dy, (v) => Math.round(v) + ' px', (v) => enviar({ ajuste: { dy: v } })),
+      interruptor({ titulo: 'Endireitar a cabeça', descricao: 'Gira a foto para deixar os olhos na horizontal (até 20°).', marcado: it.params.endireitar !== false,
+        aoMudar: (v) => enviar({ endireitar: v }) }).el,
       el('div', { class: 'mudo peq-txt' }, 'Na foto: arraste o quadro azul para mover e use a roda do mouse para aproximar.'),
       el('div', { class: 'acoes-linha' },
         el('button', { class: 'btn peq', onclick: () => definirModo('rosto') }, icone('alvo', 12), 'Marcar o rosto'),
@@ -471,16 +501,19 @@ async function desenharPropriedades() {
         el('button', { class: 'btn-fantasma peq', title: 'Usa este zoom e posição em todas as fotos da lista', onclick: () => aplicarATodas({ ajuste: { ...aj } }) }, 'Aplicar a todas')),
     ]));
     // fundo
-    const seg = el('div', { class: 'segmentado', style: { flexWrap: 'wrap' } }, ...FUNDOS.map(([v, r, d]) => el('button', { class: it.params.fundo === v ? 'ativo' : '', title: d, onclick: () => enviar({ fundo: v }) }, r)));
+    const seg = el('div', { class: 'segmentado', style: { flexWrap: 'wrap' } }, ...FUNDOS.map(([v, r, d]) => el('button', { class: it.params.fundo === v ? 'ativo' : '', title: d, onclick: () => escolherFundo(v) }, r)));
     const desc = (FUNDOS.find((f) => f[0] === it.params.fundo) || FUNDOS[0])[2];
     p.append(secao('fundo', 'Fundo', 'pincel', [seg, el('div', { class: 'mudo peq-txt' }, desc),
+      it.params.fundo === 'removebg' ? blocoRemoveBg() : null,
       deslizante('Limpeza', 'limpeza', 0, 1, 0.05, it.params.limpeza, (v) => Math.round(v * 100) + '%', (v) => enviar({ limpeza: v })),
       el('div', { class: 'mudo peq-txt' }, 'Sobrou fundo ou sumiu parte do jogador? Pinte na foto com o pincel verde (manter) ou vermelho (apagar).'),
       el('div', { class: 'acoes-linha' },
         el('button', { class: 'btn peq', onclick: () => definirModo('manter') }, icone('pincelMais', 12), 'Manter'),
         el('button', { class: 'btn peq', onclick: () => definirModo('apagar') }, icone('borracha', 12), 'Apagar'),
-        el('button', { class: 'btn-fantasma peq', disabled: !(it.params.tracos || []).length, onclick: () => enviar({ tracos: [] }) }, 'Limpar traços')),
-    ]));
+        el('button', { class: 'btn-fantasma peq', disabled: !(it.params.tracos || []).length, onclick: () => enviar({ tracos: [] }) }, 'Limpar traços'),
+        el('button', { class: 'btn-fantasma peq', disabled: S.itens.length < 2 && S.opcoes.fundo_padrao === it.params.fundo,
+          title: 'Usa este modo de fundo em todas as fotos da lista e nas que entrarem depois', onclick: () => fundoEmTodas(it.params.fundo) }, 'Usar em todas')),
+    ].filter(Boolean)));
   }
   // saída (vale para todas)
   const op = S.opcoes;
@@ -518,6 +551,100 @@ async function aplicarATodas(params) {
   fim();
   if (r) { aplicar(r); aviso('Ajuste aplicado — as prévias se atualizam ao abrir cada foto', { tipo: 'sucesso', tempo: 2600 }); carregarItem(S.sel); }
 }
+// ---------------------------------------------------------------- fundo: modo em todas e remove.bg
+async function escolherFundo(v) {
+  if (v === 'removebg' && !S.removebg.definida && !(await configurarRemoveBg())) return;
+  await enviar({ fundo: v });
+}
+
+async function fundoEmTodas(v) {
+  const nome = (FUNDOS.find((f) => f[0] === v) || FUNDOS[0])[1];
+  const n = S.itens.length;
+  const texto = v === 'removebg'
+    ? `As ${n} fotos da lista e as que entrarem depois passam a tirar o fundo pelo remove.bg. Cada foto que ainda não passou por ele gasta <b>uma chamada</b> da sua conta (até ${n}); as que já passaram usam o recorte guardado.`
+    : `As ${n} fotos da lista e as que entrarem depois passam a usar o fundo “${esc(nome)}”.`;
+  if (v === 'removebg' && !S.removebg.definida && !(await configurarRemoveBg())) return;
+  if (!await confirmar(`Fundo “${nome}” em todas as fotos?`, texto, { rotulo: 'Usar em todas' })) return;
+  const r = await tentar(() => api('params', { ids: S.itens.map((i) => i.id), params: { fundo: v }, padrao: true }));
+  if (r) { aplicar(r); if (S.item) S.item.params.fundo = v; desenharPropriedades(); aviso('As prévias estão sendo refeitas', { tipo: 'sucesso', tempo: 2600 }); }
+}
+
+function saldoRemoveBg(c) {
+  if (!c) return 'saldo ainda não conferido';
+  const partes = [];
+  if (c.gratis != null) partes.push(`${fmt(c.gratis)} ${c.gratis === 1 ? 'chamada grátis' : 'chamadas grátis'}`);
+  if (c.creditos != null) partes.push(`${fmt(c.creditos)} ${c.creditos === 1 ? 'crédito' : 'créditos'}`);
+  return partes.join(' · ') || 'saldo indisponível';
+}
+
+function blocoRemoveBg() {
+  const rb = S.removebg || {};
+  const box = el('div', { class: 'bloco-removebg' });
+  if (!rb.definida) {
+    box.append(nota('Falta a chave da API do remove.bg. A conta grátis do remove.bg dá chamadas grátis por mês; cada foto usa uma só vez.', 'alerta'),
+      el('div', { class: 'acoes-linha' }, el('button', { class: 'btn-primario peq', onclick: configurarRemoveBg }, icone('chip', 12), 'Colocar a chave…')));
+    return box;
+  }
+  box.append(el('div', { class: 'linha-removebg', title: 'A chave fica só neste computador' }, icone('check', 13),
+    el('span', {}, el('b', { class: 'mono' }, `…${rb.fim}`), ` · ${saldoRemoveBg(rb.conta)}`)));
+  if (rb.bloqueio) box.append(nota(esc(rb.bloqueio), 'erro'));
+  box.append(el('div', { class: 'acoes-linha' },
+    el('button', { class: 'btn peq', onclick: atualizarContaRemoveBg }, icone('recarregar', 12), 'Atualizar o saldo'),
+    el('button', { class: 'btn-fantasma peq', onclick: configurarRemoveBg }, 'Trocar a chave')));
+  return box;
+}
+
+async function atualizarContaRemoveBg() {
+  const r = await tentar(() => api('removebg_conta', {}));
+  if (r) { aplicar(r); aviso(`remove.bg: ${saldoRemoveBg(r.removebg.conta)}`, { tipo: 'sucesso', tempo: 3500 }); }
+}
+
+const abrirLink = (qual) => tentar(() => api('abrir_link', { qual }));
+
+// janela da chave da API: devolve true quando sai com uma chave guardada
+async function configurarRemoveBg() {
+  const rb = S.removebg || {};
+  const inp = el('input', { type: 'password', class: 'entrada mono', placeholder: 'Chave da API do remove.bg', autocomplete: 'off', spellcheck: 'false',
+    autofocus: true, 'aria-label': 'Chave da API do remove.bg', style: { width: '100%' } });
+  const corpo = el('div', { class: 'config-removebg' },
+    el('p', { class: 'texto' }, 'O remove.bg tira o fundo das fotos pela internet, com a sua conta. Entre no site, abra ', el('b', {}, 'API Keys'),
+      ', crie uma chave e cole aqui.'),
+    inp,
+    el('div', { class: 'acoes-linha' },
+      el('button', { class: 'btn peq', onclick: () => abrirLink('chave') }, icone('externo', 12), 'Criar a chave no site'),
+      el('button', { class: 'btn-fantasma peq', onclick: () => abrirLink('precos') }, icone('externo', 12), 'Preços')),
+    el('small', { class: 'mudo' }, 'A chave fica só neste computador. Cada foto vai ao remove.bg uma vez só (só a cabeça e os ombros, em tamanho pequeno, o das chamadas grátis); o recorte fica guardado, e mexer no zoom, na posição ou no pincel não gasta outra chamada.'),
+    rb.definida ? el('div', { class: 'linha-removebg' }, icone('check', 13), el('span', {}, `Chave atual …${rb.fim} · ${saldoRemoveBg(rb.conta)}`)) : null);
+  const botoes = [];
+  if (rb.definida) {
+    botoes.push({ rotulo: 'Esquecer a chave', classe: 'btn-perigo', fn: async () => {
+      if (!await confirmar('Esquecer a chave do remove.bg?', 'A chave sai deste computador. Os recortes já feitos continuam guardados.', { rotulo: 'Esquecer', perigo: true })) return false;
+      const r = await tentar(() => api('removebg_esquecer', {}));
+      if (!r) return false;
+      aplicar(r);
+      aviso('Chave do remove.bg esquecida', { tempo: 2500 });
+      return null;
+    } });
+  }
+  botoes.push({ rotulo: 'Cancelar', classe: 'btn', valor: null },
+    { rotulo: 'Guardar', classe: 'btn-primario', padrao: true, fn: async (bt) => {
+      const chave = inp.value.trim();
+      if (!chave) { inp.focus(); return false; }
+      bt.disabled = true;
+      try {
+        const r = await api('removebg_chave', { chave });
+        aplicar(r);
+        aviso(r.conferida ? 'Chave do remove.bg guardada e conferida' : 'Chave guardada (sem conexão para conferir agora)', { tipo: r.conferida ? 'sucesso' : 'aviso', detalhe: r.conferida ? saldoRemoveBg(r.removebg.conta) : '' });
+        desenharPropriedades();
+        return true;
+      } catch (e) { aviso(e.message, { tipo: 'erro', tempo: 7000 }); bt.disabled = false; inp.select(); return false; }
+    } });
+  await modal({ titulo: 'Chave do remove.bg', corpo, botoes }).promessa;
+  desenharPropriedades();
+  desenharStatus();
+  return !!S.removebg.definida;
+}
+
 async function opcoes(d) { aplicar(await tentar(() => api('opcoes', d))); }
 async function escolherSaida() {
   const r = await tentar(() => api('dialogo', { modo: 'saida' }));
@@ -538,9 +665,10 @@ function desenharTopo() {
 
 function desenharStatus() {
   const lig = S.itens.filter((i) => i.jogador).length;
-  const sem = S.itens.filter((i) => i.estado === 'sem_rosto' || i.estado === 'erro').length;
+  const sem = S.itens.filter((i) => i.estado === 'sem_rosto').length;
+  const err = S.itens.filter((i) => i.estado === 'erro').length;
   $('#status-esq').innerHTML = S.itens.length
-    ? `<span><b>${S.itens.length}</b> fotos</span><span><b>${lig}</b> ligadas</span>${sem ? `<span><b>${sem}</b> sem rosto</span>` : ''}${S.analisando ? `<span>analisando ${S.analisando}…</span>` : ''}`
+    ? `<span><b>${S.itens.length}</b> fotos</span><span><b>${lig}</b> ligadas</span>${sem ? `<span><b>${sem}</b> sem rosto</span>` : ''}${err ? `<span><b>${err}</b> com erro</span>` : ''}${S.analisando ? `<span>analisando ${S.analisando}…</span>` : ''}`
     : '<span>Arraste fotos para a janela ou use Arquivo › Adicionar.</span>';
   const pr = $('#status-progresso');
   pr.hidden = !S.export.rodando;
@@ -558,6 +686,15 @@ function desenharStatus() {
   cm.title = S.motor.msg || '';
   cm.classList.toggle('clicavel', !!S.motor.instalar);
   cm.onclick = S.motor.instalar ? componentesMotor : null;
+  // remove.bg: só aparece quando tem chave ou alguma foto usa
+  const rb = S.removebg || {};
+  const cr = $('#chip-removebg');
+  const usa = S.itens.some((i) => i.params && i.params.fundo === 'removebg');
+  cr.hidden = !rb.definida && !usa;
+  cr.className = 'chip clicavel ' + (rb.bloqueio || (!rb.definida && usa) ? 'erro' : rb.definida ? 'ok' : '');
+  cr.innerHTML = icone(rb.bloqueio || !rb.definida ? 'aviso' : 'check', 12) + (rb.definida ? `remove.bg · ${rb.conta ? saldoRemoveBg(rb.conta) : 'chave …' + rb.fim}` : 'remove.bg sem chave');
+  cr.title = rb.bloqueio || (rb.definida ? 'Clique para trocar a chave ou ver o saldo' : 'Clique para colocar a chave do remove.bg');
+  cr.onclick = configurarRemoveBg;
 }
 
 async function componentesMotor() {
@@ -653,6 +790,9 @@ function menus() {
       { rotulo: 'Abrir pasta de saída', icone: 'externo', desabilitado: !S.opcoes.saida, fn: () => tentar(() => api('abrir', {})) },
       { rotulo: 'Exportar', icone: 'upload', atalho: 'Ctrl+E', desabilitado: S.export.rodando, fn: exportar },
       '-',
+      { rotulo: 'Chave do remove.bg…', icone: 'chip', fn: configurarRemoveBg },
+      { rotulo: 'Atualizar o saldo do remove.bg', icone: 'recarregar', desabilitado: !S.removebg.definida, fn: atualizarContaRemoveBg },
+      '-',
       { rotulo: 'Limpar a lista', icone: 'x', desabilitado: !S.itens.length, fn: limpar },
     ]],
     ['Jogadores', () => [
@@ -715,10 +855,15 @@ function sobre() {
   dialogoSobre({ nome: 'Criador de Minifaces', versao: S.versao, html: `
     Transforma fotos de jogadores em minifaces do jogo (<i>p&lt;ID&gt;.png</i>, 180×180 com fundo transparente).<br><br>
     <b>Fundo:</b> usa a transparência da foto quando existe (limpando o halo); senão separa o jogador do fundo com o GrabCut do OpenCV,
-    guiado pelo rosto e pela cor do fundo. O pincel verde/vermelho corrige o que sobrar.<br>
-    <b>Enquadramento:</b> o rosto é encontrado pelo detector do OpenCV (de frente, de perfil ou pela silhueta) e posto no mesmo lugar e
-    tamanho das minifaces originais (medido na p158023 do jogo). O botão de comparar sobrepõe uma miniface do jogo.<br>
+    guiado pelo rosto e pela cor do fundo; ou pelo <b>remove.bg</b>, com a chave da sua conta (cada foto vai uma vez só e o recorte fica
+    guardado). O pincel verde/vermelho corrige o que sobrar.<br>
+    <b>Enquadramento:</b> o detector YuNet do OpenCV acha o rosto e 5 pontos (olhos, nariz e boca); o meio dos olhos vai para o mesmo
+    lugar das minifaces do BRFP e do jogo, o tamanho sai da distância entre os olhos e dos olhos à boca (corrigida no rosto virado) e a
+    cabeça é endireitada pelas pupilas. Sem os pontos, valem os detectores antigos (de frente, de perfil ou pela silhueta). O botão de
+    comparar sobrepõe uma miniface do jogo.<br>
     <b>Jogadores:</b> com o banco importado no Super Tool, escolha o time e cada foto é ligada ao jogador pelo nome do arquivo.<br><br>
+    <b>1.4</b> — enquadramento pelos olhos, nariz e boca (tamanho e altura do rosto bem mais iguais entre as fotos), cabeça endireitada e
+    fundo pelo remove.bg.<br>
     <b>1.0</b> — primeira versão.` });
 }
 
@@ -796,6 +941,8 @@ async function iniciar() {
     if (e && JSON.stringify(e.banco) !== JSON.stringify(S.banco)) { S.times = null; S.elencoTime = null; aplicar(e); }
     // componentes instalados por outra janela (página Componentes do Super Tool): o motor sobe sozinho
     else if (e && (e.motor.ok !== S.motor.ok || e.motor.instalar !== S.motor.instalar)) aplicar(e);
+    // saldo do remove.bg relido depois das chamadas
+    else if (e && JSON.stringify(e.removebg) !== JSON.stringify(S.removebg)) { aplicar(e); desenharPropriedades(); }
     // fotos mandadas pelo Criador de Ligas e Times
     else if (e && (e.do_criador || e.itens.length !== S.itens.length)) { aplicar(e); if (e.do_criador && S.sel !== null) carregarItem(S.sel); }
   }, 5000);
