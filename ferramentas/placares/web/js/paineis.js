@@ -13,7 +13,7 @@ export function desenharArquivos() {
   const fontes = S.inicio?.fontes || [];
   sel.innerHTML = '';
   for (const f of fontes) {
-    const rot = f.tipo === 'jogo' ? 'FC 26 (jogo)' : f.tipo === 'mod' ? 'Mod: ' + f.nome : f.nome;
+    const rot = f.tipo === 'jogo' ? 'FC 26 (jogo)' : f.tipo === 'mod' ? 'Mod: ' + f.nome : f.tipo === 'big' ? 'Arquivo: ' + f.nome : f.nome;
     sel.append(el('option', { value: f.id }, rot));
   }
   if (!fontes.some((f) => f.id === S.fonteAtual) && fontes.length) S.fonteAtual = fontes[0].id;

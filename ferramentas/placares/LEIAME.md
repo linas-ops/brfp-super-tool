@@ -16,7 +16,8 @@ O editor **nunca altera o jogo nem os mods**: lê deles e grava só na pasta de 
 1. Abra pelo **BRFP Super Tool** ou dê dois cliques em **`Editor de Placares.bat`** (usa o Python embutido do Super Tool;
    sem ele, um Python 3.10+ instalado).
 2. Abre uma janela do editor (Edge/Chrome em modo aplicativo). A janela preta do servidor precisa ficar aberta.
-3. Na tela inicial: **Abrir o placar do jogo** (Generic / overlay_9002), **Ver todos os placares** ou **Abrir mod .fifamod…**.
+3. Na tela inicial: **Abrir o placar do jogo** (Generic / overlay_9002), **Ver todos os placares** ou **Abrir mod .fifamod ou .big…**
+   (um `.big` solto abre direto no editor).
 
 Linha de comando: `python servidor.py [--porta 8766] [--sem-janela]`.
 
@@ -161,10 +162,13 @@ guarda uma cópia em `projetos\backup` se a saída já tinha um arquivo que não
 
 - **FC 26** — lido direto do jogo instalado (só leitura).
 - **Mods .fifamod** do FET (formato novo "FETM"), só leitura — ex.: `Pack de TV Total y Switcher.fifamod` do LTA.
+- **Arquivos .big** soltos (um overlay ou um componente), só leitura. O editor deduz onde o arquivo fica no jogo: se ele
+  está numa árvore `data\ui\...`, usa esse caminho; `overlay_<N>.big` vai para `data/ui/game/overlays/`; qualquer outro
+  nome vira um componente em `data/ui/game/globalComponents/<pasta>/`. Use **Salvar como** para gravar em outro destino.
 - **Pastas** com a árvore `data\ui\...` (a própria `mods\legacy` do Live Editor, um export do Legacy Explorer…).
 
-Componentes importados, fontes TTF e imagens são procurados na ordem: a mesma fonte, a saída, os mods, as pastas e o
-jogo — a mesma ordem em que o jogo veria os arquivos com os mods instalados.
+Componentes importados, fontes TTF e imagens são procurados na ordem: a mesma fonte, a saída, os arquivos .big, os mods,
+as pastas e o jogo — a mesma ordem em que o jogo veria os arquivos com os mods instalados.
 
 ## Como o FC 26 guarda os placares (o que o editor lê)
 

@@ -3,7 +3,7 @@
     python servidor.py [--porta 8766] [--sem-janela]
 
 Abre a interface no navegador (janela de aplicativo do Edge/Chrome quando disponível). Só aceita conexões desta
-máquina (127.0.0.1). Lê os placares do FC 26 instalado, de mods .fifamod e de pastas; grava os arquivos editados
+máquina (127.0.0.1). Lê os placares do FC 26 instalado, de mods .fifamod, de arquivos .big e de pastas; grava os arquivos editados
 na pasta de saída (por padrão a pasta mods/legacy do Live Editor, que o jogo carrega com o Live Editor ligado).
 """
 import argparse
@@ -32,7 +32,7 @@ from nucleo import apt, as2, big, fontes, jogo, projetos, tema  # noqa: E402
 WEB = os.path.join(AQUI, "web")
 PREFS = os.path.join(AQUI, "preferencias.json")
 EXPORTADOS = os.path.join(AQUI, "exportados")
-VERSAO = "2.1"
+VERSAO = "2.2"
 # classes do jogo que os placares usam e que ficam em outros arquivos (carregadas para simular as animações)
 BIBLIOTECAS = (("data/ui/artAssets/tacticAnimations/Tactic10.big", ("StyleManager",)),
                ("data/ui/game/components/pitches/PitchAnalysis.big", ("AnimationManager",)))
@@ -109,6 +109,10 @@ def montar_fontes():
                 ant = E.fontes.get(ident)
                 novas[ident] = ant if isinstance(ant, fontes.FonteMod) and ant.caminho == os.path.abspath(item["caminho"]) \
                     else fontes.FonteMod(ident, item["caminho"], oodle)
+            elif item["tipo"] == "big" and os.path.isfile(item["caminho"]):
+                ant = E.fontes.get(ident)
+                novas[ident] = ant if isinstance(ant, fontes.FonteBig) and ant.caminho == os.path.abspath(item["caminho"]) \
+                    else fontes.FonteBig(ident, item["caminho"])
             elif item["tipo"] == "pasta" and os.path.isdir(item["caminho"]):
                 novas[ident] = fontes.FontePasta(ident, item["caminho"], item.get("nome"))
         except (jogo.ErroJogo, OSError) as ex:
@@ -126,7 +130,7 @@ def id_fonte(tipo, caminho):
 
 def desc_fonte(f):
     return {"id": f.id, "tipo": f.tipo, "nome": f.nome,
-            "caminho": f.caminho if isinstance(f, fontes.FonteMod) else getattr(f, "raiz", None)}
+            "caminho": f.caminho if isinstance(f, (fontes.FonteMod, fontes.FonteBig)) else getattr(f, "raiz", None)}
 
 
 def saida_atual():
@@ -156,7 +160,7 @@ def sessao(ident):
 
 def _ordem_fontes(incluir_saida=False):
     """A ordem em que o jogo veria um arquivo: a saída (Live Editor) por cima, depois os mods, as pastas e o jogo."""
-    ordem = (["saida"] if incluir_saida else []) + [k for k in E.fontes if k.startswith("mod:")] + \
+    ordem = (["saida"] if incluir_saida else []) + [k for k in E.fontes if k.startswith(("big:", "mod:"))] + \
         [k for k in E.fontes if k.startswith("pasta:")] + ["jogo"]
     return [k for k in ordem if k in E.fontes]
 
@@ -166,7 +170,7 @@ def _nome_fonte(f):
         return "FC 26 (jogo)"
     if f.id == "saida":
         return "Pasta de saída"
-    return ("Mod: " if f.tipo == "mod" else "Pasta: ") + f.nome
+    return {"mod": "Mod: ", "big": "Arquivo: "}.get(f.tipo, "Pasta: ") + f.nome
 
 
 def ler_efetivo(rel, incluir_saida=False):
@@ -227,7 +231,11 @@ def api_jogo_config(d):
 
 def api_fonte_adicionar(d):
     tipo, caminho = d["tipo"], os.path.abspath(d["caminho"])
-    if tipo == "mod":
+    if tipo == "mod" and caminho.lower().endswith(".big"):
+        tipo = "big"                                  # o mesmo botão abre .fifamod e .big
+    if tipo == "big":
+        fontes.FonteBig("teste", caminho)             # valida antes de guardar
+    elif tipo == "mod":
         fontes.FonteMod("teste", caminho, oodle)      # valida antes de guardar
     elif tipo == "pasta":
         if not os.path.isdir(caminho):
@@ -245,7 +253,9 @@ def api_fonte_adicionar(d):
     lst.append({"tipo": tipo, "caminho": caminho})
     p["fontes"] = lst
     E.salvar_prefs(p)
-    return api_inicio({})
+    r = api_inicio({})
+    r["adicionada"] = id_fonte(tipo, caminho)
+    return r
 
 
 def api_fonte_remover(d):
@@ -272,7 +282,9 @@ def api_dialogo(d):
     inicial = d.get("inicial") or os.path.expanduser("~")
     D = _dialogos()
     if modo == "mod":
-        p = D.escolher("abrir", "Escolha um mod do FIFA Editor Tool", inicial, [("Mod do FET", "*.fifamod"), ("Todos", "*.*")])
+        p = D.escolher("abrir", "Escolha um mod do FIFA Editor Tool ou um arquivo .big", inicial,
+                       [("Mod do FET ou arquivo .big", "*.fifamod;*.big"), ("Mod do FET", "*.fifamod"),
+                        ("Arquivo .big", "*.big"), ("Todos", "*.*")])
     elif modo == "imagem":
         p = D.escolher("abrir", "Escolha uma imagem", inicial, [("Imagens", "*.png;*.jpg;*.jpeg;*.bmp;*.webp"), ("Todos", "*.*")])
     elif modo == "fonte":
@@ -350,7 +362,7 @@ def api_componente(d):
     nos mods e no jogo — a ordem em que o jogo veria os arquivos com os mods instalados."""
     s = sessao(d["sessao"])
     rel = _caminho_import(d["filme"])
-    ordem = [s["fonte"], "saida"] + [k for k in E.fontes if k.startswith("mod:")] + \
+    ordem = [s["fonte"], "saida"] + [k for k in E.fontes if k.startswith(("big:", "mod:"))] + \
         [k for k in E.fontes if k.startswith("pasta:")] + ["jogo"]
     vistos = set()
     for k in ordem:
@@ -660,7 +672,7 @@ def get_fonte_ttf(q):
     for n in {nome, nome.replace("_", "-"), nome.replace("-", "_"), nome.replace(" ", "")}:
         for ext in (".ttf", ".TTF", ".otf"):
             cands.append(f"data/ui/fonts/{n}{ext}")
-    ordem = ["saida"] + [k for k in E.fontes if k.startswith(("mod:", "pasta:"))] + ["jogo"]
+    ordem = ["saida"] + [k for k in E.fontes if k.startswith(("big:", "mod:", "pasta:"))] + ["jogo"]
     for k in ordem:
         f = E.fontes.get(k)
         if not f:

@@ -1,11 +1,13 @@
-"""De onde vêm os arquivos: o jogo instalado, mods .fifamod (só leitura) e pastas soltas (data/ui/...).
+"""De onde vêm os arquivos: o jogo instalado, mods .fifamod (só leitura), arquivos .big avulsos (só leitura) e pastas
+soltas (data/ui/...).
 
 Todas as fontes falam o mesmo idioma: caminhos legacy como 'data/ui/game/overlays/Generic/overlay_9002.big'.
 """
 import os
 import re
+import struct
 
-from . import fifamod, jogo
+from . import big, fifamod, jogo
 from .rotulos import descricao_overlay
 
 RX_OVERLAY = re.compile(r"^data/ui/game/overlays/(?:([^/]+)/)?overlay_(\d+)\.big$", re.I)
@@ -75,6 +77,61 @@ class FonteMod(Fonte):
         d = super().info()
         d.update(self.mod.info())
         d["caminho"] = self.caminho
+        return d
+
+
+def caminho_legacy_big(caminho):
+    """Onde um .big avulso ficaria no jogo. Se ele está numa árvore data/ui/..., usa esse caminho; senão deduz pelo nome:
+    overlay_<N>.big vai para data/ui/game/overlays/ (onde ficam os conjuntos de mods) e o resto vira um componente em
+    data/ui/game/globalComponents/<pasta>/<nome>.big. O destino pode ser trocado depois no Salvar como."""
+    partes = [x for x in os.path.abspath(caminho).replace("\\", "/").split("/") if x]
+    baixas = [x.lower() for x in partes]
+    for i in range(len(baixas) - 2):
+        if baixas[i] == "data" and baixas[i + 1] == "ui":
+            return "/".join(["data"] + partes[i + 1:])
+    nome = partes[-1]
+    if not nome.lower().endswith(".big"):
+        nome += ".big"
+    if re.match(r"^overlay_\d+\.big$", nome, re.I):
+        return "data/ui/game/overlays/" + nome
+    pasta = partes[-2] if len(partes) > 1 and not partes[-2].endswith(":") else "componentes"
+    return f"data/ui/game/globalComponents/{pasta}/{nome}"
+
+
+class FonteBig(Fonte):
+    """Um arquivo .big avulso (overlay ou componente), visto no caminho legacy deduzido de onde ele está."""
+    tipo = "big"
+
+    def __init__(self, ident, caminho):
+        self.caminho = os.path.abspath(caminho)
+        if not os.path.isfile(self.caminho):
+            raise jogo.ErroJogo("Arquivo .big não encontrado.")
+        with open(self.caminho, "rb") as f:
+            dados = f.read()
+        try:
+            itens, _ = big.ler(dados)
+        except (big.ErroBig, struct.error, ValueError) as ex:
+            raise jogo.ErroJogo(f"Este arquivo não é um .big válido ({ex}).")
+        if not any(n == "0" for n, _ in itens):
+            raise jogo.ErroJogo("Este .big não tem o filme APT (entrada 0), então não parece um placar ou overlay.")
+        self.rel = caminho_legacy_big(self.caminho)
+        super().__init__(ident, os.path.basename(self.caminho))
+
+    def lista(self, prefixo=""):
+        return [self.rel] if self.rel.lower().startswith(prefixo.lower()) else []
+
+    def existe(self, nome):
+        return nome.lower().replace("\\", "/") == self.rel.lower()
+
+    def ler(self, nome):
+        if not self.existe(nome):
+            raise jogo.ErroJogo(f"Arquivo não encontrado: {nome}")
+        with open(self.caminho, "rb") as f:
+            return f.read()
+
+    def info(self):
+        d = super().info()
+        d.update({"caminho": self.caminho, "rel": self.rel, "arquivos": 1})
         return d
 
 
