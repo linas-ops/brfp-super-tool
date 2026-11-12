@@ -1,4 +1,4 @@
-# Criador de Ligas e Times — versão 2.4
+# Criador de Ligas e Times — versão 2.5
 
 Cria ligas, times, seleções e jogadores no banco do jogo (FC 26 / FC 27) a partir da **API-Football** (api-sports.io) —
 mais de 1.200 ligas e copas no mundo; só no Brasil, 109 competições — ou da **Transfermarkt** (pela transfermarkt-api) e
@@ -133,6 +133,64 @@ sempre; elencos atuais, 1 dia). A barra embaixo mostra as chamadas que restam ho
    tamanho do cabelo e se tem barba. A aparência passa a vir de um jogador genérico do banco parecido com a foto, com a
    pele, a cor do cabelo, o penteado e a barba da foto. Fotos genéricas da API ("sem foto") são ignoradas.
 6. **Gerar banco** grava na pasta de saída tudo o que está no projeto e as mudanças marcadas em *Atualizar banco*.
+
+## Fichas do sofifa e do PES (2.5)
+
+Cada jogador **novo** (os que vão ser criados, não os *Usar o do banco*) é procurado na ficha de um FIFA (sofifa) e de
+um PES. Achou com segurança, o jogador novo sai com o que a ficha tem: posições, pé, perna ruim, dribles, altura, peso e
+os 34 atributos — do sofifa, também o **ID da EA** — e, conforme a opção, a nota.
+
+- **Sofifa**: o site e a api.sofifa.net recusam programas no Cloudflare (bloqueio anti-robô, mesmo com a chave da API),
+  então a busca é numa **base do sofifa guardada no computador**: as fichas do **FIFA 15 ao FC 26** (215 mil fichas de 59
+  mil jogadores). Baixada uma vez pelo painel **Fichas do sofifa e do PES** (≈2 min; 55 MB em `dados\sofifa\sofifa.sqlite`);
+  depois a busca é instantânea e sem limite. Vem de três fontes públicas:
+  - FIFA 15 ao FC 24: um conjunto raspado do sofifa (180 mil fichas; 96 MB);
+  - **FC 25**: outra raspagem do sofifa, de 12/11/2024 (18,6 mil fichas; 14 MB). Não tem o clube, o nascimento nem a
+    nação, que vêm das outras edições do mesmo jogador (quem só aparece no FC 25 fica sem nascimento: vira *talvez*);
+  - **FC 26**: os **ratings oficiais da EA** (ea.com/games/ea-sports-fc/ratings, 16,2 mil jogadores, pela API pública do
+    site, 100 por pedido). Os IDs são os mesmos do sofifa. O FC 26 não tem os clubes brasileiros (o jogo não tem a
+    licença), mas tem os da Libertadores e da Sul-Americana dos outros países. Se a EA já tiver trocado o site para uma
+    edição mais nova, a base recebe essa edição no lugar.
+
+  Numa base baixada antes, o painel mostra **Juntar o FC 25 e o FC 26**. **Juntar CSV…** soma outras edições no formato
+  do sofifa (ex.: `players_22.csv` do Kaggle; colunas `player_id`/`sofifa_id`, `fifa_version` ou o número da edição no
+  nome do arquivo).
+- **PES**: uma **base do PES 2021 com o patch VirtuaRED** (elencos da temporada atual — o patch 10.3 é de outubro de 2026),
+  também guardada no computador: todos os 29 mil jogadores (sem as lendas), do projeto PESXplorer (licença MIT). Baixada
+  uma vez pelo painel (95 MB → 18 MB em `dados\pes\pes2021.sqlite`, ≈10 s; *Baixar de novo* pega o patch mais novo).
+  O PES não tem data de nascimento: vale o nome, a idade (as do patch valem para 1º de janeiro de 2026; a data é achada
+  sozinha comparando com o sofifa), a nação e o clube, e só quando ninguém parecido empata. Elencos de mais de 2 anos
+  antes do patch não usam o PES.
+- **pesdb.net** (opcional, desligado de início): *Também no pesdb.net ao coletar* procura online, no eFootball e no PES
+  2021 a 2016, quem a base não achou — as 3 edições mais perto da temporada do elenco, 2 a 6 pedidos por jogador. O site
+  aceita 1 pedido a cada 2 s e **bloqueia por 1 hora** depois de uns 250 pedidos; quando isso acontece a busca para, diz
+  quanto esperar e depois continua de onde parou (tudo fica em cache em `dados\pes_cache`). Também pelo botão **Buscar no
+  pesdb.net** da prévia / *Projeto › Buscar todos no pesdb.net*.
+- **Conversão PES → FC**: uma regressão por atributo do FC (cada um pelos atributos parecidos do PES + a nota geral),
+  calibrada com 4.126 jogadores de 24 a 30 anos casados entre o PES 2021 VirtuaRED e o FC 24 (goleiros à parte). Conferida
+  fora da amostra no PES 2021 oficial × FIFA 21 (70 jogadores, mesma temporada): erro médio de **1,5 na nota geral**, **5,7
+  nos atributos**, 0,4 na perna ruim e 0,3 nos dribles (`calibracao_pes.json`).
+- **Quando vale**: no sofifa, mesmo nascimento e nome compatível → automático (selo da edição na prévia, ex.: **FC 24**,
+  **PES 2021 VR**). Sem nascimento na fonte (API-Football), só com nome quase igual, idade e nação batendo e um candidato
+  só; o resto aparece como *talvez* (selo com **?**) e não é usado sem você escolher. Achado nos dois, vale **o mais
+  recente** (ou o que você escolher em *Achado nos dois*) — num elenco de hoje, quase sempre o PES; o ID da EA continua
+  vindo do sofifa.
+- **Nota**: *Automática* usa a nota da ficha se ela é de até 1 ano antes do elenco; numa ficha mais antiga (FIFA 17 de um
+  jogador de hoje), a nota continua a estimada pela fonte e a ficha só dá o **perfil** (os atributos são deslocados juntos
+  até a nota da posição). *A da ficha* e *A estimada* forçam um dos dois. O potencial da ficha só entra quando a nota é a
+  dela. Num elenco antigo (Transfermarkt, temporada passada), a ficha do sofifa é a da edição daquela época.
+- **ID da EA**: o jogador novo ganha o playerid do sofifa se ele estiver livre no banco e não for de outro jogador do
+  projeto (senão, um ID novo, com o aviso na ficha). Se esse ID já está no banco **com o mesmo nascimento**, o jogador é
+  marcado **NO BANCO** ("via sofifa") mesmo com outro nome.
+- **Posições**: as da ficha só quando a fonte não dá a posição exata (a Transfermarkt dá; a API-Football, não).
+- **Na ficha do jogador**: o bloco *Fichas* mostra o que foi achado em cada fonte, a edição do FIFA (dá para trocar: FIFA
+  21, FC 24…), *Ou é este?* com os outros candidatos (do sofifa e do PES), *Usar esta*, *Não usar fichas* e *Automático*.
+- **Desligar**: desmarque *Procurar no sofifa* e *Procurar no PES 2021* no painel (ou só uma delas); *Usar o ID da EA*
+  desliga só o ID.
+- Testado: Flamengo 2026 (Transfermarkt) — 26 de 28 jogadores com ficha (24 do PES 2021 VR, 2 do sofifa); Jorginho,
+  Danilo e Bruno Henrique desempatados dos xarás pelo clube; Pedrão (FC 24) não confundido com o Pedro.
+- Correção junto: os **dribles** na prévia e na ficha agora são as estrelas (1 a 5); o banco guarda estrelas − 1, e o
+  gerador antes podia gravar 5 (= 6 estrelas).
 
 ## Seleções
 

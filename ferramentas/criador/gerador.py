@@ -20,7 +20,10 @@ import collections
 import datetime
 import re
 
+import numpy as np
+
 import casamento as K
+import fichas as F
 import notas as N
 
 MAX_JOGADORES = 40
@@ -121,6 +124,18 @@ class Ids:
         self.usados.add(v)
         self.manuais.add(v)
         return v
+
+
+def _resumo_ficha(f):
+    """A ficha de outro jogo como a prévia mostra (sem os atributos)."""
+    if not f:
+        return None
+    out = {k: f.get(k) for k in ("fonte", "versao", "ver", "data", "id", "nome", "nome_completo", "nascimento", "idade",
+                                 "nacionalidade", "clube", "overall", "overall_pes", "potential", "pos", "nota", "forte",
+                                 "auto", "manual", "url")}
+    out["versoes"] = f.get("versoes") or []
+    out["alternativas"] = f.get("alternativas") or []
+    return out
 
 
 def nomes_jogador(j):
@@ -246,6 +261,7 @@ class Projeto:
         self._nomes_times = None
         self.clubes_mexidos = set()    # clubes do banco que perderam jogadores para times novos (escalação refeita)
         self.excluidos = []            # jogadores tirados do último elenco preparado (para a prévia)
+        self._ref_fichas = None        # fim da temporada de um elenco antigo (fichas daquela época)
 
     # ---- utilidades
     def tab(self, nome):
@@ -572,7 +588,8 @@ class Projeto:
         mod_form = self.modelo_formacao(formacao, modelo)
         teamid = str(self.ids_time().reservar(ex["teamid"], "teamid") if ex.get("teamid") else self.ids_time().novo())
         # jogadores: posição, nota, atributos
-        jogs = self._preparar_jogadores(dados, None if auto_tm else nivel_time, genero, ajustes, ex.get("fotos") or {})
+        jogs = self._preparar_jogadores(dados, None if auto_tm else nivel_time, genero, ajustes, ex.get("fotos") or {},
+                                        ex.get("fichas_pes"))
         fo_mod = self.copiar("formations", "teamid", mod_form)[0]
         vagas = [int(fo_mod[f"position{i}"]) for i in range(11)]
         insuficiente = len(jogs) < MINIMO_ELENCO or sum(1 for j in jogs if j["pos"] == 0) < MINIMO_GOLEIROS
@@ -898,11 +915,141 @@ class Projeto:
             mesma = [d for d in mesma if dist(d) <= m + 0.01] or [d for d in cands if dist(d) <= m + 0.01]
         return mesma[int(N.semente("tecnico", chave) * len(mesma)) % len(mesma)]
 
+    # ---- fichas de outros jogos (sofifa e PES)
+    def _ficha(self, j, aj, pes, clube):
+        """Procura o jogador no sofifa e no PES 2021 (as duas bases no computador) e, se ligado, pega o que o pesdb.net
+        achou (buscado antes, em segundo plano). Guarda em j as fichas encontradas (para a prévia) e a que vale
+        (ficha_usada): entre as que batem com segurança (mesmo nascimento; sem ele, nome, idade e nação batendo e
+        ninguém parecido), a mais recente — salvo escolha na ficha."""
+        op = self.op
+        j["fichas"], j["ficha_usada"], j["ficha_id_ea"] = {}, None, None
+        if op.get("fichas_sofifa", True) and F.sofifa().existe():
+            base = F.sofifa()
+            esc = None
+            try:
+                if aj.get("ficha_id"):                     # outro jogador do sofifa, escolhido à mão
+                    esc = base.ficha(aj["ficha_id"], aj.get("ficha_ver"), ref=self._ref_fichas)
+                    if esc:
+                        esc.update(nota=1.0, forte=True, auto=True, manual=True)
+                else:
+                    cands = base.buscar(j, clube=clube, ref=self._ref_fichas)
+                    if cands:
+                        sc, pid, esc = cands[0]
+                        unico = len(cands) == 1 or cands[1][0] < sc - 0.1
+                        esc["auto"] = bool(esc["forte"] or (sc >= 0.85 and unico))
+                        if aj.get("ficha_ver") and int(aj["ficha_ver"]) != esc["ver"]:
+                            outra = base.ficha(pid, aj["ficha_ver"])
+                            if outra:
+                                outra.update({k: esc[k] for k in ("nota", "forte", "auto")})
+                                esc = outra
+                        esc["alternativas"] = [{"fonte": "sofifa", "id": p, "nome": x["nome"], "versao": x["versao"], "clube": x["clube"],
+                                                "overall": x["overall"], "nascimento": x["nascimento"], "nota": s}
+                                               for s, p, x in cands[1:4]]
+            except Exception as ex:  # noqa: BLE001  (base corrompida: a prévia continua sem o sofifa)
+                self.avisos.append(f"sofifa: {ex}")
+            if esc:
+                j["fichas"]["sofifa"] = esc
+        if op.get("fichas_pes", True) and F.pes_local().existe():   # PES 2021 (patch VirtuaRED) no computador
+            bp, escp = F.pes_local(), None
+            try:
+                if aj.get("ficha_pes_id"):                 # outro jogador do PES, escolhido à mão
+                    escp = bp.ficha(aj["ficha_pes_id"])
+                    if escp:
+                        escp.update(nota=1.0, forte=True, auto=True, manual=True)
+                else:
+                    cands = bp.buscar(j, clube=clube, ref=self._ref_fichas)
+                    if cands:
+                        sc, _, escp = cands[0]
+                        unico = len(cands) == 1 or cands[1][0] < sc - 0.1
+                        escp["auto"] = bool(sc >= 0.85 and unico)   # sem nascimento no PES: tem de ser o único
+                        escp["alternativas"] = [{"fonte": "pes", "id": p, "nome": x["nome"], "versao": x["versao"],
+                                                 "clube": x["clube"], "overall": x["overall"], "idade": x["idade"],
+                                                 "nascimento": None, "nota": s2} for s2, p, x in cands[1:4]]
+            except Exception as ex:  # noqa: BLE001
+                self.avisos.append(f"PES: {ex}")
+            if escp:
+                j["fichas"]["pes"] = escp
+        if (op.get("fichas_pesdb") and pes and pes.get("ficha") and not aj.get("ficha_pes_id")
+                and not (j["fichas"].get("pes") or {}).get("auto")):   # pesdb.net: só se o PES do computador não achou
+            f = dict(pes["ficha"])
+            f["auto"] = bool(f.get("forte") or (f.get("nota") or 0) >= 0.85)
+            j["fichas"]["pes"] = f
+        j["pes_buscado"] = (pes or {}).get("buscado") if op.get("fichas_pesdb") else None
+        quer = aj.get("ficha")                             # None: automático; True: usar mesmo duvidosa; False: não usar
+        fonte = aj.get("ficha_fonte")
+        if quer is False:
+            return
+        boas = [f for k, f in j["fichas"].items() if fonte == k or (not fonte and (f.get("auto") or quer is True))]
+        if boas:
+            pref = op.get("fichas_preferir") or "recente"
+            j["ficha_usada"] = max(boas, key=lambda f: (f["fonte"] == pref, f.get("data") or "", f["fonte"] == "sofifa"))
+        fs = j["fichas"].get("sofifa")
+        if fs and op.get("fichas_id", True) and (fs.get("auto") or j["ficha_usada"] is fs):
+            j["ficha_id_ea"] = fs["id"]
+
+    def _no_banco_por_id(self, j):
+        """O ID da EA (sofifa) já está no banco: se for o mesmo jogador (mesmo nascimento), ele é o "no banco"; se for
+        outro, o ID não serve (o jogador novo ganha um ID livre)."""
+        pid = str(j.get("ficha_id_ea") or "")
+        idx = self.indice_jogadores()
+        if not pid or pid not in idx.info:
+            return None
+        info = idx.info[pid]
+        fs = j["fichas"].get("sofifa") or {}
+        if str(N.dias(fs.get("nascimento"))) != str(info["nascimento"]):
+            j["ficha_aviso"] = f"o ID {pid} do sofifa já é de {info['nome']} no banco (outro jogador): o novo ganha outro ID"
+            j["ficha_id_ea"] = None
+            return None
+        clube = self.clube_db(pid)
+        times = idx.times_de.get(pid, [])
+        idolo = any(self.liga_de.get(t) in LIGAS_LENDAS for t in times) and not clube
+        return {"playerid": pid, "nome": info["nome"], "clube": clube, "clube_nome": self.nome_time(clube) if clube else None,
+                "overall": info["overall"], "idade": info["idade"], "nota": 1.0, "idolo": idolo, "via": "sofifa",
+                "forte": bool(j.get("nascimento")) and not idolo}
+
+    def _usa_nota_da_ficha(self, fi):
+        """A nota da ficha vale quando ela é recente (até ~1 ano); numa antiga, a estimada pelo Criador."""
+        modo = self.op.get("fichas_nota") or "auto"
+        if modo in ("ficha", "estimada"):
+            return modo == "ficha"
+        d = F._dias(fi.get("data"))
+        return bool(d) and ((self._ref_fichas or datetime.date.today()) - d).days <= 400
+
+    def _atr_da_ficha(self, fi, j, genero):
+        """Os atributos da ficha (do sofifa, ou do PES convertidos). Com outra nota (estimada ou à mão) ou outra posição,
+        todos sobem ou descem juntos até dar a nota da posição: o perfil do jogador (forças e fraquezas) continua o da
+        ficha. O que a ficha não tem (compostura no FIFA 15 e 16) vem do gerado."""
+        pf = self.perfil
+        gerado = N.gerar_atributos(pf, j, j["overall"], genero)
+        vet = np.array([float(fi["atr"].get(k) if fi["atr"].get(k) is not None else gerado[k]) for k in pf.atr])
+        alvo = float(j["overall"])
+        mesma_pos = fi.get("pos") == j["pos"]
+        if not (mesma_pos and int(alvo) == int(fi.get("overall") or 0)):
+            atual = pf.overall_de(vet, j["pos"], genero)
+            desejado = atual + (alvo - float(fi["overall"])) if mesma_pos and fi.get("overall") else alvo
+            gk = np.array([k in N.GK_ATR for k in pf.atr])
+            vet = np.where(gk if j["pos"] == 0 else ~gk, vet + (desejado - atual), vet)
+            pesos = pf.modelo(j["pos"], genero)["pesos"]
+            soma = pesos[pesos > 0].sum() or 1.0
+            for _ in range(8):
+                vet = np.clip(vet, 1, 99)
+                dif = desejado - pf.overall_de(vet, j["pos"], genero)
+                if abs(dif) < 0.3:
+                    break
+                vet = vet + np.where(pesos > 0, dif / soma, 0.0)
+        out = dict(zip(pf.atr, (int(x) for x in np.clip(np.round(vet), 1, 99))))
+        # dribles: o banco guarda as estrelas - 1 (0 a 4); a perna ruim, de 1 a 5
+        out["skillmoves"] = int(max(0, min(4, fi["dribles"] - 1))) if fi.get("dribles") else gerado["skillmoves"]
+        out["weakfootabilitytypecode"] = int(max(1, min(5, fi["perna_ruim"]))) if fi.get("perna_ruim") else gerado["weakfootabilitytypecode"]
+        return out
+
     # ---- jogadores
-    def _preparar_jogadores(self, dados, nivel_time, genero, ajustes, fotos=None):
+    def _preparar_jogadores(self, dados, nivel_time, genero, ajustes, fotos=None, fichas_pes=None):
         ref_idade = data_ref_tm(dados)
+        self._ref_fichas = F._dias(ref_idade)               # elenco antigo: as fichas daquela época
         self.excluidos = []
         coef = N.carregar_coef()
+        clube_fonte = (dados.get("time") or {}).get("nome")
         jogs = []
         for j0 in dados["jogadores"]:
             j = dict(j0)
@@ -921,6 +1068,12 @@ class Projeto:
             j["no_banco"] = self.ja_no_banco(j, genero) if not dados.get("selecao") else None
             pos, origem = N.posicao_principal(j)
             j["pos"], j["pos_origem"] = pos, origem
+            self._ficha(j, aj, (fichas_pes or {}).get(str(j["id"])), clube_fonte)
+            if not j["no_banco"] and j.get("ficha_id_ea") and not dados.get("selecao"):
+                j["no_banco"] = self._no_banco_por_id(j)       # nome diferente no banco, mas o mesmo ID da EA
+            fi = j.get("ficha_usada")
+            if fi and fi.get("pos") is not None and origem not in ("Transfermarkt", "escalações"):
+                j["pos"], j["pos_origem"] = fi["pos"], fi["versao"]    # a fonte só deu a linha (D, M, A): vale a da ficha
             if aj.get("pos") is not None:
                 j["pos"], j["pos_origem"] = int(aj["pos"]), "manual"
             if aj.get("altura"):
@@ -959,6 +1112,22 @@ class Projeto:
             if nb and (quer is True or (quer is None and usar_todos and nb["forte"])):
                 j["usar_db"] = nb["playerid"]
                 j["playerid"] = int(nb["playerid"])
+        usados_ea = getattr(self, "_ids_ea", set())
+        self._ids_ea = usados_ea
+        for j in jogs:                                     # o ID da EA (sofifa) no jogador novo, se estiver livre
+            if j.get("ficha_id_ea") and not j.get("usar_db") and "playerid" not in j:
+                pid = int(j["ficha_id_ea"])
+                if str(pid) == str((j.get("no_banco") or {}).get("playerid")):
+                    continue                               # é o próprio jogador do banco (use o do banco)
+                if pid in usados_ea:
+                    j["ficha_aviso"] = f"o ID {pid} do sofifa já foi para outro jogador do projeto: o novo ganha outro ID"
+                    continue
+                try:
+                    j["playerid"] = ids.reservar(pid, "playerid")
+                    j["playerid_ea"] = True
+                    usados_ea.add(pid)
+                except ValueError:
+                    j["ficha_aviso"] = j.get("ficha_aviso") or f"o ID {pid} do sofifa já está em uso no banco: o novo ganha outro ID"
         for j in jogs:
             aj = ajustes.get(str(j["id"])) or {}
             if j.get("usar_db"):
@@ -970,24 +1139,41 @@ class Projeto:
                 ov = int(round(max(40, min(94, brutos[j["id"]] + desloc))))
             else:
                 ov = int(round(max(40, min(92, media + esticar * (brutos[j["id"]] - media)))))
+            fi = j.get("ficha_usada")
+            j["overall_estimado"] = ov
+            usa_nota = bool(fi) and bool(fi.get("overall")) and self._usa_nota_da_ficha(fi)
+            if usa_nota:
+                ov = int(fi["overall"])
+            j["ficha_nota"] = None if not fi else "ficha" if usa_nota else "estimada"
             j["overall_auto"] = ov
             j["overall"] = int(aj.get("overall") or ov)
-            j["potential_auto"] = N.potencial(j["overall"], j.get("idade"), j["id"])
+            pot = N.potencial(j["overall"], j.get("idade"), j["id"])
+            if usa_nota and fi.get("potential") and not aj.get("overall"):
+                pot = max(int(fi["potential"]), j["overall"])
+            j["potential_auto"] = pot
             j["potential"] = int(aj.get("potencial") or j["potential_auto"])
             if aj.get("pe"):
                 j["pe"] = int(aj["pe"])
             elif j.get("pe_tm") in ("left", "right", "both"):
                 j["pe"] = 2 if j["pe_tm"] == "left" else 1
+            elif fi and fi.get("pe"):
+                j["pe"] = int(fi["pe"])
             else:
                 j["pe"] = N.pe_preferido(j)
+            if fi:                                         # a altura da fonte vale; o peso quase nunca vem nela
+                j["altura"] = j.get("altura") or fi.get("altura")
+                j["peso"] = j.get("peso") or fi.get("peso")
             j["altura"], j["peso"] = N.fisico(self.perfil, j, genero)
-            j["atr"] = N.gerar_atributos(self.perfil, j, j["overall"], genero)
+            if fi and fi.get("atr"):
+                j["atr"] = self._atr_da_ficha(fi, j, genero)
+            else:
+                j["atr"] = N.gerar_atributos(self.perfil, j, j["overall"], genero)
             if j.get("pe_tm") == "both":                   # ambidestro na Transfermarkt
                 j["atr"]["weakfootabilitytypecode"] = max(4, j["atr"].get("weakfootabilitytypecode", 3))
             if aj.get("perna_ruim"):
                 j["atr"]["weakfootabilitytypecode"] = int(aj["perna_ruim"])
-            if aj.get("dribles"):
-                j["atr"]["skillmoves"] = int(aj["dribles"])
+            if aj.get("dribles"):                          # estrelas (1 a 5); o banco guarda de 0 a 4
+                j["atr"]["skillmoves"] = int(max(0, min(4, int(aj["dribles"]) - 1)))
             for k, v in (aj.get("atr") or {}).items():
                 if k in j["atr"] and v not in (None, ""):
                     j["atr"][k] = int(v)
@@ -997,6 +1183,8 @@ class Projeto:
             j["camisa_manual"] = int(aj["camisa"]) if aj.get("camisa") else None
             j["capitao_manual"] = bool(aj.get("capitao"))
             j["posicoes2_manual"] = aj.get("posicoes2")
+            if j["posicoes2_manual"] is None and fi and fi.get("posicoes2") and not j.get("posicoes_tm"):
+                j["posicoes2_manual"] = [p for p in fi["posicoes2"] if p != j["pos"]]
             j["aparencia_manual"] = aj.get("aparencia") or {}
             j["foto_alvo"] = (fotos or {}).get(str(j["id"]))
             if "playerid" not in j:
@@ -1318,7 +1506,12 @@ class Projeto:
                 "potential_auto": j.get("potential_auto", j.get("potential")), "idade": j.get("idade"),
                 "nascimento": j.get("nascimento"), "nacionalidade": self.nome_nacao.get(j.get("nacao")) or j.get("nacionalidade"),
                 "nacao": j.get("nacao"), "altura": j.get("altura"), "peso": j.get("peso"), "pe": j.get("pe"),
-                "perna_ruim": (j.get("atr") or {}).get("weakfootabilitytypecode"), "dribles": (j.get("atr") or {}).get("skillmoves"),
+                "perna_ruim": (j.get("atr") or {}).get("weakfootabilitytypecode"),
+                "dribles": int((j.get("atr") or {}).get("skillmoves", 1)) + 1,          # estrelas (o banco guarda de 0 a 4)
+                "ficha": _resumo_ficha(j.get("ficha_usada")), "ficha_nota": j.get("ficha_nota"),
+                "overall_estimado": j.get("overall_estimado"), "playerid_ea": bool(j.get("playerid_ea")),
+                "fichas": {k: _resumo_ficha(f) for k, f in (j.get("fichas") or {}).items()}, "pes_buscado": j.get("pes_buscado"),
+                "ficha_aviso": j.get("ficha_aviso"),
                 "foto": j.get("foto"), "minutos": st.get("minutos") or 0, "jogos": st.get("jogos") or 0,
                 "nota_api": st.get("nota"), "gols": st.get("gols") or 0, "capitao": bool(j.get("capitao") or j.get("capitao_tm")),
                 "valor": j.get("valor"), "no_banco": j.get("no_banco"), "usar_db": j.get("usar_db"),
@@ -1433,7 +1626,8 @@ class Projeto:
                     continue
                 a = dict(a, nacionalidade=self.nome_nacao.get(nacao), stats={})
                 criados.append(a)
-            novos = self._preparar_jogadores({"time": tm, "jogadores": criados}, ref + 1.8, genero, ajustes, ex.get("fotos"))
+            novos = self._preparar_jogadores({"time": tm, "jogadores": criados}, ref + 1.8, genero, ajustes, ex.get("fotos"),
+                                             ex.get("fichas_pes"))
             for j in novos:
                 j.update(origem="novo", existente=False, nacao_manual=j.get("nacao_manual") or nacao)
                 pool.append(j)

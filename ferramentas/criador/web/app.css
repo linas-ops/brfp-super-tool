@@ -102,6 +102,17 @@
 .link-banco:hover { text-decoration: underline; }
 .barra-banco { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px 14px; border-top: 1px solid var(--borda); border-bottom: 1px solid var(--borda); background: rgba(240, 180, 41, .06); font-size: 12.5px; }
 .barra-banco .acoes-linha { margin-left: auto; }
+/* fichas de outros jogos (sofifa e PES) */
+.selo-ficha { display: inline-block; margin-left: 6px; padding: 0 5px; border-radius: 3px; font: 600 9.5px var(--mono); vertical-align: middle; line-height: 15px; background: rgba(167, 139, 250, .2); color: #c9b8ff; cursor: help; }
+.selo-ficha.pes { background: rgba(45, 212, 191, .18); color: #8ee8da; }
+.selo-ficha.duvida { background: transparent; border: 1px dashed rgba(167, 139, 250, .5); color: var(--texto-3); line-height: 13px; }
+.barra-fichas { background: rgba(167, 139, 250, .06); }
+.fichas-lista { display: flex; flex-direction: column; gap: 8px; }
+.ficha-ext { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px 10px; border: 1px solid var(--borda); border-radius: 6px; font-size: 12.5px; }
+.ficha-ext.usada { border-color: rgba(167, 139, 250, .55); background: rgba(167, 139, 250, .07); }
+.ficha-ext .acoes-linha { margin-left: auto; }
+.ficha-ext select { font-size: 12px; }
+.versoes-pes { display: flex; flex-wrap: wrap; gap: 4px; }
 .tabela.elenco tr.fora td { color: var(--texto-3); }
 .erro-txt { color: #f87171; }
 .alerta-txt { color: #f5d27a; }
