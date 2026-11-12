@@ -1,18 +1,21 @@
-// Criador de Faces — interface (BRFP Super Tool). Cabeças 3D por fotos com o KeenFace; a conversão para o FC 27 é feita
-// no MG Keen Converter, que a ferramenta só abre.
+// Criador de Faces — interface (BRFP Super Tool). Dois jeitos de criar a partir de fotos: o criador próprio, que roda no
+// computador e já grava a face do FC 27 (FBX + textura), e o KeenFace (pago), cuja cabeça é convertida no MG Keen Converter.
 import { $, el, esc, aviso, modal, confirmar, barraMenus, abrirMenu, divisorArrastavel, dialogoSobre, interruptor, nota, modalAberto, menuAberto, lerArquivoBase64, copiarTexto } from './comum/ui.js';
 import { icone } from './comum/icones.js';
 import { api } from './comum/api.js';
 import { PreviaGLB } from './previa.js';
+import { instalarComponentes, mb } from './comum/componentes.js';
+import { importarReferencias } from './comum/referencias.js';
 
 const S = {
   versao: '', links: {}, fotos: [], tarefa: { fase: 'parado' }, opcoes: {}, saida: '', chave: {}, mg: false, historico: [],
   conta: null, contaErro: null, trocandoChave: false, sel: null, nome: '', nomeSugerido: '', limite: 15,
   polling: null, intervalo: 0, previa: null, previaIdem: null, previaInfo: null, previaErro: null, carregando: false,
   sig: {}, fechadas: new Set(), pendenteConfig: false, ultimaFase: null, imgs: new Map(),
+  motor: 'proprio', local: {}, saidaLocal: '', jogador: '', limiteKeen: 15, limiteLocal: 6,
 };
-const ATIVAS = ['enviando', 'conferindo', 'confirmar', 'criando', 'na_fila', 'processando', 'baixando'];
-const CANCELAVEIS = ['enviando', 'conferindo', 'confirmar'];
+const ATIVAS = ['enviando', 'conferindo', 'confirmar', 'criando', 'na_fila', 'processando', 'baixando', 'local'];
+const CANCELAVEIS = ['enviando', 'conferindo', 'confirmar', 'local'];
 const ETAPAS = [['enviando', 'Enviar fotos'], ['conferindo', 'Conferir custo'], ['confirmar', 'Confirmar'], ['criando', 'Criar'],
   ['na_fila', 'Fila'], ['processando', 'Montar a cabeça'], ['baixando', 'Baixar']];
 const STATUS = { enviando: ['Enviando', 'azul'], na_fila: ['Na fila', 'azul'], processando: ['Montando', 'azul'], pronta: ['Pronta', 'verde'],
@@ -30,6 +33,8 @@ const ativa = () => ATIVAS.includes(S.tarefa.fase);
 const itemSel = () => S.historico.find((x) => x.idem === S.sel) || null;
 const seguindo = (x) => x && x.seguindo && !['pronto', 'erro'].includes(x.seguindo.fase);
 const preco = () => S.conta?.prices?.head || 150;
+const proprio = () => S.motor !== 'keenface';
+const daqui = (x) => x?.origem === 'local';
 function dataCurta(s) {
   if (!s) return '';
   const [d, h] = s.split(' ');
@@ -53,8 +58,11 @@ function mudou(chave, valor) {
 // ---------------------------------------------------------------- estado
 function aplicar(r) {
   if (!r) return;
-  for (const k of ['fotos', 'tarefa', 'opcoes', 'saida', 'chave', 'mg', 'historico']) if (k in r) S[k] = r[k];
+  for (const k of ['fotos', 'tarefa', 'opcoes', 'saida', 'chave', 'mg', 'historico', 'local']) if (k in r) S[k] = r[k];
+  if ('saida_local' in r) S.saidaLocal = r.saida_local;
   if ('nome_sugerido' in r) S.nomeSugerido = r.nome_sugerido;
+  S.motor = S.opcoes.motor === 'keenface' ? 'keenface' : 'proprio';
+  S.limite = proprio() ? S.limiteLocal : S.limiteKeen;
   if (r.falha) mostrarFalha(r.falha);
   const fase = S.tarefa.fase;
   if (fase !== S.ultimaFase) {
@@ -64,7 +72,7 @@ function aplicar(r) {
     if (['pronto', 'erro'].includes(fase) && antes) atualizarConta(true);
   }
   if (S.sel && !itemSel()) { S.sel = null; mostrarPrevia(null); }
-  if (mudou('fotos', S.fotos)) desenharFotos();
+  if (mudou('fotos', [S.fotos, S.motor])) desenharFotos();
   desenharConfig();
   desenharVista();
   if (mudou('historico', [S.historico, S.sel])) desenharHistorico();
@@ -76,7 +84,7 @@ function aplicar(r) {
 async function atualizar() { aplicar(await api('estado').catch(() => null)); }
 
 function vigiar() {
-  const rapido = ativa() || S.historico.some(seguindo);
+  const rapido = ativa() || S.historico.some(seguindo) || S.local?.preparo?.ativa || S.local?.conferindo;
   const ms = rapido ? 1000 : 8000;
   if (S.intervalo === ms) return;
   clearInterval(S.polling);
@@ -121,7 +129,7 @@ function desenharFotos() {
     box.append(el('div', { class: 'fotos-vazio' },
       el('div', { class: 'ic-grande', html: icone('camera', 48) }),
       el('b', {}, 'Arraste as fotos do jogador para cá'),
-      el('span', {}, 'De 1 a 15 fotos da mesma pessoa. O ideal é uma de frente e uma de cada lado.'),
+      el('span', {}, proprio() ? 'Uma de frente e uma de cada lado (de 1 a 6 fotos da mesma pessoa).' : 'De 1 a 15 fotos da mesma pessoa. O ideal é uma de frente e uma de cada lado.'),
       el('div', {}, el('button', { class: 'btn-primario', onclick: adicionarFotos, html: icone('arquivoMais', 15) + 'Adicionar fotos…' }))));
   } else {
     const grade = el('div', { class: 'grade-fotos' });
@@ -131,7 +139,7 @@ function desenharFotos() {
         oncontextmenu: (e) => { e.preventDefault(); menuFoto(f, i, e.clientX, e.clientY); } },
       el('div', { class: 'foto-img' }, f.previa ? imgFoto(f) : el('div', { class: 'sem-previa', html: icone('imagem', 26) + '<span>sem prévia<br>(o KeenFace lê normalmente)</span>' })),
       el('span', { class: 'foto-num' }, String(i + 1)),
-      f.enviada ? el('span', { class: 'foto-enviada', title: 'Já está no KeenFace (vale 24 h): não precisa enviar de novo', html: icone('check', 11) + 'enviada' }) : null,
+      f.enviada && !proprio() ? el('span', { class: 'foto-enviada', title: 'Já está no KeenFace (vale 24 h): não precisa enviar de novo', html: icone('check', 11) + 'enviada' }) : null,
       el('button', { class: 'foto-tirar', title: 'Tirar da lista', html: icone('x', 13), onclick: () => removerFoto(f.id) }),
       el('div', { class: 'foto-info' }, el('b', {}, f.nome), el('small', {}, `${dim} · ${fmtMB(f.bytes)}`)),
       f.problema ? el('div', { class: 'foto-problema' }, f.problema) : null);
@@ -146,10 +154,11 @@ function desenharFotos() {
     el('div', { class: 'angulos' }, ...['Esquerda', 'Frente', 'Direita'].map((t, i) => el('span', { html: rostoAngulo(i - 1) + esc(t) }))),
     el('ul', {},
       el('li', {}, 'Nítidas, com o rosto grande e inteiro na foto, sem óculos nem boné.'),
-      el('li', {}, 'Expressão neutra e olhos abertos; luz uniforme ajuda.'),
-      el('li', {}, 'Só a mesma pessoa em todas (nada de outra pessoa na foto).'))));
+      el('li', {}, 'Expressão neutra, boca fechada e olhos abertos; luz uniforme ajuda.'),
+      el('li', {}, proprio() ? 'Os lados entre 40° e 70° (não precisa ser perfil): a mesma luz nas três deixa a pele sem manchas.' : 'Só a mesma pessoa em todas (nada de outra pessoa na foto).'))));
   const tot = S.fotos.reduce((s, f) => s + (f.bytes || 0), 0);
   $('#resumo-fotos').textContent = S.fotos.length ? `${S.fotos.length} de ${S.limite} fotos · ${fmtMB(tot)}` : 'Nenhuma foto';
+  $('#resumo-fotos').classList.toggle('demais', S.fotos.length > S.limite);
   $('#btn-limpar').disabled = !S.fotos.length;
 }
 
@@ -233,8 +242,17 @@ async function mudarOpcao(k, v) { aplicar(await tentar(() => api('opcoes', { [k]
 
 function desenharConfig() {
   const box = $('#config');
-  const sig = [S.opcoes, S.saida, S.chave, S.conta, S.contaErro, S.trocandoChave, S.fotos.map((f) => !!f.problema), ativa(), S.nomeSugerido];
-  if (!mudou('config', sig)) return;
+  const { preparo: prep = {}, ...restoLocal } = S.local || {};
+  const sig = [S.opcoes, S.saida, S.chave, S.conta, S.contaErro, S.trocandoChave, S.fotos.map((f) => [!!f.problema, f.tipo]), ativa(), S.nomeSugerido,
+    S.motor, restoLocal, prep.ativa, prep.erro, S.saidaLocal];
+  if (!mudou('config', sig)) {
+    if (prep.ativa) {                        // só a barra do preparo anda
+      const b = $('#prep-barra'), m = $('#prep-msg');
+      if (b) b.firstChild.style.width = `${Math.round(Math.max(0.02, Math.min(1, prep.f || 0)) * 100)}%`;
+      if (m) m.textContent = prep.msg || '';
+    }
+    return;
+  }
   if (box.contains(document.activeElement) && document.activeElement.matches('input:not([type]), input[type=text], input[type=password], textarea')) {
     S.sig.config = null;                     // não redesenha com o usuário digitando: tenta no próximo ciclo
     return;
@@ -243,6 +261,13 @@ function desenharConfig() {
   box.innerHTML = '';
   const bloqueado = ativa();
   const op = S.opcoes;
+  box.append(el('div', { class: 'campo motor' }, el('label', {}, 'Como criar'),
+    segmentado([['proprio', 'Criador próprio', 'Roda no seu computador, sem custo: grava direto a face do FC 27 (FBX + textura)'],
+      ['keenface', 'KeenFace', 'Serviço pago (keenface.ai): a forma sai mais fiel; a cabeça é convertida depois no MG Keen Converter']], S.motor, (v) => mudarOpcao('motor', v), bloqueado),
+    el('div', { class: 'descricao-modo' }, proprio()
+      ? 'Grátis e no seu computador: as fotos não saem daqui. A face já sai pronta para o FET (headmorphpreset + textura careca).'
+      : 'Pago (uns € 15 por cabeça, na sua conta): a forma sai mais fiel. A cabeça volta como .glb e é convertida no MG Keen Converter.')));
+  if (proprio()) { desenharConfigProprio(box, bloqueado); box.scrollTop = rol; return; }
 
   // conta
   const conta = [];
@@ -340,7 +365,77 @@ function desenharConfig() {
   box.scrollTop = rol;
 }
 
+function desenharConfigProprio(box, bloqueado) {
+  const L = S.local || {}, prep = L.preparo || {};
+  const linha = (ok, titulo, detalhe, botao) => el('div', { class: `prep-linha ${ok ? 'ok' : ''}` },
+    el('span', { class: 'ic', html: icone(ok ? 'check' : 'ponto', 14) }),
+    el('div', {}, el('b', {}, titulo), detalhe ? el('small', { html: detalhe }) : null), botao || el('span'));
+  const comp = L.componentes || {}, ref = L.referencia || {}, jogo = L.jogo || {};
+  const itens = [
+    linha(comp.ok, 'Componentes', comp.ok ? 'MediaPipe, numpy, SciPy e OpenCV instalados' : `MediaPipe, numpy, SciPy e OpenCV: baixados uma vez (${mb(comp.download || 0)})`,
+      comp.ok ? null : el('button', { class: 'btn-primario peq', onclick: baixarComponentes, disabled: bloqueado }, 'Baixar…')),
+    linha(ref.ok, 'Face de referência do FC 27', ref.ok ? 'a mesma do Conversor de Faces' : 'vem no pacote completo do Super Tool',
+      ref.ok ? null : el('button', { class: 'btn-primario peq', onclick: importarRef, disabled: bloqueado }, 'Importar…')),
+  ];
+  if (jogo.itens?.length) {
+    for (const i of jogo.itens) {
+      itens.push(linha(i.ok, i.nome, i.ok ? `<span title="${esc(i.caminho)}">${esc(encurtar(i.caminho, 2))}</span>` : esc(i.detalhe),
+        i.ok || i.id === 'cache' ? null : el('button', { class: 'btn peq', onclick: () => escolherPastaJogo(i.id), disabled: bloqueado }, 'Escolher…')));
+    }
+  } else if (comp.ok) itens.push(linha(false, 'FIFA Editor Tool e FC 27', esc(jogo.erro || L.erro || 'conferindo…')));
+  const m = L.modelo;
+  const modeloOk = !!m && !L.modelo_velho && !(L.modelos_faltando || []).length;
+  const pode = comp.ok && ref.ok && jogo.ok && !prep.ativa && !bloqueado;
+  itens.push(linha(modeloOk, 'Modelo das cabeças do jogo',
+    modeloOk ? `${fmtInt(m.cabecas)} cabeças do seu jogo · ${esc(dataCurta(m.feito))}` : L.modelo_velho ? 'o jogo mudou: prepare de novo'
+      : m ? 'faltam os modelos que acham o rosto nas fotos (20 MB, baixados uma vez)' : 'montado uma vez a partir do jogo instalado (1 a 2 minutos) + 20 MB dos modelos que acham o rosto',
+    modeloOk ? null : el('button', { class: 'btn-primario peq', disabled: !pode, onclick: prepararLocal }, 'Preparar')));
+  if (prep.ativa) {
+    const b = barra(prep.f || 0);
+    b.id = 'prep-barra';
+    itens.push(el('div', { class: 'prep-andamento' }, b, el('div', { class: 'linha-msg' }, el('span', { id: 'prep-msg' }, prep.msg || ''))));
+  }
+  if (prep.erro) itens.push(nota(esc(prep.erro), 'erro'));
+  if (!L.pronto && !prep.ativa) itens.push(el('div', { class: 'ajuda' }, 'O modelo é feito com as cabeças do seu próprio FC 27 (lidas pelo cache do FIFA Editor Tool) e fica só neste computador.'));
+  box.append(secao('preparo', 'chip', 'Preparação (uma vez)', itens));
+
+  const nome = el('input', { class: 'entrada', value: S.nome, placeholder: S.nomeSugerido || 'Nome do jogador', maxlength: '60', spellcheck: 'false', disabled: bloqueado });
+  nome.addEventListener('input', () => { S.nome = nome.value; });
+  const jog = el('input', { class: 'entrada mono', value: S.jogador, placeholder: '0', maxlength: '9', inputmode: 'numeric', spellcheck: 'false', disabled: bloqueado });
+  jog.addEventListener('input', () => { jog.value = jog.value.replace(/[^0-9]/g, ''); S.jogador = jog.value; });
+  box.append(secao('cabeca', 'rosto', 'Face nova', [
+    el('div', { class: 'campo' }, el('label', {}, 'Nome'), nome, el('div', { class: 'ajuda' }, 'Vira o nome da pasta da face.')),
+    el('div', { class: 'campo' }, el('label', {}, 'ID do jogador no jogo'), jog,
+      el('div', { class: 'ajuda', html: 'Entra no nome dos arquivos (<span class="mono">headmorphpreset_ID_0_0</span> e <span class="mono">face_ID_0_0_color</span>), como o FET espera. Vazio = 0.' })),
+  ]));
+  box.append(secao('arquivos', 'pasta', 'Arquivos', [
+    el('div', { class: 'campo' }, el('label', {}, 'Pasta de saída'),
+      el('div', { class: 'caminho-linha' }, el('input', { value: S.saidaLocal, readonly: true, title: S.saidaLocal, class: 'mono' }),
+        el('button', { class: 'btn peq', onclick: async () => aplicar(await tentar(() => api('local_saida', {}))), disabled: bloqueado }, 'Escolher…')),
+      el('div', { class: 'ajuda' }, 'Cada face ganha uma pasta com o FBX, a textura, a prévia 3D e as imagens de conferência.')),
+  ]));
+  const req = requisitos();
+  box.append(el('div', { class: 'criar-caixa' },
+    el('ul', { class: 'requisitos' }, ...req.map(([ok, txt]) => el('li', { class: ok ? 'ok' : '', html: icone(ok ? 'check' : 'ponto', 13) + esc(txt) }))),
+    el('button', { class: 'btn-primario grande', disabled: bloqueado || req.some(([ok]) => !ok), onclick: criar, html: icone('varinha', 15) + 'Criar face' }),
+    el('div', { class: 'custo-linha' }, 'Sem custo e sem enviar nada: leva de 1 a 2 minutos neste computador. A forma é uma aproximação pelas cabeças do jogo; a textura vem das suas fotos.')));
+}
+
+async function baixarComponentes() { await instalarComponentes({ aoTerminar: () => conferirLocal() }); conferirLocal(); }
+async function importarRef() { await importarReferencias({ aoTerminar: () => conferirLocal() }); }
+async function conferirLocal() { aplicar(await tentar(() => api('local_conferir', {}))); }
+async function prepararLocal(refazer = false) { aplicar(await tentar(() => api('local_preparar', { refazer: refazer === true }))); }
+async function escolherPastaJogo(qual) { aplicar(await tentar(() => api('local_pasta', { qual }))); }
+
 function requisitos() {
+  if (proprio()) {
+    const n = S.fotos.length, L = S.local || {};
+    const ruim = S.fotos.find((f) => !['image/jpeg', 'image/png', 'image/webp'].includes(f.tipo));
+    return [
+      [n >= 1 && n <= S.limiteLocal && !ruim, ruim ? `${ruim.nome}: use JPG, PNG ou WebP` : n > S.limiteLocal ? `No máximo ${S.limiteLocal} fotos (tire ${n - S.limiteLocal})` : n ? `${n} foto(s)` : `Fotos (de 1 a ${S.limiteLocal})`],
+      [!!L.pronto, L.pronto ? 'Criador próprio preparado' : L.preparo?.ativa ? 'Preparando o criador próprio…' : 'Falta a preparação (acima)'],
+    ];
+  }
   const nf = S.fotos.length, scan = S.opcoes.modo === 'scan';
   const ruins = S.fotos.filter((f) => f.problema).length;
   return [
@@ -357,7 +452,7 @@ async function criar() {
   if (ativa()) return;
   const falta = requisitos().find(([ok]) => !ok);
   if (falta) { aviso(falta[1], { tipo: 'aviso' }); return; }
-  const r = await tentar(() => api('criar', { nome: S.nome.trim() }));
+  const r = await tentar(() => (proprio() ? api('local_criar', { nome: S.nome.trim(), jogador: S.jogador.trim() }) : api('criar', { nome: S.nome.trim() })));
   if (!r) return;
   S.sel = null;
   mostrarPrevia(null);
@@ -372,7 +467,11 @@ function aoFicarPronta(avisar = true) {
   const res = S.tarefa.resultado || {};
   S.nome = '';
   S.sig.config = null;
-  if (avisar) {
+  const feita = S.historico.find((h) => h.idem === res.idem);
+  if (avisar && daqui(feita)) {
+    aviso(`Face pronta: ${S.tarefa.nome}`, { tipo: 'sucesso', tempo: 8000, detalhe: 'Importe no FET o FBX e a textura que estão na pasta.',
+      acao: { rotulo: 'Abrir a pasta', fn: () => tentar(() => api('abrir', { idem: res.idem })) } });
+  } else if (avisar) {
     aviso(`Cabeça pronta: ${S.tarefa.nome}`, { tipo: 'sucesso', tempo: 8000, detalhe: 'O próximo passo é converter no MG Keen Converter.',
       acao: { rotulo: 'Mostrar o .glb', fn: () => tentar(() => api('abrir', { idem: res.idem, formato: 'glb' })) } });
   }
@@ -413,10 +512,24 @@ function desenharVista() {
 
 function desenharInicio(box) {
   const nf = S.fotos.length, temChave = !!S.chave.definida;
-  if (!mudou('inicio', [nf, temChave, S.mg, S.historico.length])) return;
+  if (!mudou('inicio', [nf, temChave, S.mg, S.historico.length, S.motor, !!S.local?.pronto, !!S.local?.preparo?.ativa])) return;
   box.innerHTML = '';
   const passo = (n, feito, titulo, texto, botao) => el('div', { class: `passo ${feito ? 'feito' : ''}` },
     el('span', { class: 'n', html: feito ? icone('check', 15) : String(n) }), el('div', {}, el('b', {}, titulo), el('small', { html: texto })), botao || el('span'));
+  if (proprio()) {
+    const pronto = !!S.local?.pronto;
+    box.append(el('div', { class: 'inicio-caixa' },
+      el('h1', {}, 'Face do FC 27 a partir de fotos'),
+      el('p', {}, 'O criador próprio roda no seu computador: acha o rosto nas fotos, ajusta a cabeça do jogo a ele e monta a textura careca com a pele das fotos. Sai o headmorphpreset (FBX) e a textura, prontos para o FET.'),
+      el('div', { class: 'passos' },
+        passo(1, pronto, 'Preparação (uma vez)', pronto ? 'Componentes e modelo das cabeças do jogo prontos.' : 'No painel da direita: baixar os componentes e montar o modelo com as cabeças do seu FC 27 (precisa do FIFA Editor Tool com o jogo aberto uma vez).'),
+        passo(2, nf > 0, 'Fotos do jogador', nf ? `${nf} foto(s) na lista.` : 'Uma de frente e uma de cada lado (40° a 70°), nítidas e com a mesma luz. Arraste para a janela ou use Adicionar.',
+          nf ? null : el('button', { class: 'btn peq', onclick: adicionarFotos }, 'Adicionar fotos…')),
+        passo(3, false, 'Criar a face', 'Leva de 1 a 2 minutos e não custa nada. Ponha o ID do jogador para os arquivos já saírem com o nome que o FET espera.'),
+        passo(4, false, 'Importar no FET', 'Na pasta do jogador: o <span class="mono">headmorphpreset</span> (FBX) e o <span class="mono">face_color</span> (PNG). O cabelo é o do jogo: a textura sai careca.')),
+      el('div', { class: 'rodape-inicio', html: 'Quer a forma mais fiel? Troque para <b>KeenFace</b> em “Como criar” (serviço pago, na sua conta).' })));
+    return;
+  }
   box.append(el('div', { class: 'inicio-caixa' },
     el('h1', {}, 'Cabeça 3D a partir de fotos'),
     el('p', {}, 'O KeenFace (keenface.ai, da KeenTools) monta a cabeça do jogador a partir das fotos. Ela volta como .glb, pronta para o MG Keen Converter transformar na face do FC 27.'),
@@ -469,6 +582,7 @@ function desenharCartaoTarefa(card, t, temPrevia) {
         [e.original && `KeenFace: “${e.original}”`, e.request_id && `pedido ${e.request_id}`].filter(Boolean).join(' · ')) : null,
       el('div', { class: 'acoes' },
         e.link ? el('button', { class: 'btn esq', onclick: () => abrirLink(null, e.link), html: icone('externo', 13) + 'Abrir o site do KeenFace' }) : null,
+        e.codigo === 'local' ? el('button', { class: 'btn esq', onclick: () => copiarTexto(e.mensagem || ''), html: icone('copiar', 13) + 'Copiar o erro' }) : null,
         el('button', { class: 'btn', onclick: fecharTarefa }, 'Fechar'),
         t.idem ? null : el('button', { class: 'btn-primario', onclick: async () => { await fecharTarefa(); criar(); } }, 'Tentar de novo')));
     return;
@@ -491,7 +605,7 @@ function desenharCartaoTarefa(card, t, temPrevia) {
     el('div', { class: 'sub', title: t.pasta || '' }, `${t.nome}${t.pasta ? ' → ' + encurtar(t.pasta) : ''}`),
     barra(t.progresso),
     el('div', { class: 'linha-msg' }, el('span', {}, t.msg || espera[t.fase] || ''), el('span', { class: 'mudo tempo' }, fmtTempo(t.decorrido || 0))),
-    etapas(t.fase),
+    t.fase === 'local' ? el('div', { class: 'sub', style: { marginTop: '8px' } }, 'Tudo acontece neste computador. A parte mais demorada é o ajuste da forma.') : etapas(t.fase),
     espera[t.fase] && t.msg ? el('div', { class: 'sub', style: { marginTop: '8px' } }, espera[t.fase]) : null,
     CANCELAVEIS.includes(t.fase) ? el('div', { class: 'acoes' }, el('button', { class: 'btn', onclick: cancelar }, 'Cancelar')) : null);
 }
@@ -504,6 +618,20 @@ function desenharCartaoItem(card, x, temPrevia, daTarefa = false) {
   const glb = x.arquivos?.glb;
   const fechar = el('button', { class: 'btn-icone peq', title: 'Fechar', style: { marginLeft: 'auto' }, html: icone('x', 14),
     onclick: () => { if (daTarefa) fecharTarefa(); selecionar(null); } });
+  if (daqui(x)) {
+    const rel = x.relatorio || {};
+    anexar(card, el('h3', {}, el('span', { html: icone('check', 16) }), x.nome, el('span', { class: 'etiqueta verde' }, 'Pronta'), fechar),
+      el('div', { class: 'sub', title: x.pasta || '' }, [dataCurta(x.criado), plural(x.fotos || 0, 'foto', 'fotos'), 'criador próprio', x.jogador && x.jogador !== '0' ? `ID ${x.jogador}` : '',
+        rel.segundos ? `feita em ${fmtTempo(Math.round(rel.segundos))}` : '', x.pasta ? encurtar(x.pasta) : ''].filter(Boolean).join(' · ')));
+    if (S.previaErro && S.previaIdem === x.idem) card.append(nota(`Não deu para mostrar a prévia (${esc(S.previaErro)}). Os arquivos estão na pasta.`, 'alerta'));
+    card.append(el('div', { class: 'acoes' },
+      el('button', { class: 'btn peq esq', disabled: !x.arquivos?.previa_fotos, onclick: () => tentar(() => api('abrir', { idem: x.idem, formato: 'previa_fotos', executar: true })), html: icone('imagem', 13) + 'Comparar com as fotos' }),
+      el('button', { class: 'btn peq', disabled: !x.arquivos?.fbx, onclick: () => tentar(() => api('abrir', { idem: x.idem, formato: 'fbx' })), html: icone('arquivo', 13) + 'Mostrar o FBX' }),
+      el('button', { class: 'btn-primario peq', onclick: () => tentar(() => api('abrir', { idem: x.idem })), html: icone('pasta', 13) + 'Abrir a pasta' }),
+      el('button', { class: 'btn-icone', title: 'Mais opções', html: icone('lista', 16), onclick: (e) => { const r = e.currentTarget.getBoundingClientRect(); menuCabeca(x, r.left, r.top - 8, true); } })));
+    card.append(el('div', { class: 'sub', style: { marginTop: '8px' }, html: 'No FET, na pasta do jogador: importe o <span class="mono">headmorphpreset</span> (FBX) e o <span class="mono">face_color</span> (PNG). A textura é careca: o cabelo é o do jogo.' }));
+    return;
+  }
   anexar(card, el('h3', {}, el('span', { html: icone(glb ? 'check' : 'rosto', 16) }), x.nome, el('span', { class: `etiqueta ${cor}` }, rot), fechar),
     el('div', { class: 'sub', title: x.pasta || '' }, [dataCurta(x.criado), x.fotos ? plural(x.fotos, 'foto', 'fotos') : '', x.modo === 'scan' ? 'Sessão de fotos' : 'Fotos variadas',
       S.previaInfo && temPrevia ? plural(S.previaInfo.vertices, 'vértice', 'vértices') : '', x.pasta ? encurtar(x.pasta) : ''].filter(Boolean).join(' · ')));
@@ -552,7 +680,7 @@ async function carregarPrevia(x) {
   }
   S.carregando = true;
   desenharVista();
-  const fechar = aviso(`Abrindo ${x.nome}.glb…`, { tempo: 60000 });
+  const fechar = aviso(`Abrindo a prévia de ${x.nome}…`, { tempo: 60000 });
   try {
     const r = await fetch(`modelo?idem=${encodeURIComponent(x.idem)}`);
     if (!r.ok) throw new Error('arquivo não encontrado');
@@ -597,7 +725,7 @@ function desenharHistorico() {
   l.innerHTML = '';
   $('#cabecas-resumo').textContent = S.historico.length ? `${S.historico.length}` : '';
   if (!S.historico.length) {
-    l.append(el('div', { class: 'vazio-cabecas' }, 'As cabeças criadas aparecem aqui. Os arquivos vão para a pasta de saída e a cabeça continua guardada na sua conta do KeenFace (baixar de novo não custa nada).'));
+    l.append(el('div', { class: 'vazio-cabecas' }, 'As faces e cabeças criadas aparecem aqui. Os arquivos vão para a pasta de saída; as do KeenFace continuam guardadas na sua conta (baixar de novo não custa nada).'));
     return;
   }
   for (const x of S.historico) {
@@ -606,11 +734,11 @@ function desenharHistorico() {
     const etq = el('div', { class: 'etiquetas' });
     if (seg) etq.append(el('span', { class: 'etiqueta azul', title: seg.msg || '', html: icone('recarregar', 11, 'girando') + (seg.fase === 'baixando' ? 'Baixando' : 'Conferindo') }));
     else etq.append(el('span', { class: `etiqueta ${cor}`, title: x.erro?.mensagem || '' }, rot + (x.status === 'processando' && x.progresso != null ? ` ${x.progresso}%` : '')));
-    for (const [k, r] of [['glb', 'GLB'], ['metahuman', 'MetaHuman'], ['obj', 'OBJ']]) if (x.arquivos?.[k]) etq.append(el('span', { class: 'etiqueta' }, r));
+    for (const [k, r] of (daqui(x) ? [['fbx', 'FBX'], ['cor', 'textura']] : [['glb', 'GLB'], ['metahuman', 'MetaHuman'], ['obj', 'OBJ']])) if (x.arquivos?.[k]) etq.append(el('span', { class: 'etiqueta' }, r));
     if (x.seguindo?.fase === 'erro') etq.append(el('span', { class: 'etiqueta vermelha', title: x.seguindo.erro?.mensagem || '' }, 'erro'));
-    const sub = [dataCurta(x.criado), x.fotos ? `${x.fotos} foto(s)` : '', x.modo === 'scan' ? 'Scan' : '', x.de_fora ? 'feita em outro lugar' : ''].filter(Boolean).join(' · ');
+    const sub = [dataCurta(x.criado), x.fotos ? `${x.fotos} foto(s)` : '', daqui(x) ? 'criador próprio' : 'KeenFace', x.modo === 'scan' ? 'Scan' : '', x.de_fora ? 'feita em outro lugar' : ''].filter(Boolean).join(' · ');
     l.append(el('div', { class: `cabeca ${S.sel === x.idem ? 'sel' : ''}`, 'data-idem': x.idem, onclick: () => selecionar(x.idem),
-      ondblclick: () => { if (x.arquivos?.glb) abrirMG(x); },
+      ondblclick: () => { if (daqui(x)) tentar(() => api('abrir', { idem: x.idem })); else if (x.arquivos?.glb) abrirMG(x); },
       oncontextmenu: (e) => { e.preventDefault(); menuCabeca(x, e.clientX, e.clientY); } },
     el('div', { class: 'ic-cab', html: icone('rosto', 18) }),
     el('div', { class: 'txt' }, el('b', {}, x.nome), el('small', { title: x.pasta || '' }, sub)),
@@ -624,6 +752,20 @@ function menuCabeca(x, px, py) {
   const glb = !!x.arquivos?.glb;
   const temId = !!x.id && !['apagada', 'falhou', 'nao_criada'].includes(x.status);
   const ocupada = seguindo(x) || (ativa() && S.tarefa.idem === x.idem);
+  if (daqui(x)) {
+    abrirMenu([
+      { rotulo: 'Ver em 3D', icone: 'cubo', desabilitado: !glb, fn: () => selecionar(x.idem) },
+      { rotulo: 'Comparar com as fotos', icone: 'imagem', desabilitado: !x.arquivos?.previa_fotos, fn: () => tentar(() => api('abrir', { idem: x.idem, formato: 'previa_fotos', executar: true })) },
+      { rotulo: 'Ver a cabeça em três ângulos', icone: 'imagem', desabilitado: !x.arquivos?.previa_3d, fn: () => tentar(() => api('abrir', { idem: x.idem, formato: 'previa_3d', executar: true })) },
+      '-',
+      { rotulo: 'Mostrar o FBX', icone: 'arquivo', desabilitado: !x.arquivos?.fbx, fn: () => tentar(() => api('abrir', { idem: x.idem, formato: 'fbx' })) },
+      { rotulo: 'Mostrar a textura', icone: 'textura', desabilitado: !x.arquivos?.cor, fn: () => tentar(() => api('abrir', { idem: x.idem, formato: 'cor' })) },
+      { rotulo: 'Abrir a pasta', icone: 'pasta', desabilitado: !x.pasta_existe, fn: () => tentar(() => api('abrir', { idem: x.idem })) },
+      '-',
+      { rotulo: 'Tirar da lista', icone: 'x', desabilitado: ocupada, fn: () => esquecer(x) },
+    ], px, py);
+    return;
+  }
   abrirMenu([
     { rotulo: 'Ver em 3D', icone: 'cubo', desabilitado: !glb, fn: () => selecionar(x.idem) },
     { rotulo: 'Converter no MG Keen Converter', icone: 'converter', desabilitado: !glb, fn: () => abrirMG(x) },
@@ -661,7 +803,8 @@ async function apagarNoKeenFace(x) {
   if (r) { aplicar(r); if (!r.falha) aviso(`${x.nome} apagada no KeenFace`, { tipo: 'sucesso' }); }
 }
 async function esquecer(x) {
-  if (!(await confirmar(`Tirar ${x.nome} da lista?`, 'Só sai desta lista: os arquivos baixados e a cabeça na conta do KeenFace ficam como estão. Atualizar a lista traz de volta as que estão no KeenFace.', { rotulo: 'Tirar da lista' }))) return;
+  const txt = daqui(x) ? 'Só sai desta lista: os arquivos continuam na pasta.' : 'Só sai desta lista: os arquivos baixados e a cabeça na conta do KeenFace ficam como estão. Atualizar a lista traz de volta as que estão no KeenFace.';
+  if (!(await confirmar(`Tirar ${x.nome} da lista?`, txt, { rotulo: 'Tirar da lista' }))) return;
   if (S.sel === x.idem) { S.sel = null; mostrarPrevia(null); }
   aplicar(await tentar(() => api('esquecer', { idem: x.idem })));
 }
@@ -700,23 +843,31 @@ async function abrirMG(x) {
 // ---------------------------------------------------------------- topo e rodapé
 function desenharTopo() {
   const chip = $('#chip-conta');
-  if (S.chave.definida && S.conta) {
+  if (S.chave.definida && S.conta && !proprio()) {
     chip.hidden = false;
     chip.className = `chip clicavel ${S.conta.credits >= preco() ? '' : 'aviso'}`;
     chip.innerHTML = icone('chip', 12) + `${fmtInt(S.conta.credits)} créditos`;
   } else chip.hidden = true;
   const b = $('#btn-criar');
   b.disabled = ativa();
+  $('#btn-criar-txt').textContent = proprio() ? 'Criar face' : 'Criar cabeça';
+  b.title = proprio() ? 'Criar a face neste computador (Ctrl+Enter)' : 'Enviar as fotos ao KeenFace e criar a cabeça (Ctrl+Enter)';
   const t = S.tarefa;
   $('#titulo').innerHTML = ativa() ? `<b>${esc(t.titulo || '')}</b>` : '';
 }
 
 function desenharStatus() {
   const nf = S.fotos.length;
-  $('#status-esq').innerHTML = `<b>${nf}</b> foto(s) · <b>${S.historico.length}</b> cabeça(s)`;
+  $('#status-esq').innerHTML = `<b>${nf}</b> foto(s) · <b>${S.historico.length}</b> na lista`;
   const c = $('#chip-chave');
-  c.className = `chip ${S.chave.definida ? (S.contaErro ? 'erro' : 'ok') : 'aviso'}`;
-  c.textContent = S.chave.definida ? (S.contaErro ? 'KeenFace: erro na chave/conexão' : 'KeenFace conectado') : 'Sem chave do KeenFace';
+  if (proprio()) {
+    const L = S.local || {};
+    c.className = `chip ${L.pronto ? 'ok' : 'aviso'}`;
+    c.textContent = L.pronto ? 'Criador próprio pronto' : L.preparo?.ativa ? 'Preparando o criador próprio…' : 'Criador próprio: falta preparar';
+  } else {
+    c.className = `chip ${S.chave.definida ? (S.contaErro ? 'erro' : 'ok') : 'aviso'}`;
+    c.textContent = S.chave.definida ? (S.contaErro ? 'KeenFace: erro na chave/conexão' : 'KeenFace conectado') : 'Sem chave do KeenFace';
+  }
   const t = S.tarefa;
   const p = $('#status-progresso');
   if (ativa()) {
@@ -733,12 +884,25 @@ function menus() {
       { rotulo: 'Adicionar fotos…', icone: 'arquivoMais', atalho: 'Ctrl+O', fn: adicionarFotos },
       { rotulo: 'Tirar todas as fotos', icone: 'x', desabilitado: !S.fotos.length, fn: limparFotos },
       '-',
-      { rotulo: 'Escolher a pasta de saída…', icone: 'pasta', desabilitado: ativa(), fn: escolherSaida },
-      { rotulo: 'Abrir a pasta de saída', icone: 'externo', fn: () => tentar(() => api('abrir', {})) },
+      { rotulo: 'Escolher a pasta de saída…', icone: 'pasta', desabilitado: ativa(), fn: () => (proprio() ? tentar(() => api('local_saida', {})).then(aplicar) : escolherSaida()) },
       '-',
-      { rotulo: 'Criar cabeça', icone: 'varinha', atalho: 'Ctrl+Enter', desabilitado: ativa(), fn: criar },
+      { rotulo: proprio() ? 'Criar face' : 'Criar cabeça', icone: 'varinha', atalho: 'Ctrl+Enter', desabilitado: ativa(), fn: criar },
+    ]],
+    ['Criador próprio', () => [
+      { rotulo: 'Usar o criador próprio', icone: 'check', desabilitado: proprio() || ativa(), fn: () => mudarOpcao('motor', 'proprio') },
+      '-',
+      { rotulo: 'Baixar os componentes…', icone: 'baixar', desabilitado: !!S.local?.componentes?.ok, fn: baixarComponentes },
+      { rotulo: 'Importar a face de referência…', icone: 'baixar', desabilitado: S.local?.referencia?.ok !== false, fn: importarRef },
+      { rotulo: S.local?.modelo ? 'Refazer o modelo das cabeças do jogo' : 'Preparar o modelo das cabeças do jogo', icone: 'recarregar',
+        desabilitado: ativa() || !!S.local?.preparo?.ativa || !S.local?.componentes?.ok || !S.local?.jogo?.ok, fn: () => prepararLocal(true) },
+      { rotulo: 'Conferir de novo o jogo e o FET', icone: 'recarregar', fn: conferirLocal },
+      '-',
+      { rotulo: 'Escolher a pasta do FIFA Editor Tool…', icone: 'pasta', fn: () => escolherPastaJogo('fet') },
+      { rotulo: 'Escolher a pasta do FC 27…', icone: 'pasta', fn: () => escolherPastaJogo('jogo') },
     ]],
     ['KeenFace', () => [
+      { rotulo: 'Usar o KeenFace', icone: 'check', desabilitado: !proprio() || ativa(), fn: () => mudarOpcao('motor', 'keenface') },
+      '-',
       { rotulo: 'Atualizar o saldo', icone: 'recarregar', desabilitado: !S.chave.definida, fn: () => atualizarConta() },
       { rotulo: 'Conferir Minhas cabeças', icone: 'lista', desabilitado: !S.chave.definida, fn: sincronizar },
       { rotulo: 'Trocar a chave da API…', icone: 'chip', fn: () => { S.trocandoChave = true; S.fechadas.delete('conta'); desenharConfig(); setTimeout(() => $('#config input[type=password]')?.focus(), 30); } },
@@ -777,14 +941,19 @@ function atalhos() {
 
 function sobre() {
   dialogoSobre({ nome: 'Criador de Faces', versao: S.versao, html: `
-    Cria a cabeça 3D de um jogador a partir de fotos com a API do <b>KeenFace</b> (keenface.ai, da KeenTools), usando a chave e os
-    créditos da sua conta. A cabeça volta como <i>.glb</i> (e, se quiser, o FBX MetaHuman ou o OBJ), pronta para o
-    <b>MG Keen Converter</b> (de MGthefacemaker) transformar na face do FC 27.<br><br>
+    Cria a face de um jogador a partir de fotos, de dois jeitos.<br><br>
+    <b>Criador próprio</b> — roda neste computador, sem custo e sem enviar as fotos: acha o rosto com o MediaPipe (Google, Apache 2.0),
+    ajusta a cabeça do FC 27 às fotos com um modelo feito das cabeças do seu próprio jogo e grava o <i>headmorphpreset</i> (FBX) e a
+    textura careca, prontos para o FET. Nada do jogo vem com a ferramenta: o modelo é montado aqui e fica só neste computador.<br><br>
+    <b>KeenFace</b> — cabeça 3D pela API do KeenFace (keenface.ai, da KeenTools), com a chave e os créditos da sua conta. A cabeça volta
+    como <i>.glb</i> (e, se quiser, o FBX MetaHuman ou o OBJ), pronta para o <b>MG Keen Converter</b> (de MGthefacemaker) transformar na
+    face do FC 27.<br><br>
     <b>Custo:</b> ${preco()} créditos por cabeça; os arquivos e os downloads repetidos não custam nada, e cabeça que falha não é cobrada.
     Antes de criar, a ferramenta confere com o KeenFace o custo e o saldo e espera a sua confirmação.<br>
     <b>Privacidade:</b> as fotos vão para os servidores da KeenTools e ficam na sua conta até você apagar a cabeça. A chave fica só neste computador.<br>
     <b>Conversão:</b> o MG Keen Converter é baixado à parte (Ko-fi do autor) e não vem com o Super Tool; a ferramenta só abre o programa.<br><br>
-    <b>1.0</b> — primeira versão.` });
+    <b>2.0</b> — criador próprio (no computador, sem custo): olhos no padrão do jogo, textura careca, câmera com perspectiva.<br>
+    <b>1.0</b> — KeenFace.` });
 }
 
 document.addEventListener('keydown', (e) => {
@@ -824,7 +993,8 @@ async function iniciar() {
   const r = await api('inicio');
   S.versao = r.versao;
   S.links = r.links || {};
-  S.limite = r.limite_fotos || 15;
+  S.limiteKeen = r.limite_fotos || 15;
+  S.limiteLocal = r.limite_fotos_local || 6;
   $('#versao').textContent = r.versao;
   S.ultimaFase = r.tarefa?.fase || null;
   aplicar(r);

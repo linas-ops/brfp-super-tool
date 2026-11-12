@@ -58,8 +58,9 @@ FERRAMENTAS = [
                   "de saída e mostra a prévia 3D da entrada e do resultado."},
     {"id": "criador_faces", "nome": "Criador de Faces", "icone": "rostoFoto", "tipo": "web", "porta": 8783,
      "pasta": os.path.join(AQUI, "ferramentas", "criador_faces"), "guia": "LEIAME.md",
-     "descricao": "Cabeça 3D do jogador a partir de fotos com o KeenFace (keenface.ai), na sua conta e com os seus créditos: "
-                  "mostra custo e saldo antes, baixa o .glb com prévia 3D e abre o MG Keen Converter para virar face do FC 27."},
+     "descricao": "Face do jogador a partir de fotos: o criador próprio roda no computador, sem custo, e grava direto o "
+                  "headmorphpreset e a textura careca do FC 27; o KeenFace (pago, na sua conta) dá a cabeça mais fiel, convertida no "
+                  "MG Keen Converter."},
     {"id": "corpos", "nome": "Conversor de Corpos", "icone": "pessoa", "tipo": "web", "porta": 8777,
      "pasta": os.path.join(AQUI, "ferramentas", "corpos"), "guia": "LEIAME.md",
      "descricao": "Converte a textura do corpo (pele e tatuagens do bodyupper) entre FC 26 e FC 27: identifica o layout de "

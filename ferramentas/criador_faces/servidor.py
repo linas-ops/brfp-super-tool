@@ -32,19 +32,21 @@ sys.path.insert(0, AQUI)
 
 import base  # noqa: E402
 import keenface as KF  # noqa: E402
+import proprio  # noqa: E402
 
-VERSAO = "1.0"
+VERSAO = "2.0"
 PADRAO_SAIDA = os.path.normpath(os.path.join(base.raiz_trabalho(), "Cabeças KeenFace"))
 PREFS = base.Prefs(os.path.join(AQUI, "preferencias.json"), {
     "chave": "", "saida": "", "modo": "padrao", "textura": "pbr", "limpeza": True, "lente": "", "imagens": "jpg",
-    "metahuman": False, "aceite": False, "mg_exe": "", "ultima_pasta": "", "historico": []})
-OPCOES = ("modo", "textura", "limpeza", "lente", "imagens", "metahuman", "aceite")
+    "metahuman": False, "aceite": False, "mg_exe": "", "ultima_pasta": "", "historico": [],
+    "motor": "proprio", "saida_local": "", "fet_dir": "", "jogo_dir": ""})
+OPCOES = ("modo", "textura", "limpeza", "lente", "imagens", "metahuman", "aceite", "motor")
 LOCK = threading.RLock()
 FOTOS = []                       # fotos da cabeça nova, na ordem
 SEQ = itertools.count(1)
 VALIDADE_PH = 23 * 3600          # a foto enviada vale 24 h no KeenFace enquanto nenhuma cabeça usar
-ATIVAS = ("enviando", "conferindo", "confirmar", "criando", "na_fila", "processando", "baixando")
-CANCELAVEIS = ("enviando", "conferindo", "confirmar")
+ATIVAS = ("enviando", "conferindo", "confirmar", "criando", "na_fila", "processando", "baixando", "local")
+CANCELAVEIS = ("enviando", "conferindo", "confirmar", "local")      # "local" = criador próprio, no computador
 PARAR = threading.Event()        # cancelar antes de criar a cabeça
 CONTINUAR = threading.Event()    # o usuário confirmou o gasto
 TAREFA = {}
@@ -132,7 +134,8 @@ def publico_item(x):
     return {"idem": x.get("idem"), "id": x.get("id"), "nome": x.get("nome"), "pasta": x.get("pasta"), "criado": x.get("criado"),
             "modo": x.get("modo"), "fotos": x.get("fotos"), "nomes_fotos": x.get("nomes_fotos") or [], "status": x.get("status"),
             "progresso": x.get("progresso"), "creditos": x.get("creditos"), "erro": erro, "arquivos": arqs,
-            "pasta_existe": bool(x.get("pasta") and os.path.isdir(x["pasta"])), "seguindo": seg or None}
+            "pasta_existe": bool(x.get("pasta") and os.path.isdir(x["pasta"])), "seguindo": seg or None,
+            "origem": x.get("origem") or "keenface", "jogador": x.get("jogador"), "relatorio": x.get("relatorio")}
 
 
 # ------------------------------------------------------------------ nomes e pastas
@@ -245,7 +248,8 @@ def estado_payload():
     return {"fotos": fotos, "tarefa": t, "opcoes": {k: op.get(k) for k in OPCOES}, "saida": pasta_saida(),
             "chave": {"definida": bool(chave), "fim": chave[-4:] if len(chave) >= 12 else ""},
             "mg": bool(op.get("mg_exe") and os.path.isfile(op["mg_exe"])), "nome_sugerido": sugerir_nome(),
-            "historico": [publico_item(x) for x in op.get("historico") or []]}
+            "historico": [publico_item(x) for x in op.get("historico") or []],
+            "local": proprio.estado(), "saida_local": proprio.pasta_saida()}
 
 
 def falha(ex):
@@ -262,6 +266,7 @@ def cliente(parar=None):
 # ------------------------------------------------------------------ rotas: início, chave e opções
 def api_inicio(_):
     return {"versao": VERSAO, "links": KF.LINKS, "saida_padrao": PADRAO_SAIDA, "limite_fotos": KF.MAX_FOTOS,
+            "limite_fotos_local": proprio.MAX_FOTOS,
             **estado_payload()}
 
 
@@ -317,6 +322,8 @@ def api_esquecer_chave(_):
 
 def api_opcoes(d):
     mud = {}
+    if d.get("motor") in ("proprio", "keenface"):
+        mud["motor"] = d["motor"]
     if d.get("modo") in ("padrao", "scan"):
         mud["modo"] = d["modo"]
     if d.get("textura") in ("pbr", "raw"):
@@ -421,8 +428,8 @@ def api_receber(d):
 
 def _tirar_fotos(manter):
     with LOCK:
-        if TAREFA["fase"] in ("enviando", "conferindo", "confirmar", "criando"):
-            raise base.ErroUsuario("Espere terminar (ou cancele) o envio antes de mexer nas fotos.")
+        if TAREFA["fase"] in ("enviando", "conferindo", "confirmar", "criando", "local"):
+            raise base.ErroUsuario("Espere terminar (ou cancele) antes de mexer nas fotos.")
         saem = [f for f in FOTOS if not manter(f)]
         FOTOS[:] = [f for f in FOTOS if manter(f)]
     esquecer_fotos_enviadas(PREFS.ler().get("chave"), [f["ph"] for f in saem if ph_valido(f)])
@@ -530,7 +537,9 @@ def api_confirmar(_):
 def api_cancelar(_):
     with LOCK:
         fase = TAREFA["fase"]
-    if fase in CANCELAVEIS:
+    if fase == "local":
+        proprio.cancelar()
+    elif fase in CANCELAVEIS:
         PARAR.set()
     elif fase in ATIVAS:
         raise base.ErroUsuario("A cabeça já foi criada no KeenFace e não dá para cancelar: espere terminar.")
@@ -933,7 +942,10 @@ def api_abrir(d):
         alvo = (x or {}).get("pasta")
         arq = ((x or {}).get("arquivos") or {}).get(d.get("formato") or "")
         if arq and os.path.exists(arq):
-            base.abrir_no_explorer(arq, selecionar=True)
+            if d.get("executar"):               # abre no programa padrão (as imagens de conferência)
+                os.startfile(arq)  # noqa: S606
+            else:
+                base.abrir_no_explorer(arq, selecionar=True)
             return {}
     else:
         alvo = pasta_saida()
@@ -1012,6 +1024,10 @@ ROTAS_POST = {"chave": api_chave, "esquecer_chave": api_esquecer_chave, "opcoes"
               "esquecer": api_esquecer, "renomear": api_renomear, "sincronizar": api_sincronizar,
               "abrir": api_abrir, "abrir_link": api_abrir_link, "mg": api_mg, "mg_escolher": api_mg_escolher}
 ESPECIAIS = {"/foto": especial_foto, "/modelo": especial_modelo}
+proprio.ligar(sys.modules[__name__])
+for _G, _P in (proprio.rotas(),):
+    ROTAS_GET.update(_G)
+    ROTAS_POST.update(_P)
 
 
 def main():
