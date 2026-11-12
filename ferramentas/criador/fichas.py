@@ -52,6 +52,28 @@ FONTES_SOFIFA = [
      "sha256": None, "tamanho": 90933390},
 ]
 
+# edições que o conjunto acima não tem: o FC 25 (outra raspagem do sofifa, de 12/11/2024; sem nascimento, nação e
+# clube, que vêm das outras edições do mesmo ID; os acentos vieram estragados) e o FC 26 (os ratings oficiais da EA,
+# ea.com/games/ea-sports-fc/ratings, pela API pública do site: 100 jogadores por pedido)
+FONTE_FC25 = {"nome": "FC 25 (raspagem do sofifa.com de 12/11/2024, jmacd867/SoFifa-Dataset-2024)",
+              "url": "https://huggingface.co/datasets/jmacd867/SoFifa-Dataset-2024/resolve/main/all_fifa_players.csv",
+              "sha256": "89a5bca3a613386aedc4a0bc552d8774372d686ba89cedf655366b8ad5061df8", "ver": 25, "data": "2024-11-12"}
+FONTE_EA = {"nome": "ratings oficiais da EA (ea.com/games/ea-sports-fc/ratings)",
+            "url": "https://drop-api.ea.com/rating/ea-sports-fc?locale=en&limit=100&gender=0&offset={}",
+            # a API serve a edição atual do site: o FC 26 se estes jogadores tiverem estas notas; senão, uma mais nova
+            "marcas_fc26": {"Wirtz": 89, "Gyökeres": 87, "Alexander-Arnold": 86, "Salah": 91, "Dembélé": 90}, "data_fc26": "2025-09-26"}
+# coluna do CSV do FC 25 -> atributo do banco
+ATR_FC25 = {"Crossing": "crossing", "Finishing": "finishing", "Heading Accuracy": "headingaccuracy",
+            "Short Passing": "shortpassing", "Volleys": "volleys", "Dribbling": "dribbling", "Curve": "curve",
+            "FK Accuracy": "freekickaccuracy", "Long Passing": "longpassing", "Ball Control": "ballcontrol",
+            "Acceleration": "acceleration", "Sprint Speed": "sprintspeed", "Agility": "agility", "Reactions": "reactions",
+            "Balance": "balance", "Shot Power": "shotpower", "Jumping": "jumping", "Stamina": "stamina", "Strength": "strength",
+            "Long Shots": "longshots", "Aggression": "aggression", "Interceptions": "interceptions",
+            "Attack Position": "positioning", "Vision": "vision", "Penalties": "penalties", "Composure": "composure",
+            "Defensive Awareness": "defensiveawareness", "Standing Tackle": "standingtackle", "Sliding tackle": "slidingtackle",
+            "GK Diving": "gkdiving", "GK Handling": "gkhandling", "GK Kicking": "gkkicking", "GK Positioning": "gkpositioning",
+            "GK Reflexes": "gkreflexes"}
+
 # atributo do banco -> coluna do CSV do sofifa
 ATR_SOFIFA = {
     "acceleration": "movement_acceleration", "sprintspeed": "movement_sprint_speed", "agility": "movement_agility",
@@ -71,6 +93,12 @@ ATR = list(ATR_SOFIFA)
 POS_SIGLA = {"GK": 0, "SW": 5, "RWB": 2, "RB": 3, "CB": 5, "LB": 7, "LWB": 8, "CDM": 10, "RM": 12, "CM": 14, "LM": 16,
              "CAM": 18, "CF": 21, "RF": 21, "LF": 21, "RW": 23, "ST": 25, "RS": 25, "LS": 25, "LW": 27}
 GK_ATR = {"gkdiving", "gkhandling", "gkkicking", "gkreflexes", "gkpositioning"}
+
+
+def _num(v):
+    """O número do começo ("95+1" -> 95, "178cm / 5'10" -> 178)."""
+    m = re.match(r"\s*(\d+)", str(v or ""))
+    return int(m.group(1)) if m else None
 
 
 def rotulo_sofifa(ver):
@@ -192,9 +220,10 @@ class BaseSofifa:
                 meta = dict(c.execute("SELECT chave, valor FROM meta").fetchall())
         except sqlite3.Error as ex:
             return {"baixada": False, "erro": str(ex)}
+        tem = {v for v, _ in vs}
         self._estado = {"baixada": True, "versoes": [{"ver": v, "nome": rotulo_sofifa(v), "fichas": n} for v, n in vs],
                         "fichas": sum(n for _, n in vs), "jogadores": nj, "origem": meta.get("origem"),
-                        "tamanho": os.path.getsize(self.caminho)}
+                        "tamanho": os.path.getsize(self.caminho), "faltam": [v for v in (25, 26) if not any(x == v or v == 26 and x > 26 for x in tem)]}
         return self._estado
 
     def baixar(self, progresso=None):
@@ -223,7 +252,12 @@ class BaseSofifa:
                 if progresso:
                     progresso("Montando a base do sofifa…", 0, 0)
                 n = self.montar([tmp], f["nome"], substituir=True)
-                return {"fichas": n, "origem": f["nome"]}
+                r = {"fichas": n, "origem": f["nome"]}
+                try:                                          # o FC 25 e o FC 26 (se falharem, a base fica sem eles)
+                    r["novas"] = self.juntar_novas(progresso)
+                except ValueError as ex:
+                    r["aviso"] = str(ex)
+                return r
             except (OSError, ValueError, urllib.error.URLError) as ex:
                 erros.append(f"{f['nome']}: {ex}")
             finally:
@@ -233,9 +267,10 @@ class BaseSofifa:
                     pass
         raise ValueError("Não consegui baixar a base do sofifa. " + " · ".join(erros))
 
-    def montar(self, csvs, origem, substituir=False):
+    def montar(self, csvs, origem, substituir=False, linhas=None):
         """CSV(s) no formato do sofifa (player_id ou sofifa_id; fifa_version ou o número no nome do arquivo:
-        players_22.csv) -> SQLite. substituir=False junta à base que já existe (a mesma edição é trocada)."""
+        players_22.csv) e/ou linhas prontas (na ordem das colunas de fichas) -> SQLite. substituir=False junta à base
+        que já existe (a mesma edição é trocada)."""
         os.makedirs(os.path.dirname(self.caminho), exist_ok=True)
         novo = self.caminho + ".novo"
         if os.path.exists(novo):
@@ -287,13 +322,26 @@ class BaseSofifa:
                         lote = []
                 con.executemany(sql, lote)
                 n += len(lote)
+        if linhas:
+            con.executemany(sql, linhas)
+            n += len(linhas)
+        # o que uma edição não tem (FC 25: nascimento, nação, nome curto, acentos) vem de outra edição do mesmo jogador
+        for col in ("nasc", "nac", "curto"):
+            con.execute(f"""UPDATE fichas SET {col} = (SELECT f2.{col} FROM fichas f2 WHERE f2.pid = fichas.pid
+                            AND f2.{col} != '' ORDER BY f2.ver DESC LIMIT 1) WHERE {col} = '' OR {col} IS NULL""")
+        con.execute("""UPDATE fichas SET longo = (SELECT f2.longo FROM fichas f2 WHERE f2.pid = fichas.pid
+                       AND instr(f2.longo, char(65533)) = 0 ORDER BY f2.ver DESC LIMIT 1)
+                       WHERE instr(longo, char(65533)) > 0 AND EXISTS (SELECT 1 FROM fichas f3 WHERE f3.pid = fichas.pid
+                       AND instr(f3.longo, char(65533)) = 0)""")
+        con.execute("UPDATE fichas SET nasc = COALESCE(nasc, ''), nac = COALESCE(nac, ''), curto = COALESCE(curto, '')")
+        con.execute("UPDATE fichas SET curto = longo WHERE curto = ''")
         # índice de nomes: um registro por jogador (nascimento + todas as grafias do nome nas edições)
         con.executescript("DELETE FROM jogadores; DELETE FROM palavras;")
         nomes = {}
         for pid, nasc, curto, longo in con.execute("SELECT pid, nasc, curto, longo FROM fichas ORDER BY ver"):
             a = nomes.setdefault(pid, [nasc, set()])
             a[0] = nasc or a[0]
-            a[1].update(x for x in (curto, longo) if x)
+            a[1].update(x.replace("\ufffd", "") for x in (curto, longo) if x)   # acento estragado: sem a letra
         con.executemany("INSERT INTO jogadores VALUES (?, ?, ?)", ((pid, a[0], " | ".join(sorted(a[1]))) for pid, a in nomes.items()))
         con.executemany("INSERT INTO palavras VALUES (?, ?)", ((w, pid) for pid, a in nomes.items() for w in _tk(*a[1])))
         con.executescript("""
@@ -307,6 +355,121 @@ class BaseSofifa:
         self.fechar()
         os.replace(novo, self.caminho)
         return n
+
+    # ---- FC 25 e FC 26
+    @staticmethod
+    def _linhas_fc25(caminho):
+        """CSV da raspagem do FC 25 -> linhas de fichas (cada jogador aparece 2 vezes: no geral e no da liga)."""
+        out = {}
+        with open(caminho, encoding="utf-8", errors="replace", newline="") as f:
+            for d in csv.DictReader(f):
+                pid = _num(d.get("Player ID"))
+                if not pid or pid in out:
+                    continue
+                pos = list(dict.fromkeys(x.strip() for x in (d.get("Position") or "").split(",") if x.strip()))
+                melhor = (d.get("Best Position") or "").strip()
+                if melhor in pos:
+                    pos.remove(melhor)
+                    pos.insert(0, melhor)
+                liga = d.get("League") or ""
+                out[pid] = ([pid, FONTE_FC25["ver"], FONTE_FC25["data"], "", d.get("Player") or "", "", "", "", liga,
+                             ", ".join(pos), _num(d.get("Overall Score")), _num(d.get("Potential Score")),
+                             2 if (d.get("Preferred Foot") or "").lower().startswith("l") else 1, _num(d.get("Weak Foot")),
+                             _num(d.get("Skill Moves")), _num(d.get("Height")), _num(d.get("Weight")),
+                             _num(d.get("International Reputation"))]
+                            + [_num(d.get(next(k for k, v in ATR_FC25.items() if v == a))) for a in ATR])
+        return list(out.values())
+
+    @staticmethod
+    def _linhas_ea(progresso=None):
+        """Os ratings atuais da EA (só masculino) -> (linhas de fichas, edição, data)."""
+        itens, total, offset = [], None, 0
+        while total is None or offset < total:
+            req = urllib.request.Request(FONTE_EA["url"].format(offset), headers={"User-Agent": UA, "Accept": "application/json"})
+            for tentativa in range(3):
+                try:
+                    with urllib.request.urlopen(req, timeout=30) as r:
+                        d = json.load(r)
+                    break
+                except (OSError, ValueError, urllib.error.URLError):
+                    if tentativa == 2:
+                        raise
+                    time.sleep(3 * (tentativa + 1))
+            total = int(d.get("totalItems") or 0)
+            pag = d.get("items") or []
+            if not pag:
+                break
+            itens += pag
+            offset += len(pag)
+            if progresso:
+                progresso(f"Baixando os ratings da EA… {min(offset, total):,} de {total:,}".replace(",", "."), offset, total)
+            time.sleep(0.4)
+        marcas = FONTE_EA["marcas_fc26"]
+        nota = {(x.get("commonName") or x.get("lastName") or ""): x.get("overallRating") for x in itens}
+        fc26 = sum(1 for k, v in marcas.items() if nota.get(k) == v) >= 3
+        ver = 26 if fc26 else 27
+        data = FONTE_EA["data_fc26"] if fc26 else datetime.date.today().isoformat()
+        linhas = []
+        for x in itens:
+            if (x.get("gender") or {}).get("id", 0) != 0:
+                continue
+            st = {k.lower(): (v or {}).get("value") for k, v in (x.get("stats") or {}).items()}
+            nasc = ""
+            m = re.match(r"(\d+)/(\d+)/(\d{4})", x.get("birthdate") or "")
+            if m:
+                nasc = f"{m.group(3)}-{int(m.group(1)):02d}-{int(m.group(2)):02d}"
+            pos = [(x.get("position") or {}).get("shortLabel") or ""] + [a.get("shortLabel") or "" for a in x.get("alternatePositions") or []]
+            longo = f"{x.get('firstName') or ''} {x.get('lastName') or ''}".strip()
+            linhas.append([int(x["id"]), ver, data, x.get("commonName") or longo, longo, nasc,
+                           (x.get("nationality") or {}).get("label") or "", (x.get("team") or {}).get("label") or "",
+                           x.get("leagueName") or "", ", ".join(p for p in pos if p), x.get("overallRating"), None,
+                           2 if x.get("preferredFoot") == 2 else 1, x.get("weakFootAbility"), x.get("skillMoves"),
+                           x.get("height"), x.get("weight"), None] + [st.get(a) for a in ATR])
+        return linhas, ver, data
+
+    def juntar_novas(self, progresso=None):
+        """Junta à base o FC 25 (CSV, conferido pelo SHA-256) e a edição atual dos ratings da EA (FC 26)."""
+        if not self.existe():
+            raise ValueError("Baixe a base do sofifa antes.")
+        os.makedirs(PASTA_SOFIFA, exist_ok=True)
+        linhas, nomes, erros = [], [], []
+        tmp = os.path.join(PASTA_SOFIFA, "fc25.csv.part")
+        try:
+            if progresso:
+                progresso("Baixando o FC 25…", 0, 0)
+            h = hashlib.sha256()
+            with urllib.request.urlopen(urllib.request.Request(FONTE_FC25["url"], headers={"User-Agent": UA}), timeout=60) as r, open(tmp, "wb") as out:
+                while True:
+                    b = r.read(1 << 20)
+                    if not b:
+                        break
+                    out.write(b)
+                    h.update(b)
+            if h.hexdigest() != FONTE_FC25["sha256"]:
+                raise ValueError("o arquivo baixado não confere (SHA-256 diferente)")
+            l25 = self._linhas_fc25(tmp)
+            linhas += l25
+            nomes.append(f"FC 25 ({len(l25):,} fichas)".replace(",", "."))
+        except (OSError, ValueError, urllib.error.URLError) as ex:
+            erros.append(f"FC 25: {ex}")
+        finally:
+            try:
+                os.remove(tmp)
+            except OSError:
+                pass
+        try:
+            lea, ver, _ = self._linhas_ea(progresso)
+            linhas += lea
+            nomes.append(f"{rotulo_sofifa(ver)} ({len(lea):,} fichas".replace(",", ".") + ", ratings da EA)")
+        except (OSError, ValueError, KeyError, urllib.error.URLError) as ex:
+            erros.append(f"ratings da EA: {ex}")
+        if not linhas:
+            raise ValueError("Não consegui baixar o FC 25 nem o FC 26. " + " · ".join(erros))
+        if progresso:
+            progresso("Juntando à base do sofifa…", 0, 0)
+        origem = (self.estado().get("origem") or "") + " + " + " + ".join(nomes)
+        self.montar([], origem, substituir=False, linhas=linhas)
+        return {"juntadas": nomes, "erros": erros, "fichas": len(linhas)}
 
     # ---- busca
     def buscar(self, j, clube=None, hoje=None, ref=None):

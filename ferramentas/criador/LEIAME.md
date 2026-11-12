@@ -141,11 +141,20 @@ um PES. Achou com segurança, o jogador novo sai com o que a ficha tem: posiçõ
 os 34 atributos — do sofifa, também o **ID da EA** — e, conforme a opção, a nota.
 
 - **Sofifa**: o site e a api.sofifa.net recusam programas no Cloudflare (bloqueio anti-robô, mesmo com a chave da API),
-  então a busca é numa **base do sofifa guardada no computador**: as fichas do FIFA 15 ao FC 24 (180 mil fichas de 53 mil
-  jogadores, de um conjunto público raspado do sofifa). Baixada uma vez pelo painel **Fichas do sofifa e do PES** (96 MB →
-  46 MB em `dados\sofifa\sofifa.sqlite`, ≈20 s); depois a busca é instantânea e sem limite. **Juntar CSV…** soma outras
-  edições no formato do sofifa (ex.: `players_22.csv` do Kaggle; colunas `player_id`/`sofifa_id`, `fifa_version` ou o
-  número da edição no nome do arquivo).
+  então a busca é numa **base do sofifa guardada no computador**: as fichas do **FIFA 15 ao FC 26** (215 mil fichas de 59
+  mil jogadores). Baixada uma vez pelo painel **Fichas do sofifa e do PES** (≈2 min; 55 MB em `dados\sofifa\sofifa.sqlite`);
+  depois a busca é instantânea e sem limite. Vem de três fontes públicas:
+  - FIFA 15 ao FC 24: um conjunto raspado do sofifa (180 mil fichas; 96 MB);
+  - **FC 25**: outra raspagem do sofifa, de 12/11/2024 (18,6 mil fichas; 14 MB). Não tem o clube, o nascimento nem a
+    nação, que vêm das outras edições do mesmo jogador (quem só aparece no FC 25 fica sem nascimento: vira *talvez*);
+  - **FC 26**: os **ratings oficiais da EA** (ea.com/games/ea-sports-fc/ratings, 16,2 mil jogadores, pela API pública do
+    site, 100 por pedido). Os IDs são os mesmos do sofifa. O FC 26 não tem os clubes brasileiros (o jogo não tem a
+    licença), mas tem os da Libertadores e da Sul-Americana dos outros países. Se a EA já tiver trocado o site para uma
+    edição mais nova, a base recebe essa edição no lugar.
+
+  Numa base baixada antes, o painel mostra **Juntar o FC 25 e o FC 26**. **Juntar CSV…** soma outras edições no formato
+  do sofifa (ex.: `players_22.csv` do Kaggle; colunas `player_id`/`sofifa_id`, `fifa_version` ou o número da edição no
+  nome do arquivo).
 - **PES**: uma **base do PES 2021 com o patch VirtuaRED** (elencos da temporada atual — o patch 10.3 é de outubro de 2026),
   também guardada no computador: todos os 29 mil jogadores (sem as lendas), do projeto PESXplorer (licença MIT). Baixada
   uma vez pelo painel (95 MB → 18 MB em `dados\pes\pes2021.sqlite`, ≈10 s; *Baixar de novo* pega o patch mais novo).

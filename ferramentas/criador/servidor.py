@@ -1247,10 +1247,32 @@ def _sofifa_baixar():
         def prog(msg, feito, total):
             TAREFA.update(msg=msg, feito=int(100 * feito / total) if total else 100, total=100)
         r = F.sofifa().baixar(prog)
-        TAREFA.update(msg=f"Base do sofifa pronta: {r['fichas']:,} fichas.".replace(",", "."), feito=100, resultado=r)
+        e = F.sofifa().estado()
+        TAREFA.update(msg=f"Base do sofifa pronta: {e.get('fichas', r['fichas']):,} fichas.".replace(",", "."), feito=100,
+                      resultado=r, erro=None if not (r.get("aviso") or (r.get("novas") or {}).get("erros")) else
+                      "A base ficou sem uma edição nova: " + (r.get("aviso") or " · ".join(r["novas"]["erros"])))
     except Exception as ex:  # noqa: BLE001
         traceback.print_exc()
         TAREFA.update(erro=str(ex), msg="A base do sofifa não foi baixada.")
+    finally:
+        TAREFA.update(ativa=False, fim=time.time())
+
+
+def api_sofifa_novas(_):
+    return _tarefa("sofifa", "Juntando o FC 25 e o FC 26 à base do sofifa…", _sofifa_novas)
+
+
+def _sofifa_novas():
+    """O FC 25 (raspagem do sofifa) e o FC 26 (ratings oficiais da EA) numa base que já está no computador."""
+    try:
+        def prog(msg, feito, total):
+            TAREFA.update(msg=msg, feito=int(100 * feito / total) if total else 100, total=100)
+        r = F.sofifa().juntar_novas(prog)
+        TAREFA.update(msg=f"Juntei à base do sofifa: {', '.join(r['juntadas'])}.", feito=100, resultado=r,
+                      erro=("Faltou: " + " · ".join(r["erros"])) if r["erros"] else None)
+    except Exception as ex:  # noqa: BLE001
+        traceback.print_exc()
+        TAREFA.update(erro=str(ex), msg="O FC 25 e o FC 26 não foram juntados.")
     finally:
         TAREFA.update(ativa=False, fim=time.time())
 
@@ -1916,7 +1938,7 @@ ROTAS_POST = {k: _protegido(v) for k, v in {
     "tm_testar": api_tm_testar, "atualizar_preparar_varias": api_atualizar_preparar_varias,
     "atualizar_conferir_varias": api_atualizar_conferir_varias, "atualizar_casar_selecoes": api_atualizar_casar_selecoes,
     "atualizar_selecoes_projeto": api_atualizar_selecoes_projeto, "atualizar_casar_individual": api_atualizar_casar_individual,
-    "sofifa_baixar": api_sofifa_baixar, "sofifa_importar": api_sofifa_importar, "buscar_pes": api_buscar_pes,
+    "sofifa_baixar": api_sofifa_baixar, "sofifa_importar": api_sofifa_importar, "sofifa_novas": api_sofifa_novas, "buscar_pes": api_buscar_pes,
     "pes_baixar": api_pes_baixar}.items()}
 _G, _P = base.rotas_componentes("criador", ao_concluir=carregar_motor)
 ROTAS_GET.update(_G)

@@ -623,7 +623,7 @@ function desenharPrevia(i, t, corpo) {
       op.fichas_pes && !S.e.pes_base?.baixada ? el('span', { class: 'alerta-txt' }, ' A base do PES ainda não foi baixada.') : null,
       op.fichas_pesdb ? el('span', { class: 'mudo' }, pes.buscados ? ` pesdb.net: ${pes.achados} de ${pes.buscados} achados.` : ' pesdb.net: ainda não buscado.') : null),
     el('div', { class: 'acoes-linha' },
-      op.fichas_sofifa && !S.e.sofifa?.baixada ? el('button', { class: 'btn peq', disabled: S.e.tarefa.ativa, onclick: baixarSofifa }, icone('baixar', 12), 'Baixar a base do sofifa (96 MB)') : null,
+      op.fichas_sofifa && !S.e.sofifa?.baixada ? el('button', { class: 'btn peq', disabled: S.e.tarefa.ativa, onclick: baixarSofifa }, icone('baixar', 12), 'Baixar a base do sofifa (110 MB)') : null,
       op.fichas_pes && !S.e.pes_base?.baixada ? el('button', { class: 'btn peq', disabled: S.e.tarefa.ativa, onclick: baixarPes }, icone('baixar', 12), 'Baixar a base do PES (95 MB)') : null,
       op.fichas_pesdb ? el('button', { class: 'btn-fantasma peq', disabled: S.e.tarefa.ativa, title: 'Procura no pesdb.net (eFootball e PES antigos) os jogadores novos que ainda não foram buscados (1 pedido a cada 2 s; o site bloqueia por 1 hora depois de ~250 pedidos)', onclick: () => buscarPes([i.id], false) }, icone('busca', 12), pes.buscados ? 'Buscar os que faltam no pesdb.net' : 'Buscar no pesdb.net') : null,
       op.fichas_pesdb && pes.buscados ? el('button', { class: 'btn-fantasma peq', disabled: S.e.tarefa.ativa, title: 'Busca de novo todos (o que já veio do site fica no cache)', onclick: () => buscarPes([i.id], true) }, icone('recarregar', 12), 'De novo') : null)) : null;
@@ -1466,8 +1466,10 @@ function secaoFichas() {
   return [
     el('div', { class: 'peq-txt' }, 'Cada jogador novo é procurado no FIFA (sofifa) e no PES. Achou com segurança (mesmo nascimento no sofifa; no PES, nome, idade e nação batendo e ninguém parecido): o jogador ganha as posições, o pé, a perna ruim, os dribles, o físico e os atributos da ficha — e, do sofifa, o ID da EA.'),
     sf.baixada ? el('div', { class: 'peq-txt', html: `<b>Base do sofifa</b>: ${esc((sf.versoes || []).length ? `${sf.versoes[0].nome} a ${sf.versoes[sf.versoes.length - 1].nome}` : '—')} · ${fmt(sf.fichas)} fichas de ${fmt(sf.jogadores)} jogadores.` })
-      : nota('A base do sofifa ainda não está neste computador: 96 MB, baixada uma vez (o site do sofifa recusa programas, então a busca é feita aqui).', 'alerta'),
-    el('div', { class: 'acoes-linha' }, el('button', { class: sf.baixada ? 'btn-fantasma peq' : 'btn peq', disabled: e.tarefa.ativa, onclick: baixarSofifa }, icone('baixar', 12), sf.baixada ? 'Baixar de novo' : 'Baixar a base (96 MB)'),
+      : nota('A base do sofifa ainda não está neste computador: 110 MB, baixada uma vez, mais uns 2 minutos para os ratings do FC 26 no site da EA (o site do sofifa recusa programas, então a busca é feita aqui).', 'alerta'),
+    sf.baixada && (sf.faltam || []).length ? nota(`A sua base não tem ${sf.faltam.map((v) => `o FC ${v}`).join(' nem ')}. O FC 25 vem de uma raspagem pública do sofifa (novembro de 2024, sem o clube) e o FC 26 dos ratings oficiais da EA (sem os clubes brasileiros, que o jogo não tem): uns 2 minutos.`, 'info') : null,
+    el('div', { class: 'acoes-linha' }, sf.baixada && (sf.faltam || []).length ? el('button', { class: 'btn peq', disabled: e.tarefa.ativa, onclick: async () => aplicar(await tentar(() => api('sofifa_novas', {}))) }, icone('mais', 12), `Juntar ${sf.faltam.map((v) => `o FC ${v}`).join(' e ')}`) : null,
+      el('button', { class: sf.baixada ? 'btn-fantasma peq' : 'btn peq', disabled: e.tarefa.ativa, onclick: baixarSofifa }, icone('baixar', 12), sf.baixada ? 'Baixar de novo' : 'Baixar a base (110 MB)'),
       el('button', { class: 'btn-fantasma peq', disabled: e.tarefa.ativa, title: 'Junta outras edições (CSV no formato do sofifa, ex.: players_22.csv do Kaggle)', onclick: async () => aplicar(await tentar(() => api('sofifa_importar', {}))) }, icone('mais', 12), 'Juntar CSV…')),
     interruptor({ titulo: 'Procurar no sofifa (FIFA)', descricao: 'Na base do computador: instantâneo e sem limite.', marcado: op.fichas_sofifa, aoMudar: (v) => opcoes({ fichas_sofifa: v }) }).el,
     pb.baixada ? el('div', { class: 'peq-txt', html: `<b>Base do PES</b>: PES 2021 com o patch VirtuaRED ${esc(pb.patch || '')} (elencos de ${esc((pb.data || '').slice(0, 4))}) · ${fmt(pb.jogadores)} jogadores de ${fmt(pb.times)} times.` })
@@ -1724,7 +1726,8 @@ function fimTarefa(t) {
     aviso(t.erro ? 'A conferência parou' : 'Conferência pronta', { tipo: t.erro ? 'aviso' : 'sucesso', detalhe: t.erro || t.msg, tempo: t.erro ? 10000 : 4000 });
     if (S.aba === 'atualizar') { desenharAtualizarEsq(); desenharAtualizacao(); }
   } else if (t.tipo === 'sofifa') {
-    aviso(t.erro ? 'Base do sofifa: problema' : 'Base do sofifa pronta', { tipo: t.erro ? 'erro' : 'sucesso', detalhe: t.erro || `${t.msg} Os jogadores novos já são procurados nela.`, tempo: t.erro ? 12000 : 5000 });
+    const parcial = t.erro && t.resultado;                // pronta, mas sem uma das edições novas
+    aviso(t.erro && !parcial ? 'Base do sofifa: problema' : 'Base do sofifa pronta', { tipo: parcial ? 'aviso' : t.erro ? 'erro' : 'sucesso', detalhe: parcial ? `${t.msg} ${t.erro}` : t.erro || `${t.msg} Os jogadores novos já são procurados nela.`, tempo: t.erro ? 12000 : 5000 });
     if (S.aba !== 'atualizar') desenharPrincipal();
   } else if (t.tipo === 'pes') {
     aviso(t.erro ? 'A busca no pesdb.net parou' : 'Busca no pesdb.net concluída', { tipo: t.erro ? 'aviso' : 'sucesso', detalhe: t.erro || 'Os achados aparecem com o selo da edição do PES no elenco.', tempo: t.erro ? 10000 : 4000 });
