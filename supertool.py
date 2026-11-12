@@ -56,6 +56,11 @@ FERRAMENTAS = [
      "pasta": os.path.join(AQUI, "ferramentas", "faces"), "guia": "LEIAME.md",
      "descricao": "Converte cabeças (FBX do FET) entre FC 26 e FC 27: identifica o jogo de cada face, escolhe a pasta "
                   "de saída e mostra a prévia 3D da entrada e do resultado."},
+    {"id": "criador_faces", "nome": "Criador de Faces", "icone": "rostoFoto", "tipo": "web", "porta": 8783,
+     "pasta": os.path.join(AQUI, "ferramentas", "criador_faces"), "guia": "LEIAME.md",
+     "descricao": "Face do jogador a partir de fotos: o criador próprio roda no computador, sem custo, e grava direto o "
+                  "headmorphpreset e a textura careca do FC 27; o KeenFace (pago, na sua conta) dá a cabeça mais fiel, convertida no "
+                  "MG Keen Converter."},
     {"id": "corpos", "nome": "Conversor de Corpos", "icone": "pessoa", "tipo": "web", "porta": 8777,
      "pasta": os.path.join(AQUI, "ferramentas", "corpos"), "guia": "LEIAME.md",
      "descricao": "Converte a textura do corpo (pele e tatuagens do bodyupper) entre FC 26 e FC 27: identifica o layout de "
@@ -610,7 +615,7 @@ def main():
     ap = argparse.ArgumentParser(description=NOME)
     ap.add_argument("--porta", type=int, default=(EDICAO or {}).get("porta") or 8760)
     ap.add_argument("--sem-janela", action="store_true", help="não abre a janela automaticamente")
-    ap.add_argument("--abrir", help="id da ferramenta para abrir direto (estadios, placares, compdata, faces, corpos, kits, estadios_fc27, kits_pes, placares_pes)")
+    ap.add_argument("--abrir", help="id da ferramenta para abrir direto (estadios, placares, compdata, faces, criador_faces, corpos, kits, estadios_fc27, kits_pes, placares_pes)")
     a = ap.parse_args()
     if not a.abrir and EDICAO and len(FERRAMENTAS) == 1:
         a.abrir = FERRAMENTAS[0]["id"]  # edição de uma ferramenta só: a janela já abre nela

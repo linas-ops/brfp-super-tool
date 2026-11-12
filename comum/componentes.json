@@ -308,6 +308,24 @@
    "url": "https://files.pythonhosted.org/packages/79/3b/fa54d9015f945330510cb5d0b0501e8253c127cca7ebe8ba46a965df18c5/zstandard-0.25.0-cp312-cp312-win_amd64.whl",
    "sha256": "ffef5a74088f1e09947aecf91011136665152e0b4b359c42be3373897fb39b01",
    "tamanho": 506276
+  },
+  "mediapipe": {
+   "nome": "MediaPipe",
+   "distribuicao": "mediapipe",
+   "modulo": "mediapipe",
+   "versao": "1.2.2",
+   "arquivo": "mediapipe-1.2.2-py3-none-win_amd64.whl",
+   "url": "https://files.pythonhosted.org/packages/6a/b0/6d1cb31a04f1726cdcd86cf0ea3eb1e9304e59de03bb083571dcab4ac227/mediapipe-1.2.2-py3-none-win_amd64.whl",
+   "sha256": "71f44832fdd32b6270bc4379bcdd934287fb9eab974c3e74ef3fa76c7e79b54a",
+   "tamanho": 25297951,
+   "requer": [
+    "numpy",
+    "opencv"
+   ],
+   "omitir": [
+    "mediapipe/tasks/python/test/",
+    "mediapipe/tasks/testdata/"
+   ]
   }
  },
  "grupos": {
@@ -317,6 +335,19 @@
     "numpy",
     "scipy"
    ]
+  },
+  "criador_faces": {
+   "nome": "Criador de Faces (criador próprio)",
+   "pacotes": [
+    "numpy",
+    "scipy",
+    "opencv",
+    "zstandard",
+    "mediapipe"
+   ],
+   "resumo": "MediaPipe 1.2.2 (Google, Apache 2.0) + numpy, SciPy, OpenCV e zstandard",
+   "usado_por": "Criador de Faces, no modo que roda no computador (o modo KeenFace não precisa)",
+   "opcional": true
   },
   "corpos": {
    "nome": "Conversor de Corpos",

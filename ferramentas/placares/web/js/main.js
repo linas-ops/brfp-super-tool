@@ -334,15 +334,16 @@ async function gerenciarFontes() {
   const corpo = el('div', { style: { display: 'flex', flexDirection: 'column', gap: '12px' } });
   const desenhar = () => {
     corpo.innerHTML = '';
-    corpo.append(nota('Fontes são os lugares de onde o editor lê placares: o <b>FC 26</b> instalado, <b>mods .fifamod</b> (como o pack de placares do LTA) ' +
-      'e <b>pastas</b> com a árvore <code>data/ui/...</code>. Mods e o jogo são só leitura.', 'info'));
+    corpo.append(nota('Fontes são os lugares de onde o editor lê placares: o <b>FC 26</b> instalado, <b>mods .fifamod</b> (como o pack de placares do LTA), ' +
+      '<b>arquivos .big</b> avulsos e <b>pastas</b> com a árvore <code>data/ui/...</code>. Mods, arquivos .big e o jogo são só leitura (as edições vão para a pasta de saída).', 'info'));
     const lista = el('div', { class: 'lista' });
     for (const f of S.inicio.fontes) {
-      const lin = el('div', { class: 'linha-fonte', html: icone(f.tipo === 'jogo' ? 'jogo' : f.tipo === 'mod' ? 'pacote' : 'pasta', 18) });
+      const lin = el('div', { class: 'linha-fonte', html: icone(f.tipo === 'jogo' ? 'jogo' : f.tipo === 'mod' ? 'pacote' : f.tipo === 'big' ? 'arquivo' : 'pasta', 18) });
       const det = f.tipo === 'jogo' ? (f.pasta || '') + (f.estado === 'pronto' ? ` · ${f.arquivos} arquivos` : ' · ' + (f.estado || '')) :
-        f.tipo === 'mod' ? `${f.autor || ''} · ${f.versao || ''} · ${f.arquivos} arquivos` : f.caminho || '';
+        f.tipo === 'mod' ? `${f.autor || ''} · ${f.versao || ''} · ${f.arquivos} arquivos` :
+        f.tipo === 'big' ? `${f.caminho} · visto no jogo como ${f.rel}` : f.caminho || '';
       lin.append(el('div', { class: 'txt' }, el('b', {}, f.tipo === 'jogo' ? 'FC 26 (jogo instalado)' : f.nome), el('small', {}, det)));
-      if (f.tipo === 'mod' || (f.tipo === 'pasta' && f.id !== 'saida')) {
+      if (f.tipo === 'mod' || f.tipo === 'big' || (f.tipo === 'pasta' && f.id !== 'saida')) {
         const x = el('button', { class: 'btn-icone peq', title: 'Remover da lista', html: icone('x', 14) });
         x.onclick = async () => { S.inicio = await api('fonte_remover', { id: f.id }); if (S.fonteAtual === f.id) S.fonteAtual = 'jogo'; desenhar(); };
         lin.append(x);
@@ -360,7 +361,7 @@ async function gerenciarFontes() {
     }
     corpo.append(lista);
     const ac = el('div', { class: 'acoes-linha' });
-    ac.append(el('button', { class: 'btn', html: icone('pacote', 15) + 'Adicionar mod .fifamod…', onclick: () => adicionarFonte('mod', desenhar) }));
+    ac.append(el('button', { class: 'btn', html: icone('pacote', 15) + 'Adicionar mod .fifamod ou .big…', onclick: () => adicionarFonte('mod', desenhar) }));
     ac.append(el('button', { class: 'btn', html: icone('pasta', 15) + 'Adicionar pasta…', onclick: () => adicionarFonte('pasta', desenhar) }));
     corpo.append(ac);
   };
@@ -372,17 +373,19 @@ async function gerenciarFontes() {
 
 async function adicionarFonte(tipo, depois = null) {
   const r = await api('dialogo', { modo: tipo === 'mod' ? 'mod' : 'pasta', titulo: tipo === 'pasta' ? 'Pasta com data\\ui\\... (ex.: C:\\FC 26 Live Editor\\mods\\legacy)' : '' });
-  if (!r.caminho) return;
+  if (!r.caminho) return null;
   carregando(true, 'Lendo ' + r.caminho.split(/[\\/]/).pop());
   try {
     S.inicio = await api('fonte_adicionar', { tipo, caminho: r.caminho });
-    const nova = S.inicio.fontes.find((f) => f.tipo === tipo && (f.caminho || '').toLowerCase().startsWith(r.caminho.toLowerCase().slice(0, 3)) && (f.caminho || '').toLowerCase().includes(r.caminho.split(/[\\/]/).pop().toLowerCase()));
+    const nova = S.inicio.fontes.find((f) => f.id === S.inicio.adicionada);
     if (nova) S.fonteAtual = nova.id;
-    aviso(tipo === 'mod' ? 'Mod adicionado' : 'Pasta adicionada', { tipo: 'sucesso', detalhe: nova ? nova.nome : r.caminho });
+    const t = nova ? nova.tipo : tipo;
+    aviso(t === 'mod' ? 'Mod adicionado' : t === 'big' ? 'Arquivo .big adicionado' : 'Pasta adicionada', { tipo: 'sucesso', detalhe: nova ? nova.nome : r.caminho });
     desenharArquivos();
     carregarConjuntos();
     if (depois) depois();
-  } catch (ex) { aviso(ex.message, { tipo: 'erro' }); } finally { carregando(false); }
+    return nova || null;
+  } catch (ex) { aviso(ex.message, { tipo: 'erro' }); return null; } finally { carregando(false); }
 }
 
 // ================================================================ tela inicial
@@ -402,8 +405,13 @@ function boasVindas() {
   btPlacar.onclick = () => abrirArquivo({ fonte: 'jogo', arquivo: 'data/ui/game/overlays/Generic/overlay_9002.big' });
   const btLista = el('button', { class: 'btn grande', html: icone('camadas', 18) + 'Ver todos os placares' });
   btLista.onclick = () => { $('#app').classList.remove('sem-arquivo'); trocarAba('arquivos'); };
-  const btMod = el('button', { class: 'btn grande', html: icone('pacote', 18) + 'Abrir mod .fifamod…' });
-  btMod.onclick = async () => { await adicionarFonte('mod'); $('#app').classList.remove('sem-arquivo'); trocarAba('arquivos'); };
+  const btMod = el('button', { class: 'btn grande', html: icone('pacote', 18) + 'Abrir mod .fifamod ou .big…' });
+  btMod.title = 'Um mod do FIFA Editor Tool (.fifamod) ou um arquivo de placar/overlay solto (.big)';
+  btMod.onclick = async () => {
+    const nova = await adicionarFonte('mod');
+    if (nova && nova.tipo === 'big') { abrirArquivo({ fonte: nova.id, arquivo: nova.rel }); return; }
+    $('#app').classList.remove('sem-arquivo'); trocarAba('arquivos');
+  };
   acoes.append(btPlacar, btLista, btMod);
   txt.append(acoes);
   hero.append(txt);
@@ -428,6 +436,13 @@ function boasVindas() {
   cartoes.append(kSai);
   const mods = S.inicio.fontes.filter((f) => f.tipo === 'mod');
   if (mods.length) for (const m of mods) cartoes.append(cartao('pacote', 'Mod: ' + m.nome, `${m.autor || ''} · ${m.arquivos} arquivos`));
+  for (const b of S.inicio.fontes.filter((f) => f.tipo === 'big')) {
+    const k = cartao('arquivo', 'Arquivo: ' + b.nome, b.rel);
+    k.style.cursor = 'pointer';
+    k.title = 'Abrir ' + b.caminho;
+    k.onclick = () => abrirArquivo({ fonte: b.id, arquivo: b.rel });
+    cartoes.append(k);
+  }
   esq.append(cartoes);
   if (S.inicio.editados.length) {
     esq.append(el('h4', {}, 'Editados'));
@@ -467,7 +482,7 @@ function montarMenus() {
       { rotulo: 'Descartar edição gravada…', desabilitado: !S.doc || !S.doc.editadoNaSaida, fn: descartar },
       '-',
       { rotulo: 'Fontes (jogo, mods, pastas)…', icone: 'config', fn: gerenciarFontes },
-      { rotulo: 'Adicionar mod .fifamod…', icone: 'pacote', fn: () => adicionarFonte('mod') },
+      { rotulo: 'Adicionar mod .fifamod ou .big…', icone: 'pacote', fn: () => adicionarFonte('mod') },
       { rotulo: 'Adicionar pasta…', icone: 'pasta', fn: () => adicionarFonte('pasta') },
       '-',
       { rotulo: 'Pasta de saída…', icone: 'jogo', fn: escolherSaida },
@@ -630,7 +645,7 @@ async function sobreEditor() {
   try { versao = (await api('versao')).versao; } catch { /* servidor fechado */ }
   modal({ titulo: 'Editor de Placares FC', texto: `Versão ${versao} · parte do <b>BRFP Super Tool</b>`,
     corpo: el('div', { style: { color: 'var(--texto-2)', lineHeight: '1.6' }, html: `
-      Abre os placares (overlays APT) do jogo e de mods (.fifamod, pastas do Live Editor) e grava as edições na pasta de saída.<br><br>
+      Abre os placares (overlays APT) do jogo e de mods (.fifamod, arquivos .big, pastas do Live Editor) e grava as edições na pasta de saída.<br><br>
       <b>2.0</b> — simulador das animações do jogo (ActionScript) com linha do tempo, constantes e curvas de animação, fontes (famílias do FIFA.xml e importação de TTF).<br>
       <b>1.0</b> — prévia e edição de textos, cores, imagens e posições.` }),
     botoes: [{ rotulo: 'Fechar', classe: 'btn-primario', padrao: true }] });
