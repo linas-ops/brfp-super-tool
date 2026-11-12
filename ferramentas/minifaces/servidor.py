@@ -5,6 +5,7 @@
 A interface roda em Python padrão; o processamento de imagem (OpenCV) roda em motor/minifaces.py com o Python 3.12
 ("py -3.12"), aberto uma vez como processo de trabalho (um pedido JSON por linha). Os times e jogadores vêm do banco
 importado no Super Tool (Dados do jogo): cada foto é ligada a um jogador do time escolhido e exportada como p<ID>.png.
+O fundo pode sair pelo remove.bg (removebg.py), com a chave da conta do usuário; cada recorte fica em cache/removebg/.
 """
 import argparse
 import base64
@@ -12,26 +13,31 @@ import collections
 import difflib
 import itertools
 import json
+import math
 import os
 import re
 import subprocess
 import sys
 import threading
 import time
+import webbrowser
 
 AQUI = os.path.dirname(os.path.abspath(__file__))
 CACHE = os.path.join(AQUI, "cache")
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(AQUI)), "comum"))
+sys.path.insert(0, AQUI)
 
 import base  # noqa: E402
 import componentes  # noqa: E402
 import dados  # noqa: E402
 import referencias  # noqa: E402
+import removebg as RB  # noqa: E402
 
-VERSAO = "1.3"
+VERSAO = "1.4"
 PREFS = base.Prefs(os.path.join(AQUI, "preferencias.json"), {
     "saida": "", "lado": 180, "sobrescrever": False, "sem_ligacao": "pular", "teamid": None, "fundo_padrao": "auto",
-    "ultima_pasta": ""})
+    "ultima_pasta": "", "removebg_chave": ""})
+FUNDOS = ("auto", "transparencia", "remover", "removebg", "nenhum")
 EXT = (".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tif", ".tiff")
 # miniface do Messi tirada do jogo (comparação sobreposta): não vem no pacote leve
 REF = referencias.Referencias("Criador de Minifaces", {
@@ -40,9 +46,11 @@ LOCK = threading.RLock()
 ITENS = collections.OrderedDict()
 SEQ = itertools.count(1)
 FILA = []                       # ids a analisar
+PREVIAS = []                    # ids com a prévia a refazer (ajuste mudado em várias fotos de uma vez)
 EXPORT = {"rodando": False, "total": 0, "feitos": 0, "erros": 0, "fim": 0, "pasta": None, "resumo": None}
 SEM_JANELA = getattr(subprocess, "CREATE_NO_WINDOW", 0)
-PARAMS_PADRAO = {"rosto": None, "ajuste": {"zoom": 1.0, "dx": 0, "dy": 0}, "fundo": "auto", "limpeza": 0.35, "tracos": []}
+PARAMS_PADRAO = {"rosto": None, "ajuste": {"zoom": 1.0, "dx": 0, "dy": 0}, "fundo": "auto", "limpeza": 0.35, "tracos": [],
+                 "endireitar": True}
 
 
 # ------------------------------------------------------------------ motor (Python 3.12 + OpenCV)
@@ -148,11 +156,20 @@ def novo_item(caminho, recebido=False):
 def analisar_fila():
     while True:
         with LOCK:
-            if not FILA:
+            if FILA:
+                i, so_previa = FILA.pop(0), False
+            elif PREVIAS:
+                i, so_previa = PREVIAS.pop(0), True
+            else:
                 return
-            i = FILA.pop(0)
             it = ITENS.get(i)
         if not it:
+            continue
+        if so_previa:
+            with LOCK:
+                pode = it.get("analise") and (it["analise"].get("rosto") or it["params"]["rosto"])
+            if pode:
+                gerar_previa(it)
             continue
         try:
             a = MOTOR.pedir({"cmd": "analisar", "caminho": it["caminho"], "maximo": 900})
@@ -161,15 +178,29 @@ def analisar_fila():
                 it.update(analise=a, foto=foto, estado="pronto" if a["rosto"] else "sem_rosto", erro=None)
                 if not a["rosto"]:
                     it["erro"] = "Rosto não encontrado: arraste o quadro sobre o rosto na foto."
-            g = MOTOR.pedir({"cmd": "gerar", "caminho": it["caminho"], "params": params_motor(it)}) if a["rosto"] else None
-            if g:
-                with LOCK:
-                    it["previa"] = g["png"]
-                    it["janela"] = g["janela"]
         except base.ErroUsuario as ex:
             with LOCK:
                 it.update(estado="erro", erro=str(ex))
+        else:
+            if a["rosto"]:
+                gerar_previa(it)
         ligar_auto_um(it)
+
+
+def gerar_previa(it):
+    """refaz a prévia da foto; um erro do fundo (remove.bg) fica marcado na foto. Devolve a resposta do motor ou None."""
+    try:
+        p = params_prontos(it)
+        g = MOTOR.pedir({"cmd": "gerar", "caminho": it["caminho"], "params": p})
+    except base.ErroUsuario as ex:
+        with LOCK:
+            it.update(estado="erro", erro=str(ex))
+        return None
+    with LOCK:
+        it.update(previa=g["png"], janela=g["janela"], pontos=g.get("pontos"))
+        if it["estado"] in ("sem_rosto", "erro"):
+            it["estado"], it["erro"] = "pronto", None
+    return g
 
 
 _ANALISADOR = {"t": None}
@@ -183,14 +214,172 @@ def disparar_analise():
 
 
 def params_motor(it):
+    """parâmetros da foto para o motor; sem rosto marcado à mão, o motor usa o rosto (e os pontos) que ele mesmo achou"""
     p = it["params"]
-    return {"rosto": p["rosto"], "ajuste": p["ajuste"], "fundo": p["fundo"], "limpeza": p["limpeza"], "tracos": p["tracos"],
-            "lado": int(PREFS.ler().get("lado", 180))}
+    return {"rosto": p["rosto"], "ajuste": dict(p["ajuste"]), "fundo": p["fundo"], "limpeza": p["limpeza"],
+            "tracos": list(p["tracos"]), "endireitar": p.get("endireitar", True), "lado": int(PREFS.ler().get("lado", 180))}
+
+
+def params_prontos(it):
+    """params_motor + o recorte do remove.bg quando o fundo sai por ele (chama a API se ainda não tiver)"""
+    with LOCK:
+        p = params_motor(it)
+    if p["fundo"] == "removebg":
+        p["removebg"] = recorte_removebg(it, p)
+    return p
+
+
+# ------------------------------------------------------------------ remove.bg
+RBG = {"cache": RB.Cache(os.path.join(CACHE, "removebg")), "conta": None, "bloqueio": None, "travas": {},
+       "trava": threading.Lock(), "chamadas": 0, "conta_depois": None}
+
+
+def chave_removebg():
+    return (PREFS.ler().get("removebg_chave") or "").strip()
+
+
+def bloqueio_removebg():
+    """chave recusada ou sem créditos: não chama a API de novo para cada foto até trocar a chave (ou o saldo voltar)"""
+    b = RBG["bloqueio"]
+    if b and b["chave"] == chave_removebg() and (b["ate"] is None or time.time() < b["ate"]):
+        return b
+    return None
+
+
+def info_removebg():
+    ch = chave_removebg()
+    b = bloqueio_removebg()
+    return {"definida": bool(ch), "fim": ch[-4:] if len(ch) >= 12 else "", "conta": RBG["conta"],
+            "bloqueio": b["msg"] if b else None, "chamadas": RBG["chamadas"]}
+
+
+def _trava_da_foto(foto):
+    with RBG["trava"]:
+        return RBG["travas"].setdefault(foto, threading.Lock())
+
+
+def recorte_removebg(it, p):
+    """{"arquivo", "regiao"} do recorte do remove.bg desta foto: do cache ou de uma chamada nova à API"""
+    ch = chave_removebg()
+    if not ch:
+        raise base.ErroUsuario("Falta a chave do remove.bg: cole a chave da sua conta em Fundo › remove.bg.")
+    q = {"cmd": "recorte_removebg", "caminho": it["caminho"], "params": p}
+    r = MOTOR.pedir(q)
+    reg, k = r["regiao"], float(r["k"])
+    w, h = reg[2], reg[3]
+    precisa = min(1.0, k * 1.1)                 # px mandados por px da foto para a miniface sair nítida
+    e_prev = min(1.0, math.sqrt(RB.PREVIEW_MP / max(1, w * h)))
+    if e_prev >= precisa * 0.8:
+        tamanho, esc = "preview", e_prev
+    else:                                        # miniface grande (lado > 180): manda mais resolução (gasta crédito)
+        tamanho, esc = "auto", min(1.0, precisa)
+    cache = RBG["cache"]
+    foto = cache.hash_foto(it["caminho"])
+    with _trava_da_foto(foto):
+        # serve um recorte já feito que cubra a região que a máscara usa (o pedido manda uma região com folga)
+        e = cache.achar(foto, r.get("necessaria") or reg, min(esc, precisa))
+        if not e:
+            b = bloqueio_removebg()
+            if b:
+                raise base.ErroUsuario(b["msg"])
+            img = MOTOR.pedir(dict(q, escala=esc))
+            dados_jpg = base64.b64decode(img["jpg"])
+            for tentativa in (1, 2):
+                try:
+                    png, info = RB.remover_fundo(ch, dados_jpg, nome=os.path.splitext(it["nome"])[0] + ".jpg", tamanho=tamanho)
+                    break
+                except RB.ErroRemoveBg as ex:
+                    if ex.codigo == "limite" and tentativa == 1 and (ex.espera or 0) <= 10:
+                        time.sleep(max(1, ex.espera or 2))
+                        continue
+                    if ex.codigo in ("chave", "creditos"):
+                        RBG["bloqueio"] = {"chave": ch, "codigo": ex.codigo, "msg": str(ex),
+                                           "ate": None if ex.codigo == "chave" else time.time() + 600}
+                    raise base.ErroUsuario(str(ex)) from None
+            RBG["chamadas"] += 1
+            e = cache.guardar(foto, reg, esc, png, dict(info, tamanho=tamanho, origem=it["nome"]))
+            conta_depois()
+    return {"arquivo": e["arquivo"], "regiao": e["regiao"]}
+
+
+def conta_depois(atraso=4):
+    """relê o saldo da conta pouco depois das chamadas (uma vez por rajada)"""
+    if RBG["conta_depois"]:
+        return
+
+    def rodar():
+        RBG["conta_depois"] = None
+        ch = chave_removebg()
+        if ch:
+            try:
+                RBG["conta"] = RB.conta(ch)
+            except RB.ErroRemoveBg:
+                pass
+    RBG["conta_depois"] = threading.Timer(atraso, rodar)
+    RBG["conta_depois"].daemon = True
+    RBG["conta_depois"].start()
+
+
+def refazer_removebg():
+    """chave trocada ou saldo de volta: refaz as prévias das fotos que pararam no remove.bg"""
+    with LOCK:
+        for it in ITENS.values():
+            if it["params"]["fundo"] == "removebg" and it["estado"] == "erro" and it.get("analise") and it["id"] not in PREVIAS:
+                PREVIAS.append(it["id"])
+    disparar_analise()
+
+
+def api_removebg_chave(d):
+    ch = (d.get("chave") or "").strip()
+    if not ch:
+        raise base.ErroUsuario("Cole a chave da API do remove.bg.")
+    if not re.fullmatch(r"[A-Za-z0-9_\-]{16,128}", ch):
+        raise base.ErroUsuario("Isso não parece uma chave da API do remove.bg (são letras e números, sem espaços).")
+    conferida = True
+    try:
+        conta = RB.conta(ch)
+    except RB.ErroRemoveBg as ex:
+        if ex.codigo == "chave":
+            raise base.ErroUsuario(str(ex)) from None
+        conta, conferida = None, False          # sem internet agora: guarda e confere depois
+    PREFS.atualizar(removebg_chave=ch)
+    RBG.update(conta=conta, bloqueio=None)
+    refazer_removebg()
+    return {"conferida": conferida, **estado_payload()}
+
+
+def api_removebg_esquecer(_):
+    PREFS.atualizar(removebg_chave="")
+    RBG.update(conta=None, bloqueio=None)
+    return estado_payload()
+
+
+def api_removebg_conta(_):
+    ch = chave_removebg()
+    if not ch:
+        raise base.ErroUsuario("Falta a chave do remove.bg.")
+    try:
+        RBG["conta"] = RB.conta(ch)
+    except RB.ErroRemoveBg as ex:
+        raise base.ErroUsuario(str(ex)) from None
+    b, c = RBG["bloqueio"], RBG["conta"]
+    if b and b["codigo"] == "creditos" and ((c.get("creditos") or 0) > 0 or (c.get("gratis") or 0) > 0):
+        RBG["bloqueio"] = None
+        refazer_removebg()
+    return estado_payload()
+
+
+def api_abrir_link(d):
+    url = RB.LINKS.get(d.get("qual") or "")
+    if not url:
+        raise base.ErroUsuario("Link desconhecido.")
+    webbrowser.open(url)
+    return {}
 
 
 def publico(it, com_foto=False):
     d = {k: it.get(k) for k in ("id", "caminho", "nome", "recebido", "estado", "analise", "params", "jogador", "erro",
-                                "exportado", "previa", "janela")}
+                                "exportado", "previa", "janela", "pontos")}
     if com_foto:
         d["foto"] = it.get("foto")
     d["saida"] = nome_saida(it)
@@ -306,18 +495,18 @@ def ligar_auto_um(it):
 def estado_payload():
     reconferir_motor()
     recebidas = consumir_fila_criador()
-    op = PREFS.ler()
+    op = {k: v for k, v in PREFS.ler().items() if k != "removebg_chave"}     # a chave não vai para a página
     with LOCK:
         itens = [publico(it) for it in ITENS.values()]
         exp = dict(EXPORT)
-        analisando = len(FILA) + sum(1 for it in ITENS.values() if it["estado"] == "analisando")
+        analisando = len(FILA) + len(PREVIAS) + sum(1 for it in ITENS.values() if it["estado"] == "analisando")
     d = dados.estado()
     time_sel = None
     b = dados.banco_atual()
     if b and op.get("teamid"):
         time_sel = next((t for t in b.times(dados.idioma_atual()) if t["teamid"] == str(op["teamid"])), None)
     return {"itens": itens, "opcoes": op, "export": exp, "analisando": analisando, "motor": {"ok": MOTOR.ok, "msg": MOTOR.msg, "instalar": MOTOR.instalar},
-            "banco": d["banco"], "time": time_sel, "do_criador": recebidas}
+            "banco": d["banco"], "time": time_sel, "do_criador": recebidas, "removebg": info_removebg()}
 
 
 def api_inicio(_):
@@ -445,9 +634,11 @@ def api_remover(d):
 
 
 def api_params(d):
-    """Atualiza os ajustes de uma foto (ou de várias) e devolve a prévia nova."""
+    """Atualiza os ajustes de uma foto (ou de várias) e devolve a prévia nova (várias: as prévias se refazem em fila)."""
     ids = d.get("ids") or [d["id"]]
     mudanca = d.get("params") or {}
+    if "fundo" in mudanca and mudanca["fundo"] not in FUNDOS:
+        raise base.ErroUsuario("Modo de fundo desconhecido.")
     with LOCK:
         for i in ids:
             it = ITENS.get(int(i))
@@ -461,7 +652,17 @@ def api_params(d):
             if mudanca.get("rosto"):
                 it["estado"] = "pronto"
                 it["erro"] = None
-    return api_gerar({"id": ids[0]}) if len(ids) == 1 else estado_payload()
+        if len(ids) > 1:
+            for i in ids:
+                it = ITENS.get(int(i))
+                if it and it.get("analise") and it["estado"] != "analisando" and it["id"] not in PREVIAS:
+                    PREVIAS.append(it["id"])
+    if d.get("padrao") and "fundo" in mudanca:          # vale também para as fotos que entrarem depois
+        PREFS.atualizar(fundo_padrao=mudanca["fundo"])
+    if len(ids) == 1:
+        return api_gerar({"id": ids[0]})
+    disparar_analise()
+    return estado_payload()
 
 
 def api_gerar(d):
@@ -469,17 +670,13 @@ def api_gerar(d):
         it = ITENS.get(int(d["id"]))
         if not it:
             raise base.ErroUsuario("Foto não encontrada na lista.")
-        p = params_motor(it)
-        if not p["rosto"] and not (it.get("analise") or {}).get("rosto"):
+        if not it["params"]["rosto"] and not (it.get("analise") or {}).get("rosto"):
             raise base.ErroUsuario("Rosto não encontrado: arraste o quadro sobre o rosto na foto.")
-        if not p["rosto"]:
-            p["rosto"] = it["analise"]["rosto"]
-    g = MOTOR.pedir({"cmd": "gerar", "caminho": it["caminho"], "params": p})
-    with LOCK:
-        it.update(previa=g["png"], janela=g["janela"])
-        if it["estado"] in ("sem_rosto", "erro"):
-            it["estado"], it["erro"] = "pronto", None
-    return {"previa": g["png"], "janela": g["janela"], "rosto": g["rosto"], "item": publico(it)}
+    g = gerar_previa(it)
+    if not g:       # erro no fundo (remove.bg): fica marcado na foto e a página mostra
+        with LOCK:
+            return {"erro": it["erro"], "item": publico(it)}
+    return {"previa": g["png"], "janela": g["janela"], "rosto": g["rosto"], "pontos": g.get("pontos"), "item": publico(it)}
 
 
 def api_restaurar(d):
@@ -497,6 +694,8 @@ def api_opcoes(d):
     for k in ("saida", "lado", "sobrescrever", "sem_ligacao", "fundo_padrao"):
         if k in d:
             op[k] = d[k]
+    if op.get("fundo_padrao") not in FUNDOS:
+        op["fundo_padrao"] = "auto"
     if op["saida"]:
         op["saida"] = os.path.normpath(str(op["saida"]).strip().strip('"'))
     op["lado"] = max(64, min(1024, int(op.get("lado") or 180)))
@@ -589,9 +788,7 @@ def rodar_export(fila, pulados):
     erros = []
     for it, dst in fila:
         try:
-            p = params_motor(it)
-            if not p["rosto"]:
-                p["rosto"] = it["analise"]["rosto"]
+            p = params_prontos(it)
             MOTOR.pedir({"cmd": "exportar", "caminho": it["caminho"], "params": p, "saida": dst})
             with LOCK:
                 it["exportado"] = dst
@@ -618,7 +815,9 @@ ROTAS_GET = {"inicio": api_inicio, "estado": api_estado, "item": api_item, "time
              "versao": lambda _: {"versao": VERSAO}}
 ROTAS_POST = {"adicionar": api_adicionar, "dialogo": api_dialogo, "receber": api_receber, "remover": api_remover,
               "params": api_params, "gerar": api_gerar, "restaurar": api_restaurar, "opcoes": api_opcoes, "time": api_time,
-              "ligar": api_ligar, "ligar_auto": api_ligar_auto, "exportar": api_exportar, "abrir": api_abrir}
+              "ligar": api_ligar, "ligar_auto": api_ligar_auto, "exportar": api_exportar, "abrir": api_abrir,
+              "removebg_chave": api_removebg_chave, "removebg_esquecer": api_removebg_esquecer,
+              "removebg_conta": api_removebg_conta, "abrir_link": api_abrir_link}
 for _G, _P in (base.rotas_componentes("minifaces", ao_concluir=lambda: MOTOR.reiniciar()), REF.rotas()):
     ROTAS_GET.update(_G)
     ROTAS_POST.update(_P)

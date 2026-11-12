@@ -85,14 +85,15 @@ sob demanda e guardadas em cache em `dados\cache`; o registro fica em `dados\fon
 
 | Ferramenta | Versão | O que faz |
 |---|---|---|
-| BRFP Super Tool | 3.6 | Janela única, trilho, início com versões e guias; Dados do jogo compartilhados (banco de qualquer versão, FIFA 16 … FC 27, idioma, internationals); Python embutido, Componentes (com o servidor local da Transfermarkt) e pacote para outro computador. |
+| BRFP Super Tool | 3.7 | Janela única, trilho, início com versões e guias; Dados do jogo compartilhados (banco de qualquer versão, FIFA 16 … FC 27, idioma, internationals); Python embutido, Componentes (com o servidor local da Transfermarkt) e pacote para outro computador. |
 | Editor de Estádios | 3.4 | Exports do FET em 3D: ocultar/mover peças, texturas do jogo, luzes, torcida, banco e áreas técnicas, stadiums.txt; partições novas do FBX com material no MeshVariationDb. |
-| Editor de Placares | 2.1 | Overlays APT do jogo e de mods: textos, cores, imagens, posições, animações e fontes; grava para o Live Editor. |
+| Editor de Placares | 2.2 | Overlays APT do jogo, de mods .fifamod e de arquivos .big soltos: textos, cores, imagens, posições, animações e fontes; grava para o Live Editor. |
 | Editor de Compdata | 2.1 | Competições → estágios → grupos com renumeração automática; nomes vindos do banco e do idioma importados. |
 | Conversor de Faces | 1.4 | Cabeças (FBX do FET) FC 26 ↔ FC 27: identifica o jogo, pasta de saída, prévia 3D; roda no Python embutido e baixa numpy/SciPy se faltarem. |
+| Criador de Faces | 2.0 | Face do FC 27 a partir de fotos: criador próprio no computador (MediaPipe + modelo feito das cabeças do seu jogo, lidas pelo cache do FET; grava o headmorphpreset FBX e a textura, prévia 3D) ou KeenFace (pago, na sua conta; .glb para o MG Keen Converter). |
 | Conversor de Corpos | 1.1 | Textura do corpo (bodyupper: pele, tatuagens, normal) FC 26 ↔ FC 27: identifica o layout de cada imagem, refaz a UV do outro jogo com cada tatuagem no mesmo lugar do corpo, prévia no corpo em 3D e plana. |
 | Criador de Kits | 1.1 | Uniforme do FC 27 a partir de um kit doador do FET: recolore camisa, calção e meião, desenha o padrão do tronco, coloca patrocinadores, escudo e marca (com o hotspot); uma foto da camisa preenche cores, listras e logos; prévia 3D com as malhas do FET. |
-| Criador de Minifaces | 1.3 | Foto → miniface do jogo (p&lt;ID&gt;.png 180×180): tira o fundo, enquadra o rosto e liga ao jogador pelo time; recebe as fotos do Criador de Ligas e Times já ligadas aos IDs. |
+| Criador de Minifaces | 1.4 | Foto → miniface do jogo (p&lt;ID&gt;.png 180×180): tira o fundo (também pelo remove.bg, com a chave da sua conta), enquadra o rosto pelos olhos, nariz e boca (endireitando a cabeça) e liga ao jogador pelo time; recebe as fotos do Criador de Ligas e Times já ligadas aos IDs. |
 | Editor de Banco | 1.2 | Times (elenco, escalação, formação, capitão, cobradores, tática, cores, técnico), jogadores, ligas, árbitros, técnicos e qualquer tabela; transferências, empréstimos, liberar; verificação de erros com correção; grava um banco novo. |
 | Criador de Ligas e Times | 2.5 | Ligas, times, seleções e jogadores da API-Football ou da Transfermarkt (notas calibradas no banco — pelo valor de mercado na Transfermarkt —, fichas do sofifa e do PES com ID da EA e atributos, feminino, aparência pelas fotos, tática, técnico, estádio) e atualização do banco: elencos, empréstimos, saídas e participantes das ligas. |
 | Atualizador de Squads | 1.1 | Squad do mod + squad mais recente da EA → squad atualizado: times brasileiros inteiros do mod (sem os genéricos da EA), times, ligas e competições novos, jogadores criados pelo mod; duplicados unidos, IDs reusados trocados, escalações refeitas. |
@@ -127,6 +128,7 @@ stadium conversor\
       placares\             Editor de Placares (LEIAME.md)
       compdata\             Editor de Compdata (README.md)
       faces\                Conversor de Faces (LEIAME.md; motor\ = conversor em numpy e as faces de referência)
+      criador_faces\        Criador de Faces (LEIAME.md; local\ = criador próprio; cache\ = modelo das cabeças do jogo)
       corpos\               Conversor de Corpos (LEIAME.md; motor\ = conversor e os corpos de referência; cache\mapas)
       kits\                 Criador de Kits (LEIAME.md; motor\ = recolorir, foto e molde; motor\referencia = malhas do 3D)
       minifaces\            Criador de Minifaces (LEIAME.md; motor\ = OpenCV)
