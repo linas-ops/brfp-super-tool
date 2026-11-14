@@ -1,4 +1,4 @@
-// Estádios FC 27 — duplicar estádios do FC 27 e converter estádios do FIFA 16 (sempre sobre o El Grandioso).
+// Estádios FC 27 — duplicar estádios do FC 27 e converter estádios do FIFA 16 e do PES 2021 (sempre sobre o El Grandioso).
 import { api } from './comum/api.js';
 import { $, $$, el, esc, aviso, modal, nota, fmtInt } from './comum/ui.js';
 import { icone } from './comum/icones.js';
@@ -8,7 +8,7 @@ const BASE = { id: 181, nome: 'El Grandioso' };
 const S = {
   inicio: null, ambiente: null, cat: null, catErro: null, aba: 'duplicar',
   dup: { modo: 'novo', projeto: '', grupos: [], busca: '', inicioIds: 700 },
-  conv: { pasta: '', analise: null, pronta: null, usarPronta: true, modo: 'novo', projeto: '', novoId: '', nome: '', filtro: 'todas',
+  conv: { origem: 'fifa16', pasta: '', analise: null, pronta: null, usarPronta: true, modo: 'novo', projeto: '', novoId: '', nome: '', filtro: 'todas',
           pecas: {}, opcoes: {} },
   exec: null,
 };
@@ -26,7 +26,7 @@ async function iniciar() {
   $('#versao').textContent = 'v' + S.inicio.versao;
   if (!S.inicio.python) {
     const ok = await instalarComponentes({});
-    if (!ok) { statusEsq('Faltam componentes (numpy, zstandard): use "Instalar componentes".'); }
+    if (!ok) { statusEsq('Faltam componentes (numpy, SciPy, zstandard): use "Instalar componentes".'); }
     S.inicio = await api('inicio');
   }
   renderDuplicar(); renderConverter(); renderResultados();
@@ -65,7 +65,7 @@ async function carregarEstadios() {
 function janelaAmbiente() {
   const a = S.ambiente;
   const corpo = el('div', { class: 'ambiente-itens' });
-  if (!a) corpo.append(nota('Não foi possível ler o ambiente. Confira se o Super Tool tem os componentes da ferramenta (numpy e zstandard).', 'erro'));
+  if (!a) corpo.append(nota('Não foi possível ler o ambiente. Confira se o Super Tool tem os componentes da ferramenta (numpy, SciPy e zstandard).', 'erro'));
   for (const it of a?.itens || []) {
     corpo.append(el('div', { class: 'ambiente-item' }, el('span', { class: 'ic ' + (it.ok ? 'ok' : 'falta'), html: icone(it.ok ? 'check' : 'x', 15) }),
       el('div', { class: 'txt' }, el('b', {}, it.nome), el('small', { title: it.caminho }, it.caminho ? `${it.detalhe} · ${it.caminho}` : it.detalhe))));
@@ -93,8 +93,9 @@ function guia() {
   modal({ titulo: 'Estádios FC 27', largo: true, corpo: el('div', { style: { color: 'var(--texto-2)', lineHeight: '1.6' }, html: `
     <p><b>Duplicar estádio</b>: escolha um ou mais estádios do FC 27 e quantas cópias de cada. Cada cópia é um estádio novo, com ID e nome próprios, e tudo o que é do estádio (meshes, texturas, mundo, torcida, física, luz) ganha identidade própria, como as duplicatas 702 e 703 testadas em partida. Pode criar um projeto do zero ou acrescentar as cópias a um projeto seu do FET (o banco, o mapa de estádios e os loaders partem da versão do projeto).</p>
     <p><b>Converter FIFA 16 → FC 27</b>: a base é <b>sempre o El Grandioso (181)</b>. A ferramenta duplica o El Grandioso no ID novo e põe o estádio do FIFA 16 no lugar da arquitetura dele: modelo, texturas, telão, torcida, glares e personagens laterais (os reservas nas cadeiras do banco do estádio novo), com o gramado do FC 27 recortado até o piso do estádio e sem a pista de atletismo do El Grandioso. O caminho é o mesmo do Morumbi v3, que funcionou em partida.</p>
-    <p><b>Banners dos times</b>: na lista de peças, marque como <b>Banner dos times</b> as faixas e bandeiras do estádio do FIFA 16 que devem dar lugar aos banners dos times. Elas saem do modelo e os banners dos times do FC 27 entram no lugar delas. A análise já marca as peças que o FIFA 16 deixava vazias para os banners dele.</p>
-    <p><b>Luz da torcida à noite</b>: o pré-cálculo de luz é sempre o do El Grandioso (com o de outro estádio a partida fica carregando sem fim). As luzes da arquibancada do El Grandioso acompanham a torcida do FIFA 16, para ela ficar iluminada como a do El Grandioso.</p>
+    <p><b>Converter PES 2021 → FC 27</b>: o mesmo caminho, com a pasta do estádio do PES 2021 (a do mod, com <span class="mono">Asset\\model\\bg\\st…</span>). A ferramenta lê os modelos, as texturas, as telas, as áreas da torcida e os brilhos das lâmpadas do PES; se os bancos de reservas estiverem do outro lado do campo, o estádio gira meia volta. Placas, figurantes, vidros e brilhos do PES não entram. <b>Precisa de teste em partida.</b></p>
+    <p><b>Banners dos times</b>: na lista de peças, marque como <b>Banner dos times</b> as faixas e bandeiras do estádio que devem dar lugar aos banners dos times. Elas saem do modelo e os banners dos times do FC 27 entram no lugar delas. No FIFA 16, a análise já marca as peças que ele deixava vazias para os banners dele.</p>
+    <p><b>Luz da torcida à noite</b>: o pré-cálculo de luz é sempre o do El Grandioso (com o de outro estádio a partida fica carregando sem fim). As luzes da arquibancada do El Grandioso acompanham a torcida do estádio novo, para ela ficar iluminada como a do El Grandioso.</p>
     <p>A ferramenta nunca sobrescreve um projeto: o resultado é sempre um arquivo novo, conferido de volta depois de gravado (ordem das instâncias de cada EBX, referências, RES, chunks, shaders, banco).</p>` }),
     botoes: [{ rotulo: 'Fechar', classe: 'btn-primario', padrao: true }] });
 }
@@ -230,6 +231,29 @@ async function duplicar() {
 // ------------------------------------------------------------------ converter
 const PAPEIS = [['opaco', 'Opaco'], ['alpha', 'Alpha'], ['telao', 'Telão'], ['grama', 'Grama'], ['banner', 'Banner dos times'], ['descartar', 'Descartar']];
 const sai = (v) => v.papel === 'descartar' || v.papel === 'banner';
+const ehPes = () => S.conv.origem === 'pes21';
+const J = () => (ehPes() ? 'PES 2021' : 'FIFA 16');
+const ORCAMENTO_MB = 33;  // os seis meshes do El Grandioso que recebem o estádio (5,5 MB cada)
+
+function trocarOrigem(o) {
+  if (S.conv.origem === o) return;
+  Object.assign(S.conv, { origem: o, pasta: '', analise: null, pronta: null, usarPronta: true, pecas: {}, opcoes: {}, filtro: 'todas' });
+  renderConverter();
+}
+
+// Geometria que as peças que ficam ocupam nos meshes do El Grandioso (MB). No PES cada peça tem um lado só, a não ser
+// as de dois lados (sem "1 lado") e as alpha.
+function geometriaEstimada() {
+  const c = S.conv;
+  let b = 0;
+  for (const p of c.analise?.pecas || []) {
+    const v = c.pecas[p.prim];
+    if (!v || sai(v) || v.papel === 'telao') continue;
+    const lados = v.papel === 'alpha' || c.opcoes.faces === 'double' || !v.umLado ? 2 : 1;
+    b += lados * (p.vertices * (v.papel === 'alpha' ? 40 : 36) + (p.triangulos || 0) * 6);
+  }
+  return b / 1048576;
+}
 
 function receitaBase() {
   return S.conv.usarPronta && S.conv.pronta ? S.conv.pronta : S.conv.analise?.receita;
@@ -248,6 +272,7 @@ function carregarPecas() {
   }
   const o = S.conv.opcoes = {
     faces: r.faces || 'view', max_vertices: r.max_vertices || 60000,
+    giro: r.giro ?? 0,
     recorte: !!r.recorte_bancos, recorte_z: r.recorte_bancos?.z ?? -37.8, recorte_x: r.recorte_bancos?.x ?? 30,
     placas: r.placas_madeira_bancos || 'manter', cadeiras: r.torcida?.cadeiras || 'fifa16', cor: '#c81e1e',
     lado_casa: r.torcida?.lado_casa || '-x', tier2: r.torcida?.tier2_acima_de ?? 14,
@@ -281,6 +306,7 @@ function receitaDaTela() {
   r.reservas = o.reservas;
   r.luzes_torcida = o.luzes;
   r.luz = BASE.id;
+  if (ehPes()) r.giro = Number(o.giro) || 0;
   const b = receitaBase() || {};
   for (const k of ['prefixo', 'pasta_nome', 'identidade', 'sombra_mesclada', 'tom_grama', 'vista', 'deslocamento_alpha']) if (b[k] !== undefined) r[k] = b[k];
   if (r.chao && b.chao && JSON.stringify(r.chao) === JSON.stringify(Object.fromEntries(Object.entries(b.chao).map(([k, v]) => [k, Number(v)])))) r.chao = b.chao;
@@ -288,15 +314,15 @@ function receitaDaTela() {
 }
 
 async function analisar(pasta = null) {
-  statusEsq('Lendo o estádio do FIFA 16…');
+  statusEsq(`Lendo o estádio do ${J()}…`);
   try {
-    const an = await api('analisar16', pasta ? { pasta } : {});
+    const an = await api(ehPes() ? 'analisarpes' : 'analisar16', pasta ? { pasta } : {});
     if (an.cancelado) { statusEsq('Pronto'); return; }
     S.conv.analise = an; S.conv.pasta = an.pasta; S.conv.pronta = an.receita_pronta; S.conv.usarPronta = !!an.receita_pronta;
     if (!S.conv.nome) S.conv.nome = an.receita_pronta?.nome || '';
     if (!S.conv.novoId) S.conv.novoId = proximoId();
     carregarPecas();
-    statusEsq(`Estádio ${an.fifa16_id} do FIFA 16: ${an.resumo.pecas} peças`);
+    statusEsq(`Estádio ${an.fifa16_id} do ${J()}: ${an.resumo.pecas} peças`);
   } catch (e) { aviso(e.message, { tipo: 'erro' }); statusEsq('Pronto'); }
   renderConverter();
 }
@@ -305,31 +331,45 @@ function renderConverter() {
   const pag = $('#pag-converter');
   pag.innerHTML = '';
   const c = S.conv;
-  pag.append(el('div', { class: 'cab-detalhe' }, el('div', {}, el('h1', {}, 'Converter estádio do FIFA 16 para o FC 27'),
-    el('div', { class: 'sub' }, 'Modelo, texturas, telão, torcida, glares e personagens laterais do FIFA 16 num estádio novo do FC 27.'))));
+  const pes = ehPes();
+  pag.append(el('div', { class: 'cab-detalhe' }, el('div', {}, el('h1', {}, `Converter estádio do ${J()} para o FC 27`),
+    el('div', { class: 'sub' }, `Modelo, texturas, telão, torcida, glares e personagens laterais do ${J()} num estádio novo do FC 27.`)),
+    segmentado([['fifa16', 'FIFA 16'], ['pes21', 'PES 2021']], c.origem, trocarOrigem)));
   pag.append(el('div', { class: 'faixa-base' }, el('span', { html: icone('estadio', 30) }),
     el('div', {}, el('b', {}, `Base fixa: ${BASE.nome} (estádio ${BASE.id} do FC 27)`),
-      el('p', {}, 'Toda conversão é feita sobre uma duplicata completa do El Grandioso no ID novo: o estádio do FIFA 16 entra no lugar da arquitetura dele. Os estádios do FIFA 16 têm todos o mesmo formato, e com a base fixa também, o caminho é sempre o mesmo que funcionou em partida (Morumbi v3). Não há como escolher outra base, para evitar erros.')),
-    el('span', { class: 'etiqueta verde' }, 'testado em partida')));
-  // pasta do FIFA 16
-  const c1 = cartao('Estádio do FIFA 16', 'A pasta do estádio (com data\\sceneassets: stadium_<id>.rx3, texturas de dia e noite, torcida e glares).');
-  c1.corpo.append(linhaCaminho(c.pasta, 'Escolha ou cole a pasta do estádio do FIFA 16', () => analisar(), (v) => analisar(v)));
+      el('p', {}, pes
+        ? 'Toda conversão é feita sobre uma duplicata completa do El Grandioso no ID novo: o estádio do PES 2021 entra no lugar da arquitetura dele, pelo mesmo caminho da conversão do FIFA 16 que funcionou em partida (Morumbi v3). Os estádios do PES 2021 têm todos o mesmo formato. Não há como escolher outra base, para evitar erros.'
+        : 'Toda conversão é feita sobre uma duplicata completa do El Grandioso no ID novo: o estádio do FIFA 16 entra no lugar da arquitetura dele. Os estádios do FIFA 16 têm todos o mesmo formato, e com a base fixa também, o caminho é sempre o mesmo que funcionou em partida (Morumbi v3). Não há como escolher outra base, para evitar erros.')),
+    pes ? el('span', { class: 'etiqueta amarela' }, 'precisa de teste em partida') : el('span', { class: 'etiqueta verde' }, 'testado em partida')));
+  // pasta do estádio de origem
+  const c1 = pes
+    ? cartao('Estádio do PES 2021', 'A pasta do estádio (a do mod, com Asset\\model\\bg\\st<número>: modelos, texturas, telão, áreas da torcida e brilhos das lâmpadas).')
+    : cartao('Estádio do FIFA 16', 'A pasta do estádio (com data\\sceneassets: stadium_<id>.rx3, texturas de dia e noite, torcida e glares).');
+  c1.corpo.append(linhaCaminho(c.pasta, `Escolha ou cole a pasta do estádio do ${J()}`, () => analisar(), (v) => analisar(v)));
   if (c.analise) {
     const an = c.analise;
     const est = (n, t) => el('div', { class: 'estatistica' }, el('b', {}, n), el('span', {}, t));
     c1.corpo.append(el('div', { class: 'resumo16', style: { marginTop: '10px' } },
-      est(String(an.fifa16_id), 'ID no FIFA 16'), est(fmtInt(an.resumo.pecas), 'peças no modelo'),
+      est(String(an.fifa16_id), pes ? 'estádio no PES 2021' : 'ID no FIFA 16'), est(fmtInt(an.resumo.pecas), 'peças no modelo'),
       est(fmtInt(Object.values(c.pecas).filter(sai).length), 'peças que saem'),
       est(an.torcida ? fmtInt(an.torcida.lugares) : '—', 'lugares da torcida'), est(String(Math.max(0, ...Object.values(an.glares || { x: 0 }))), 'lâmpadas (glares)'),
-      est(fmtInt(Object.values(an.localizadores || {}).reduce((a, b) => a + b, 0)), 'marcadores (slc…)')));
+      pes ? est(an.giro === 180 ? '+Z' : '−Z', 'lado dos bancos no PES')
+        : est(fmtInt(Object.values(an.localizadores || {}).reduce((a, b) => a + b, 0)), 'marcadores (slc…)')));
     if (c.pronta) {
       const t = el('div', { style: { marginTop: '10px' } });
       t.append(segmentado([['pronta', 'Receita guardada: ' + (c.pronta.nome || 'estádio ' + an.fifa16_id) + ' (a da conversão testada)'], ['auto', 'Receita sugerida pela análise']],
         c.usarPronta ? 'pronta' : 'auto', (v) => { c.usarPronta = v === 'pronta'; carregarPecas(); renderConverter(); }));
       c1.corpo.append(t);
+    } else if (pes) {
+      c1.corpo.append(el('div', { style: { marginTop: '10px' } }, nota('Receita sugerida pela análise: os materiais do PES dizem o que sai (figurantes e equipamentos de transmissão, vidros e brilhos), o que é telão, grama em volta do campo, opaco ou alpha. Confira a lista de peças abaixo e marque como Banner dos times as faixas e bandeiras do estádio que devem dar lugar aos banners dos times do FC 27.', 'info')));
+      if (an.giro === 180) c1.corpo.append(nota(`Os bancos de reservas deste estádio ficam em +Z (${an.bancos.cadeiras_em_mais_z} cadeiras de banco achadas, contra ${an.bancos.cadeiras_em_menos_z} do outro lado): o estádio gira meia volta, porque o FC 27 tem os bancos em −Z. Dá para mudar em "Lado dos bancos", nas Opções.`, 'info'));
+      if (!an.existe?.torcida) c1.corpo.append(nota('Sem audiarea.bin: a torcida do El Grandioso fica.', 'alerta'));
+      else if (!an.torcida?.cores_das_cadeiras) c1.corpo.append(nota('Sem audi\\sourceimages\\au_seat.png: as cadeiras da torcida ficam cinza (ou escolha uma cor nas Opções).', 'alerta'));
+      if (!Object.keys(an.glares || {}).length) c1.corpo.append(nota('Sem brilhos de lâmpadas no PES (effect_st…_df/_nf.fpk): os glares do El Grandioso ficam.', 'alerta'));
+      c1.corpo.append(nota('O PES não tem marcadores de personagens laterais: gandulas, fotógrafos e técnicos partem das posições do El Grandioso e são conferidos contra o estádio novo (veja "Personagens laterais" nas Opções).', 'info'));
     } else c1.corpo.append(el('div', { style: { marginTop: '10px' } }, nota('Receita sugerida pela análise: as camadas do FIFA 16 dizem o que sai (placas, gramado, céu e relógio que o FIFA 16 preenchia na hora do jogo) e onde entram os banners dos times. Confira a lista de peças abaixo e marque como Banner dos times as faixas e bandeiras do estádio que devem dar lugar a eles.', 'info')));
-    if (!an.existe?.torcida) c1.corpo.append(nota('Sem crowd_<id>_1.dat: a torcida do El Grandioso fica.', 'alerta'));
-    if (!Object.keys(an.localizadores || {}).some((k) => k.startsWith('slc_'))) c1.corpo.append(nota('Sem marcadores slc: gandulas, fotógrafos e técnicos partem das posições do El Grandioso (veja "Personagens laterais" nas Opções).', 'alerta'));
+    if (!pes && !an.existe?.torcida) c1.corpo.append(nota('Sem crowd_<id>_1.dat: a torcida do El Grandioso fica.', 'alerta'));
+    if (!pes && !Object.keys(an.localizadores || {}).some((k) => k.startsWith('slc_'))) c1.corpo.append(nota('Sem marcadores slc: gandulas, fotógrafos e técnicos partem das posições do El Grandioso (veja "Personagens laterais" nas Opções).', 'alerta'));
   }
   pag.append(c1.el);
   // estádio novo
@@ -348,12 +388,22 @@ function renderConverter() {
   if (c.analise) { pag.append(cartaoPecas().el); pag.append(cartaoOpcoes().el); }
   const btn = el('button', { class: 'btn-primario grande', html: icone('converter', 16) + 'Converter', disabled: !c.analise });
   btn.onclick = converter;
-  pag.append(el('div', { class: 'rodape-acao' }, el('span', { class: 'resumo' }, c.analise ? `FIFA 16 ${c.analise.fifa16_id} → FC 27 ${c.novoId || '?'} sobre o ${BASE.nome}` : 'Escolha a pasta do estádio do FIFA 16.'), btn));
+  pag.append(el('div', { class: 'rodape-acao' }, el('span', { class: 'resumo' }, c.analise ? `${J()} ${c.analise.fifa16_id} → FC 27 ${c.novoId || '?'} sobre o ${BASE.nome}` : `Escolha a pasta do estádio do ${J()}.`), btn));
 }
 
 function cartaoPecas() {
   const c = S.conv, an = c.analise;
-  const cp = cartao('Peças do FIFA 16', 'O papel de cada peça (primitiva do RX3). Chão: quanto a peça sobe no nível do piso (o FIFA 16 contava com a ordem de desenho; o FC 27 precisa de alturas diferentes). Piso: as peças que marcam até onde vai o gramado do FC 27.');
+  const cp = ehPes()
+    ? cartao('Peças do PES 2021', 'O papel de cada peça (malha dos modelos do estádio e do telão). 1 lado: só o lado das normais, como o PES desenha (desmarcado nas malhas de dois lados do PES). Chão: quanto a peça sobe no nível do piso. Piso: as peças que marcam até onde vai o gramado do FC 27.')
+    : cartao('Peças do FIFA 16', 'O papel de cada peça (primitiva do RX3). Chão: quanto a peça sobe no nível do piso (o FIFA 16 contava com a ordem de desenho; o FC 27 precisa de alturas diferentes). Piso: as peças que marcam até onde vai o gramado do FC 27.');
+  const medidor = el('div', { class: 'medidor-geometria' });
+  const medir = () => {
+    if (!ehPes()) return;
+    const mb = geometriaEstimada();
+    medidor.className = 'medidor-geometria' + (mb > ORCAMENTO_MB ? ' passou' : mb > 0.93 * ORCAMENTO_MB ? ' justo' : '');
+    medidor.textContent = `Geometria das peças que ficam: cerca de ${mb.toFixed(1).replace('.', ',')} de ${ORCAMENTO_MB} MB que os meshes do El Grandioso comportam`
+      + (mb > ORCAMENTO_MB ? ': descarte peças que não aparecem ou marque "1 lado" nas que só são vistas de frente.' : '.');
+  };
   const filtro = segmentado([['todas', 'Todas'], ['ficam', 'Ficam'], ['saem', 'Saem'], ['chao', 'No chão']], c.filtro, (v) => { c.filtro = v; renderConverter(); });
   cp.cab.append(filtro);
   cp.corpo.classList.add('justo');
@@ -364,28 +414,29 @@ function cartaoPecas() {
     if (c.filtro === 'saem' && !sai(v)) continue;
     if (c.filtro === 'chao' && (v.dy === '' || v.dy === null)) continue;
     const sel = el('select', {}, PAPEIS.map(([k, t]) => el('option', { value: k, selected: v.papel === k }, t)));
-    sel.onchange = () => { v.papel = sel.value; tr.classList.toggle('descartada', v.papel === 'descartar'); };
+    sel.onchange = () => { v.papel = sel.value; tr.classList.toggle('descartada', v.papel === 'descartar'); medir(); };
     const dy = el('input', { type: 'number', step: '0.002', class: 'dy mono', value: v.dy, placeholder: '—' });
     dy.onchange = () => { v.dy = dy.value === '' ? '' : Number(dy.value); };
     const um = el('input', { type: 'checkbox', checked: v.umLado, title: 'Só a frente (sem o verso)' });
-    um.onchange = () => { v.umLado = um.checked; };
+    um.onchange = () => { v.umLado = um.checked; medir(); };
     const piso = el('input', { type: 'checkbox', checked: v.piso, title: 'Esta peça marca até onde vai o gramado do FC 27' });
     piso.onchange = () => { v.piso = piso.checked; };
     const img = p.miniatura ? el('img', { src: 'imagem?arq=' + encodeURIComponent(p.miniatura), loading: 'lazy', title: p.textura }) : el('div', { class: 'sem-img', title: p.textura_no_arquivo ? '' : 'sem textura no arquivo' });
     const tr = el('tr', { class: v.papel === 'descartar' ? 'descartada' : '' }, el('td', { class: 'mini' }, img), el('td', { class: 'mono' }, String(p.prim)),
-      el('td', {}, el('div', {}, p.camada || '—'), el('div', { class: 'mono mudo', style: { fontSize: '11px' } }, p.shader)),
+      el('td', {}, el('div', { title: p.nome || '' }, ehPes() && p.nome ? `${p.camada} · ${p.nome}` : (p.camada || '—')), el('div', { class: 'mono mudo', style: { fontSize: '11px' } }, p.shader)),
       el('td', { class: 'num mono' }, fmtInt(p.vertices)), el('td', { class: 'papel' }, sel), el('td', {}, dy), el('td', { class: 'encolher', style: { textAlign: 'center' } }, um),
       el('td', { class: 'encolher', style: { textAlign: 'center' } }, piso), el('td', {}, el('div', { class: 'motivo', title: v.motivo }, v.papel === 'descartar' ? v.motivo : p.textura)));
     tb.append(tr);
   }
-  cp.corpo.append(el('div', { class: 'tabela-pecas' }, el('table', { class: 'tabela' }, el('thead', {}, el('tr', {}, el('th', {}, ''), el('th', {}, '#'), el('th', {}, 'Camada / shader'),
+  if (ehPes()) { medir(); cp.corpo.append(medidor); }
+  cp.corpo.append(el('div', { class: 'tabela-pecas' }, el('table', { class: 'tabela' }, el('thead', {}, el('tr', {}, el('th', {}, ''), el('th', {}, '#'), el('th', {}, ehPes() ? 'Modelo · malha / shader' : 'Camada / shader'),
     el('th', { class: 'num' }, 'Vértices'), el('th', {}, 'Papel'), el('th', {}, 'Chão (m)'), el('th', {}, '1 lado'), el('th', {}, 'Piso'), el('th', {}, 'Textura / motivo'))), tb)));
   return cp;
 }
 
 function cartaoOpcoes() {
   const o = S.conv.opcoes;
-  const co = cartao('Opções', 'Os padrões são os da conversão testada em partida.');
+  const co = cartao('Opções', ehPes() ? 'Os padrões são os da conversão do FIFA 16 testada em partida, com o que a análise do PES sugere.' : 'Os padrões são os da conversão testada em partida.');
   const faces = segmentado([['view', 'Vista do campo'], ['double', 'Dois lados']], o.faces, (v) => { o.faces = v; });
   const maxv = el('input', { type: 'number', min: 10000, max: 65000, step: 1000, value: o.max_vertices });
   maxv.onchange = () => { o.max_vertices = Number(maxv.value); };
@@ -397,7 +448,8 @@ function cartaoOpcoes() {
   rx.onchange = () => { o.recorte_x = Number(rx.value); };
   const placas = el('select', {}, el('option', { value: 'manter', selected: o.placas === 'manter' }, 'Manter no lugar'), el('option', { value: 'abaixo_do_piso', selected: o.placas === 'abaixo_do_piso' }, 'Esconder (10 m abaixo do piso)'));
   placas.onchange = () => { o.placas = placas.value; };
-  const cad = segmentado([['fifa16', 'Cores do FIFA 16'], ['cor', 'Cor única']], o.cadeiras, (v) => { o.cadeiras = v; cor.disabled = v !== 'cor'; });
+  const pes = ehPes();
+  const cad = segmentado([['fifa16', pes ? 'Cores do PES (au_seat.png)' : 'Cores do FIFA 16'], ['cor', 'Cor única']], o.cadeiras, (v) => { o.cadeiras = v; cor.disabled = v !== 'cor'; });
   const cor = el('input', { type: 'color', value: o.cor, disabled: o.cadeiras !== 'cor', style: { width: '48px', height: '30px', padding: '0', border: '0', background: 'none' } });
   cor.oninput = () => { o.cor = cor.value; };
   const lado = el('select', {}, el('option', { value: '-x', selected: o.lado_casa === '-x' }, 'Casa em −X (como o El Grandioso)'), el('option', { value: '+x', selected: o.lado_casa === '+x' }, 'Casa em +X (inverter)'));
@@ -407,25 +459,38 @@ function cartaoOpcoes() {
   const ajuste = el('input', { type: 'checkbox', checked: o.ajuste });
   ajuste.onchange = () => { o.ajuste = ajuste.checked; };
   const pers = el('select', {}, [['ajustar', 'Ajustar ao estádio (recomendado)'], ['esconder', 'Esconder (ficam só os técnicos)'], ['fifa16', 'Só os marcadores do FIFA 16']]
-    .map(([k, t]) => el('option', { value: k, selected: o.personagens === k }, t)));
+    .filter(([k]) => !pes || k !== 'fifa16').map(([k, t]) => el('option', { value: k, selected: o.personagens === k }, t)));
   pers.onchange = () => { o.personagens = pers.value; };
   const res = el('select', {}, [['cadeiras', 'Nas cadeiras do banco (recomendado)'], ['marcadores', 'Nos marcadores do FIFA 16'], ['esconder', 'Esconder']]
-    .map(([k, t]) => el('option', { value: k, selected: o.reservas === k }, t)));
+    .filter(([k]) => !pes || k !== 'marcadores').map(([k, t]) => el('option', { value: k, selected: o.reservas === k }, t)));
   res.onchange = () => { o.reservas = res.value; };
   const luzes = el('select', {}, [['acompanhar', 'Acompanham a torcida (recomendado)'], ['manter', 'Ficam onde estão no El Grandioso']]
     .map(([k, t]) => el('option', { value: k, selected: o.luzes === k }, t)));
   luzes.onchange = () => { o.luzes = luzes.value; };
+  const an = S.conv.analise;
+  const giro = el('select', {}, [[0, 'Não girar (bancos em −Z no PES)'], [180, 'Girar meia volta (bancos em +Z no PES)']]
+    .map(([k, t]) => el('option', { value: k, selected: Number(o.giro) === k }, t)));
+  giro.onchange = () => { o.giro = Number(giro.value); };
   co.corpo.append(el('div', { class: 'grade2' },
-    campo2('Faces', faces, 'Vista do campo (recomendado): cada face entra pelo lado das normais do FIFA 16, e o verso só onde é visto do campo. Dois lados: tudo com frente e verso, como o FIFA 16 desenhava.'),
+    pes ? campo2('Lado dos bancos', giro, `O FC 27 e o El Grandioso têm os bancos de reservas em −Z. A análise achou ${an?.bancos?.cadeiras_em_mais_z ?? 0} cadeiras de banco em +Z e ${an?.bancos?.cadeiras_em_menos_z ?? 0} em −Z, e sugeriu ${an?.giro === 180 ? 'girar' : 'não girar'}.`) : null,
+    campo2('Faces', faces, pes
+      ? 'Vista do campo (recomendado): cada face entra pelo lado das normais, como o PES desenha; nas peças sem "1 lado", o verso entra onde é visto do campo. Dois lados: tudo com frente e verso (dobra a geometria; um estádio do PES raramente cabe assim).'
+      : 'Vista do campo (recomendado): cada face entra pelo lado das normais do FIFA 16, e o verso só onde é visto do campo. Dois lados: tudo com frente e verso, como o FIFA 16 desenhava.'),
     campo2('Máximo de vértices por peça', maxv, 'Acima disso a peça é dividida (índices de 16 bits, como os meshes do FC 27).'),
-    campo2('Ajuste automático de tamanho', el('label', { class: 'linha-acoes' }, ajuste, 'Repartir materiais grandes entre os meshes'), 'Um material maior que um mesh do El Grandioso (5,5 MB) é repartido entre vários. Estádios que cabem sem isso saem iguais.'),
-    campo2('Personagens laterais', pers, 'Gandulas, fotógrafos, câmeras, policiais e seguranças. Ajustar: os marcadores do FIFA 16 onde existem; os que ficariam dentro da arquibancada vão para o lugar livre mais perto do campo, ou saem de vista. Esconder: todos menos técnicos e auxiliares saem de vista.'),
-    campo2('Reservas no banco', res, 'Cadeiras: os reservas sentam nas cadeiras do banco achadas no modelo do FIFA 16, uma sim, uma não, a partir do meio. Marcadores: nos marcadores do FIFA 16, que muitas vezes não batem com as cadeiras. Esconder: saem de vista.'),
-    campo2('Luzes da torcida à noite', luzes, 'As luzes da arquibancada do El Grandioso vão para o trecho equivalente da torcida do FIFA 16, com a intensidade ajustada, para a torcida ficar iluminada como a do El Grandioso.'),
+    campo2('Ajuste automático de tamanho', el('label', { class: 'linha-acoes' }, ajuste, 'Repartir materiais grandes entre os meshes'), pes
+      ? 'Um material maior que um mesh do El Grandioso (5,5 MB) é repartido entre vários, e as peças ficam menores se for preciso para tudo caber.'
+      : 'Um material maior que um mesh do El Grandioso (5,5 MB) é repartido entre vários. Estádios que cabem sem isso saem iguais.'),
+    campo2('Personagens laterais', pers, pes
+      ? 'Gandulas, fotógrafos, câmeras, policiais e seguranças. Ajustar: partem das posições do El Grandioso; os que ficariam dentro da arquibancada vão para o lugar livre mais perto do campo, ou saem de vista. Esconder: todos menos técnicos e auxiliares saem de vista.'
+      : 'Gandulas, fotógrafos, câmeras, policiais e seguranças. Ajustar: os marcadores do FIFA 16 onde existem; os que ficariam dentro da arquibancada vão para o lugar livre mais perto do campo, ou saem de vista. Esconder: todos menos técnicos e auxiliares saem de vista.'),
+    campo2('Reservas no banco', res, pes
+      ? 'Cadeiras: os reservas sentam nas cadeiras do banco achadas no modelo do PES, uma sim, uma não, a partir do meio. Esconder: saem de vista.'
+      : 'Cadeiras: os reservas sentam nas cadeiras do banco achadas no modelo do FIFA 16, uma sim, uma não, a partir do meio. Marcadores: nos marcadores do FIFA 16, que muitas vezes não batem com as cadeiras. Esconder: saem de vista.'),
+    campo2('Luzes da torcida à noite', luzes, `As luzes da arquibancada do El Grandioso vão para o trecho equivalente da torcida do ${J()}, com a intensidade ajustada, para a torcida ficar iluminada como a do El Grandioso.`),
     campo2('Recuo do gramado no lado dos bancos', el('div', { class: 'linha-acoes' }, recorte, 'z ≥', rz, '|x| <', rx), 'Para bancos rebaixados (Morumbi: z −37,8 m, |x| < 30 m).'),
     campo2('Placas baixas de madeira do El Grandioso (lado dos bancos)', placas, 'Esconda se cruzarem os bancos do estádio novo.'),
     campo2('Cadeiras da torcida', el('div', { class: 'linha-acoes' }, cad, cor), ''),
-    campo2('Torcida da casa', lado, 'O FIFA 16 e o El Grandioso põem a casa em −X.'),
+    campo2('Torcida da casa', lado, pes ? 'O El Grandioso põe a casa em −X. Os visitantes ficam no setor que o PES marca, e a organizada da casa atrás do gol da casa.' : 'O FIFA 16 e o El Grandioso põem a casa em −X.'),
     campo2('Anel superior da torcida acima de (m)', tier, 'Lugares mais altos que isso contam como anel superior.')));
   return co;
 }
@@ -435,7 +500,7 @@ async function converter() {
   if (!c.analise) return;
   if (!c.nome.trim()) { aviso('Dê um nome ao estádio novo.', { tipo: 'aviso' }); return; }
   if (!c.novoId) { aviso('Escolha o ID novo.', { tipo: 'aviso' }); return; }
-  await tarefa('converter', { pasta16: c.pasta, novo_id: Number(c.novoId), nome: c.nome.trim(), receita: receitaDaTela(), modo: c.modo,
+  await tarefa('converter', { origem: c.origem, [ehPes() ? 'pasta_pes' : 'pasta16']: c.pasta, novo_id: Number(c.novoId), nome: c.nome.trim(), receita: receitaDaTela(), modo: c.modo,
     projeto_base: c.modo === 'projeto' ? c.projeto : null });
 }
 

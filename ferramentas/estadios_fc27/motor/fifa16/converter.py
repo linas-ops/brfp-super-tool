@@ -61,6 +61,8 @@ def receita_pronta(sid):
 
 
 class Conversao:
+    JOGO = 'FIFA 16'  # jogo de origem, nos avisos (motor/pes21/converter.py herda desta classe para o PES 2021)
+
     def __init__(self, amb, cfg, base_proj, dup, prep, work):
         self.amb, self.cfg = amb, cfg
         self.rc = cfg['receita']
@@ -666,7 +668,7 @@ class Conversao:
             tags.append(tag)
         self.report['banners'] = dict(pecas=[p['prim'] for p in pecas], superficies=len(sups), banners=len(col), fora_do_limite=fora,
                                       formatos=dict(usados))
-        base.aviso(f"banners dos times: {len(col)} nas faixas do FIFA 16 (peças {', '.join(str(p['prim']) for p in pecas)})"
+        base.aviso(f"banners dos times: {len(col)} nas faixas do {self.JOGO} (peças {', '.join(str(p['prim']) for p in pecas)})"
                    + (f'; {fora} superfícies menores ficaram de fora (limite de {bn.MAXIMO})' if fora else ''))
         return ops, tags
 
@@ -824,8 +826,14 @@ class Conversao:
         organised = (b19 == 0) & (b20 == 0) & (b22 == 0xFF)  # organizada da casa
         keep = ~buffer
         Pp, orient, away, organised, b22 = Pp[keep], orient[keep], away[keep], organised[keep], b22[keep]
-        self.lugares = Pp
         rgb = rec[keep][:, 16:19].astype(np.uint32)
+        self.torcida_fc27(Pp, orient, away, organised, b22 / 255.0, rgb,
+                          dict(lugares_fifa16=int(n)), dict(faixa_tirada=int(buffer.sum())))
+
+    def torcida_fc27(self, Pp, orient, away, organised, prio, rgb, antes, depois):
+        """Grava os lugares da torcida no FC 27: posições (m), orientação (graus), visitantes, organizada, prioridade de
+        ocupação (0 a 1) e a cor da cadeira (RGB). antes/depois: o que entra no relatório antes e depois de "lugares"."""
+        self.lugares = Pp
         cfg = self.rc.get('torcida') or {}
         seat_colour = 0xFF000000 | (rgb[:, 0] << 16) | (rgb[:, 1] << 8) | rgb[:, 2]
         if cfg.get('cadeiras') and cfg['cadeiras'] != 'fifa16':
@@ -841,7 +849,6 @@ class Conversao:
         r = np.hypot(Pp[:, 0], Pp[:, 2])
         close = 1 - (r - r.min()) / (r.max() - r.min())
         low = 1 - (Pp[:, 1] - Pp[:, 1].min()) / (Pp[:, 1].max() - Pp[:, 1].min())
-        prio = b22 / 255.0
         attendance = 0.5333 + (0.9804 - 0.5333) * np.clip(0.5 * prio + 0.3 * close + 0.2 * low, 0, 1)
         tier = np.where(Pp[:, 1] < float(cfg.get('tier2_acima_de', 14.0)), 1, 2).astype(np.uint8)
         m = len(Pp)
@@ -852,7 +859,7 @@ class Conversao:
         path = self.work / 'out' / 'crowd_seats.bin'
         path.write_bytes(bytes(out))
         self.ebx_edit(self.G + f'{self.tok}_crowd_0', [dict(op='crowd', data=str(path), sha256=sha256(bytes(out)))], 'crowd')
-        self.report['torcida'] = dict(lugares_fifa16=int(n), lugares=int(m), faixa_tirada=int(buffer.sum()), visitantes=int(away.sum()),
+        self.report['torcida'] = dict(antes, lugares=int(m), **depois, visitantes=int(away.sum()),
                                       organizada=int(organised.sum()), anel_inferior=int((tier == 1).sum()))
 
     def stage_luzes(self):
@@ -901,18 +908,26 @@ class Conversao:
         base.aviso(f"luzes da torcida: {rel['acompanharam']} de {rel['luzes']} acompanharam a torcida nova (mediana da luz na torcida: "
                    f"{lt['antes'][1]}x a do El Grandioso antes, {lt['depois'][1]}x depois)")
 
+    VARIANTES_GLARES = ('1_0', '1_1', '1_2', '3_0', '3_1', '3_2')
+    ONDE_LAMPADAS = 'nos .lnx do FIFA 16'
+
+    def lampadas_das_variantes(self):
+        """{variante: lâmpadas (n, 3) em metros} dos .lnx de glares do FIFA 16 (1_x de dia, 3_x de noite)."""
+        fx = self.sa / 'fx'
+        sid = self.rc['fifa16_id']
+        lamps = {}
+        for v in self.VARIANTES_GLARES:
+            f = fx / f'glares_{sid}_{v}.lnx'
+            lamps[v] = analise.lampadas(f) if f.is_file() else np.zeros((0, 3))
+        return lamps
+
     def stage_glares(self):
         """Brilhos nas lâmpadas do FIFA 16 (arquivo de dia para 1_x, de noite para 3_x), fachos das lâmpadas da noite;
         os conjuntos secundários do El Grandioso (luzes da borda do teto dele) ficam vazios."""
-        fx = self.sa / 'fx'
-        sid = self.rc['fifa16_id']
-        variantes = ('1_0', '1_1', '1_2', '3_0', '3_1', '3_2')
-        lamps = {}
-        for v in variantes:
-            f = fx / f'glares_{sid}_{v}.lnx'
-            lamps[v] = analise.lampadas(f) if f.is_file() else np.zeros((0, 3))
+        variantes = self.VARIANTES_GLARES
+        lamps = self.lampadas_das_variantes()
         if not len(lamps['3_0']) or any(not len(x) for x in lamps.values()):
-            self.report['glares'] = 'sem lâmpadas nos .lnx do FIFA 16: os glares do El Grandioso ficam'
+            self.report['glares'] = f'sem lâmpadas {self.ONDE_LAMPADAS}: os glares do El Grandioso ficam'
             return
         refs = ['SpatialPrefabReferenceObjectData', 'EffectReferenceObjectData']
         report = {}
@@ -1091,7 +1106,7 @@ class Conversao:
         self.slc_bancos(groups, report)
         report['resumo'] = dict(totais)
         self.report['personagens'] = report
-        partes = [f"{totais[k]} {r}" for k, r in (('fifa16', 'nos marcadores do FIFA 16'), ('no_lugar', 'no lugar do El Grandioso'),
+        partes = [f"{totais[k]} {r}" for k, r in (('fifa16', f'nos marcadores do {self.JOGO}'), ('no_lugar', 'no lugar do El Grandioso'),
                                                  ('movido', 'ajustados'), ('escondidos', 'fora de vista')) if totais[k]]
         base.aviso('personagens laterais: ' + ', '.join(partes))
 
@@ -1148,7 +1163,7 @@ class Conversao:
                 report['cadeiras_do_banco'] = int(len(cad))
             postos = sum(report[k]['colocados'] for k in ('reservas_casa', 'reservas_visitante'))
             if modo != 'esconder' and postos < len(objs):
-                base.aviso(f'reservas: {postos} de {len(objs)} no banco do FIFA 16 ({modo}); os outros saem de vista')
+                base.aviso(f'reservas: {postos} de {len(objs)} no banco do {self.JOGO} ({modo}); os outros saem de vista')
         if ops:
             self.ebx_edit(name, ops, 'seats')
         self.report['personagens'] = report
@@ -1260,7 +1275,7 @@ class Conversao:
         if int(self.rc.get('luz') or BASE_ID) != BASE_ID:
             falha(f"o pré-cálculo de luz de outro estádio (estádio {self.rc['luz']}) está desativado: com ele a partida fica "
                   f"carregando sem fim. A conversão usa o do El Grandioso ({BASE_ID}).")
-        base.etapa('converter', 'Aplicando o estádio do FIFA 16 sobre o El Grandioso')
+        base.etapa('converter', f'Aplicando o estádio do {self.JOGO} sobre o El Grandioso')
         self.load()
         for k, (nome, fn) in enumerate(steps):
             base.progresso(100 * k / len(steps), nome)

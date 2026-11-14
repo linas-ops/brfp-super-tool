@@ -78,3 +78,8 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 .ambiente-item .ic.falta { color: var(--perigo); }
 .ambiente-item .txt { flex: 1; min-width: 0; }
 .ambiente-item .txt small { display: block; color: var(--texto-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.medidor-geometria { margin: 10px 14px 0; padding: 7px 10px; border-radius: var(--raio); background: var(--painel-2); border: 1px solid var(--borda);
+  color: var(--texto-2); font-size: 12px; }
+.medidor-geometria.justo { background: var(--alerta-suave); color: #f5d27a; border-color: transparent; }
+.medidor-geometria.passou { background: var(--perigo-suave); color: #ff9a9c; border-color: transparent; }
+.cab-detalhe > .segmentado { flex: none; align-self: center; }

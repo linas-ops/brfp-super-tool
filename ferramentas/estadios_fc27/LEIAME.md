@@ -3,7 +3,8 @@
 Duas ferramentas numa só, no lugar do antigo Conversor PES → FC:
 
 - **Duplicar estádio**: estádios do FC 27 com ID, nome e identidade próprios, quantos e quantas vezes quiser.
-- **Converter FIFA 16 → FC 27**: um estádio do FIFA 16 vira um estádio novo do FC 27, **sempre sobre o El Grandioso (181)**.
+- **Converter FIFA 16 / PES 2021 → FC 27**: um estádio do FIFA 16 ou do PES 2021 vira um estádio novo do FC 27, **sempre
+  sobre o El Grandioso (181)**. A aba é a mesma; o jogo de origem é escolhido no alto dela.
 
 O resultado é sempre um **projeto do FET** (`.fifaproject`) novo: a ferramenta nunca sobrescreve um projeto. Depois de
 gravado, o projeto é lido de volta e conferido.
@@ -15,7 +16,7 @@ gravado, o projeto é lido de volta e conferido.
 | FIFA Editor Tool (testado no 2.2.0, interno 17.1.5.0) com o FC 27 aberto nele uma vez | o SDK do FET e o `fc27.cache` (índice do jogo) |
 | EA SPORTS FC 27 instalado | os assets nativos (lidos dos arquivos CAS do jogo, conferidos pelo SHA-1) |
 | .NET 8 Runtime | os jobs do SDK (dotnet.microsoft.com/download/dotnet/8.0) |
-| numpy e zstandard | o Python do Super Tool baixa na página Componentes (ou a ferramenta usa o Python 3.12 do computador, se ele tiver os dois) |
+| numpy, SciPy e zstandard | o Python do Super Tool baixa na página Componentes (ou a ferramenta usa o Python 3.12 do computador, se ele tiver os três). A SciPy entrou na versão 1.1: os banners dos times já precisavam dela |
 
 **Nada do FET nem do jogo vem com a ferramenta.** Na primeira vez (botão **Ambiente › Preparar agora**):
 
@@ -121,6 +122,52 @@ O que entra no FC 27:
 | Personagens | Gandulas, fotógrafos e técnicos vão para os marcadores `slc_` do FIFA 16, quando existem; os outros seguem a opção "Personagens laterais". Os reservas sentam nas cadeiras do banco do estádio novo (opção "Reservas no banco"). |
 | El Grandioso | A arquitetura dele some. Nenhum subset fica vazio: os que sobram ganham um triângulo de área zero, e as peças que a lógica do jogo liga e desliga vão para baixo do piso. |
 
+## Converter PES 2021 → FC 27
+
+Desde a versão 1.1. Na aba **Converter**, escolha **PES 2021** no alto. O caminho é o mesmo do FIFA 16: uma duplicata
+completa do El Grandioso no ID novo, e o estádio do PES no lugar da arquitetura dele. Só muda de onde vêm os dados.
+**Precisa de teste em partida**: a conversão foi feita e conferida com o Spotify Camp Nou (st002), mas ainda não foi jogada.
+
+Os estádios do PES 2021 têm todos o mesmo formato (Fox Engine), e a ferramenta lê os arquivos do jogo diretamente, sem
+Blender nem outro programa:
+
+| Arquivo do PES | O que a ferramenta tira dele |
+|---|---|
+| `Asset\model\bg\st<NNN>\#Win\st<NNN>.fpk` e `.fpkd` | os modelos do estádio (`.fmdl`) e o lugar de cada um na cena |
+| `…\tv\#Win\tv_st<NNN>.fpk` | as telas, que viram o telão ao vivo do FC 27 |
+| `…\sourceimages\tga\#windx11\*.ftex` | as texturas (BC1/BC3 com os mips do PES byte a byte) |
+| `…\audi\#Win\audiarea_st<NNN>.fpk` | as áreas da torcida |
+| `…\audi\sourceimages\au_seat.png` | a cor de cada cadeira da torcida |
+| `…\effect\#Win\effect_st<NNN>_df.fpk` e `_nf.fpk` | as lâmpadas dos glares, de dia e de noite |
+
+1. **Estádio do PES 2021**: escolha a pasta do estádio, a do mod (a que tem `Asset\model\bg\st<NNN>`). Ela precisa ter
+   um estádio só.
+2. **Estádio novo**, **Peças** e **Opções**: como no FIFA 16. Cada peça é uma malha dos modelos do PES.
+3. **Converter**.
+
+O que é diferente do FIFA 16:
+
+- **Lado dos bancos**: o FC 27 e o El Grandioso têm os bancos de reservas em −Z; o PES aceita os dois lados. A análise
+  procura as cadeiras do banco dos dois lados do campo e, se elas estiverem em +Z, o estádio todo gira meia volta em torno
+  do centro do campo (modelo, torcida e lâmpadas). Dá para mudar nas Opções.
+- **O que sai sozinho**: figurantes e equipamentos de transmissão do PES (o FC 27 tem os próprios personagens), o gramado,
+  os vidros e os brilhos (materiais com transparência parcial, que os materiais do El Grandioso usados na conversão não
+  têm). As placas, as bandeiras, as redes e as variações de dia e de noite do PES ficam em outros pacotes e não são lidas.
+- **Faces**: o PES desenha cada malha só pelo lado das normais, a não ser as marcadas como de dois lados. As peças entram
+  do mesmo jeito: com "1 lado" marcado, menos nas de dois lados do PES.
+- **Tamanho**: os estádios do PES são mais pesados que os do FIFA 16, e os seis meshes do El Grandioso comportam 33 MB de
+  geometria. A lista de peças mostra quanto as peças que ficam ocupam. Se os materiais não couberem com peças grandes, a
+  preparação é refeita com peças menores (mais subsets, a mesma geometria). Se o estádio passar dos 33 MB, descarte peças
+  que não aparecem.
+- **Torcida**: o PES não guarda lugar por lugar, guarda áreas inclinadas sobre a arquibancada. A ferramenta as preenche:
+  uma fileira no meio de cada degrau do estádio embaixo da área (sem degraus regulares, de 80 em 80 cm), um lugar a cada
+  50 cm, cada um na altura do degrau. A cor da cadeira vem do `au_seat.png`. O setor que o PES marca à parte entra como
+  visitantes. A organizada da casa, que o PES não marca, fica no anel inferior atrás do gol da casa.
+- **Personagens laterais**: o PES não tem marcadores no modelo. Todos partem das posições do El Grandioso e são conferidos
+  contra a geometria do estádio novo (opção "Ajustar ao estádio").
+- **Texturas** em formato que não seja BC1, BC3 ou 32 bits sem compressão (BC7, por exemplo) entram como um painel cinza,
+  e o resultado avisa quais são.
+
 ## Personagens laterais
 
 O El Grandioso tem cerca de 240 marcadores de personagens em volta do campo: gandulas, fotógrafos, câmeras, policiais,
@@ -206,13 +253,15 @@ A aba **Projetos gerados** lista os últimos trabalhos.
 estadios_fc27\
   servidor.py      servidor local da interface (porta 8782); o trabalho roda no motor, num processo à parte
   web\             interface (Duplicar, Converter, Projetos gerados, Ambiente)
-  motor\           python -m motor ambiente | preparar | estadios | duplicar | converter | analisar16 | luz16
+  motor\           python -m motor ambiente | preparar | estadios | duplicar | converter | analisar16 | analisarpes | luz16
     ambiente.py    FET, jogo, .NET 8, preparação do SDK e índice do cache
     duplicar.py    duplicação (uma ou várias cópias, do zero ou num projeto)
     verificar.py   verificação do projeto gravado
     projeto.py     plano e gravação do projeto (codec FETP v4 da skill fet-projects, em motor\fet)
     fifa16\        análise, preparação, conversão, banners, bancos, luzes da torcida, leitor RX3 e codificador BC1/BC3
     fifa16\receitas\  receitas guardadas (morumbi_183.json = a conversão testada em partida)
+    pes21\         PES 2021: leitores FPK, FMDL, FTEX e FOX2, áreas da torcida, lâmpadas, análise, preparação e conversão
+                   (a conversão herda a do FIFA 16)
     csharp\        fontes dos jobs do SDK (StadiumTool, ConvertTool), do PrepararSdk e do Compat
     bin\           os mesmos compilados (só código da ferramenta + Mono.Cecil, licença MIT)
   cache\           SDK preparado, índice e extrações do jogo, miniaturas e trabalhos (fica fora do pacote)

@@ -4,8 +4,10 @@
   python -m motor preparar                      prepara o SDK e o índice do cache
   python -m motor estadios                      catálogo dos estádios do jogo (JSON)
   python -m motor duplicar <config.json>        duplica estádios (ver motor/duplicar.py)
-  python -m motor converter <config.json>       converte um estádio do FIFA 16 (ver motor/fifa16/converter.py)
+  python -m motor converter <config.json>       converte um estádio do FIFA 16 (ver motor/fifa16/converter.py) ou, com
+                                                "pasta_pes" na configuração, do PES 2021 (ver motor/pes21/converter.py)
   python -m motor analisar16 <pasta FIFA 16>    lê um estádio do FIFA 16 e sugere a receita da conversão
+  python -m motor analisarpes <pasta PES 2021>  lê um estádio do PES 2021 e sugere a receita da conversão
   python -m motor luz16 <pasta FIFA 16>         estádios do FC 27 pela cobertura da torcida pela luz pré-calculada
 """
 import json
@@ -59,8 +61,11 @@ def main(argv):
             base.resultado(res)
             return 0
         if cmd == 'converter':
-            from .fifa16 import converter
             cfg = base.ler_json(args[0])
+            if cfg.get('pasta_pes'):
+                from .pes21 import converter
+            else:
+                from .fifa16 import converter
             res = converter.converter(amb, cfg)
             res['segundos'] = round(time.time() - t0)
             res['tipo'] = 'converter'
@@ -75,6 +80,15 @@ def main(argv):
             from .fifa16 import converter
             pronta = converter.receita_pronta(an['fifa16_id'])
             an['receita_pronta'] = pronta
+            print(json.dumps(an, ensure_ascii=False))
+            return 0
+        if cmd == 'analisarpes':
+            from .pes21 import analise
+            try:
+                an = analise.analisar(args[0], miniaturas=args[1] if len(args) > 1 else None)
+            except (OSError, ValueError) as ex:
+                base.falha(str(ex))
+            an['receita_pronta'] = None
             print(json.dumps(an, ensure_ascii=False))
             return 0
         if cmd == 'luz16':

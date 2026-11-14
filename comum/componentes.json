@@ -369,6 +369,7 @@
    "nome": "Estádios FC 27",
    "pacotes": [
     "numpy",
+    "scipy",
     "zstandard"
    ]
   },

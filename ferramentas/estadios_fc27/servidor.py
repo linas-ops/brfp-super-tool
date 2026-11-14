@@ -1,9 +1,9 @@
-"""Estádios FC 27 (BRFP Super Tool): duplicar estádios e converter estádios do FIFA 16, num servidor local.
+"""Estádios FC 27 (BRFP Super Tool): duplicar estádios e converter estádios do FIFA 16 e do PES 2021, num servidor local.
 
     python servidor.py [--porta 8782] [--sem-janela]
 
 O trabalho pesado roda no motor (motor/, python -m motor ...) num processo à parte, com o Python que tem os pacotes
-do grupo "estadios_fc27" (numpy e zstandard): o embutido do Super Tool ou um do computador. A interface mostra as
+do grupo "estadios_fc27" (numpy, SciPy e zstandard): o embutido do Super Tool ou um do computador. A interface mostra as
 etapas e o registro ao vivo. Uma tarefa por vez.
 """
 import argparse
@@ -22,7 +22,7 @@ sys.path.insert(0, os.path.join(SUPERTOOL, "comum"))
 import base  # noqa: E402
 import componentes  # noqa: E402
 
-VERSAO = "1.0"
+VERSAO = "1.1"
 GRUPO = "estadios_fc27"
 RAIZ = base.raiz_trabalho()
 CACHE = os.path.join(AQUI, "cache")
@@ -230,17 +230,20 @@ def api_duplicar(d):
 
 
 def api_converter(d):
-    for k, rot in (("pasta16", "a pasta do estádio do FIFA 16"), ("novo_id", "o ID novo"), ("nome", "o nome do estádio")):
+    """Converte um estádio do FIFA 16 (pasta16) ou do PES 2021 (origem "pes21", pasta_pes) sobre o El Grandioso."""
+    pes = d.get("origem") == "pes21"
+    chave, jogo = ("pasta_pes", "PES 2021") if pes else ("pasta16", "FIFA 16")
+    for k, rot in ((chave, f"a pasta do estádio do {jogo}"), ("novo_id", "o ID novo"), ("nome", "o nome do estádio")):
         if not d.get(k):
             raise base.ErroUsuario(f"Falta {rot}.")
     pb = _projeto_base(d)
     saida = _saida(d, f"Estadio_{d['novo_id']}_{re.sub(r'[^A-Za-z0-9]+', '_', d['nome']).strip('_')}.fifaproject")
     if not saida:
         return {"cancelado": True}
-    cfg = dict(pasta16=d["pasta16"], novo_id=int(d["novo_id"]), nome=d["nome"], saida=saida, projeto_base=pb,
-               receita=d.get("receita") or {})
-    PREFS.atualizar(pasta16=os.path.dirname(d["pasta16"]))
-    return iniciar("converter", f"Convertendo {d['nome']} (FIFA 16) sobre o El Grandioso", ["converter"], cfg)
+    cfg = {chave: d[chave], "novo_id": int(d["novo_id"]), "nome": d["nome"], "saida": saida, "projeto_base": pb,
+           "receita": d.get("receita") or {}}
+    PREFS.atualizar(**{chave: os.path.dirname(d[chave])})
+    return iniciar("converter", f"Convertendo {d['nome']} ({jogo}) sobre o El Grandioso", ["converter"], cfg)
 
 
 def api_analisar16(d):
@@ -251,6 +254,16 @@ def api_analisar16(d):
             return {"cancelado": True}
     PREFS.atualizar(pasta16=os.path.dirname(pasta))
     return motor(["analisar16", pasta, os.path.join(CACHE, "miniaturas")], timeout=300)
+
+
+def api_analisarpes(d):
+    pasta = d.get("pasta")
+    if not pasta:
+        pasta = base.dialogo("pasta", "Pasta do estádio do PES 2021 (a do mod, com Asset\\model\\bg\\st...)", PREFS.ler().get("pasta_pes") or RAIZ)
+        if not pasta:
+            return {"cancelado": True}
+    PREFS.atualizar(pasta_pes=os.path.dirname(pasta))
+    return motor(["analisarpes", pasta, os.path.join(CACHE, "miniaturas")], timeout=900)
 
 
 def api_luz16(d):
@@ -321,7 +334,7 @@ def api_resultados(_):
 
 
 def arquivo_imagem(h, q):
-    """Miniaturas das texturas do FIFA 16 e prévias das conversões (só de dentro da pasta cache da ferramenta)."""
+    """Miniaturas das texturas do FIFA 16 e do PES 2021 e prévias das conversões (só de dentro da pasta cache da ferramenta)."""
     cam = os.path.abspath(q.get("caminho") or os.path.join(CACHE, "miniaturas", q.get("arq") or ""))
     if not os.path.normcase(cam).startswith(os.path.normcase(CACHE) + os.sep) or not cam.lower().endswith(".png") or not os.path.isfile(cam):
         h.enviar(404, b"", "text/plain")
@@ -332,7 +345,8 @@ def arquivo_imagem(h, q):
 
 ROTAS_GET = {"inicio": api_inicio, "ambiente": api_ambiente, "estadios": api_estadios, "exec": api_exec, "resultados": api_resultados,
              "versao": lambda _: {"versao": VERSAO}}
-ROTAS_POST = {"preparar": api_preparar, "duplicar": api_duplicar, "converter": api_converter, "analisar16": api_analisar16, "luz16": api_luz16,
+ROTAS_POST = {"preparar": api_preparar, "duplicar": api_duplicar, "converter": api_converter, "analisar16": api_analisar16,
+              "analisarpes": api_analisarpes, "luz16": api_luz16,
               "parar": api_parar, "dialogo": api_dialogo, "ambiente_pasta": api_ambiente_pasta, "abrir": api_abrir}
 cg, cp = base.rotas_componentes(GRUPO)
 ROTAS_GET.update(cg)

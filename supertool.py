@@ -92,7 +92,7 @@ FERRAMENTAS = [
     {"id": "estadios_fc27", "nome": "Estádios FC 27", "icone": "estadio", "tipo": "web", "porta": 8782,
      "pasta": os.path.join(AQUI, "ferramentas", "estadios_fc27"), "guia": "LEIAME.md",
      "descricao": "Duplica estádios do FC 27 (quantos e quantas vezes quiser, num projeto novo ou no seu) e converte estádios "
-                  "do FIFA 16 para o FC 27, sempre sobre o El Grandioso, com torcida, glares, telão e pré-cálculo de luz."},
+                  "do FIFA 16 e do PES 2021 para o FC 27, sempre sobre o El Grandioso, com torcida, glares, telão e pré-cálculo de luz."},
     {"id": "kits_pes", "nome": "Conversor de Kits PES → FC", "icone": "converter", "tipo": "web", "porta": 8780,
      "pasta": os.path.join(AQUI, "ferramentas", "kits_pes"), "guia": "LEIAME.md",
      "descricao": "Converte kits do PES 2021 (camisa, mangas, gola, calção e meião numa textura só) em kits do FC 27: as "
