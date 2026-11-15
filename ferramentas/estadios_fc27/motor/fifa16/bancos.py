@@ -6,6 +6,9 @@ do lado dos bancos (z de -50 a -34,3 m, |x| < 32 m): superfícies horizontais de
 mais baixa em volta) com um encosto logo atrás. Em cada lado, os reservas vão para a fileira da frente (ou para a que
 tem bem mais cadeiras), a partir do meio-campo, uma cadeira sim, outra não (num banco curto, espalhados por ele). Cada
 um fica como no El Grandioso: à frente do assento, virado para o campo, com o quadril na altura do assento (o pé afunda até 8 cm no piso quando o assento é mais baixo que o de lá).
+
+As áreas técnicas da linha do estádio no banco de dados (zonas()) acompanham os bancos achados: veja "Áreas técnicas", no
+fim deste arquivo.
 """
 from __future__ import annotations
 import numpy as np
@@ -141,3 +144,56 @@ def lugares_dos_reservas(C, quantos, lado):
         for x, y, z, piso, _ in P[idx]:
             out.append([float(x), float(max(y - ALTURA_ASSENTO_EG, piso - AFUNDA)), float(z + frente)])
     return out
+
+
+# ------------------------------------------------------------------------------------------------ áreas técnicas
+# É dentro da área técnica que o técnico anda durante a partida. Na linha do estádio no banco de dados
+# (stadiums.stad{home,away}techzone{minx,maxx,minz,maxz}, em cm) ela fica nos eixos do mundo do estádio, os mesmos dos
+# marcadores dos técnicos (slc_manager*): em 136 dos 181 estádios do FC 27, a da casa em -x e a do visitante em +x, as duas
+# em -z, com min < max (Old Trafford, Al Jayeed: os técnicos em -z); nos que têm os técnicos em +z (La Bombonera,
+# St. Mary's, Di Stéfano, Ewood Park), as áreas também ficam em +z. O El Grandioso é a exceção: as áreas dele ficam em +z
+# (casa em x de 5,6 a 18,1 m e z de 36,6 a 38,5 m), do outro lado do campo, longe do banco e dos marcadores dos técnicos,
+# que ficam em -x e -z; são as do lado certo com o sinal trocado. Copiadas para a duplicata, elas mandavam os técnicos
+# para o lado oposto ao do banco (a Neo Química Arena do PES, em teste da 2.1, mesmo girando o estádio).
+ZONA_X = (1.0, 2.0)     # a área técnica começa 1 m depois da ponta de dentro do banco e vai até 2 m depois da de fora
+ZONA_Z = (36.6, 38.5)   # distância do centro do campo (m), como no El Grandioso (2,6 a 4,5 m da linha lateral)
+# as áreas do El Grandioso com o sinal acertado: em volta do banco dele (no banco de dados: casa 1810, 560, 3850, 3660;
+# visitante -560, -1810, 3845, 3650)
+ZONA_EG = {'home': (-1810, -560, -3850, -3660), 'away': (560, 1810, -3845, -3650)}
+CAMPOS_ZONA = ('minx', 'maxx', 'minz', 'maxz')
+
+
+def referencia(pontos):
+    """(ponta de dentro, ponta de fora, z da fileira da frente) dos lugares dos reservas de um lado, em metros: |x| e o z
+    com o sinal do lado do campo em que fica o banco."""
+    p = np.asarray(pontos, np.float64).reshape(-1, 3)
+    ax = np.abs(p[:, 0])
+    return float(ax.min()), float(ax.max()), float(p[np.argmin(np.abs(p[:, 2])), 2])
+
+
+def zona(ref, lado):
+    """(minx, maxx, minz, maxz) em cm, nos eixos do mundo, da área técnica de um banco (ref = referencia(); lado -1 = casa,
+    em -x; 1 = visitante, em +x), à frente dele e no mesmo lado do campo; None se não sobra lugar para ela entre o banco e
+    a linha lateral."""
+    x0, x1 = ref[0] + ZONA_X[0], ref[1] + ZONA_X[1]
+    zf = min(ZONA_Z[1], abs(ref[2]) - 1.5)
+    zn = min(ZONA_Z[0], zf - 1.5)
+    if zn < 34.8 or x1 - x0 < 3.0:
+        return None
+    sz = 1.0 if ref[2] > 0 else -1.0
+    xs = sorted(int(round(lado * v * 100)) for v in (x0, x1))
+    zs = sorted(int(round(sz * v * 100)) for v in (zn, zf))
+    return xs[0], xs[1], zs[0], zs[1]
+
+
+def zonas(casa, visitante):
+    """Os oito campos stad*techzone* da linha do estádio (casa/visitante = referencia() do banco de cada lado, ou None) e
+    de onde saiu cada área: 'banco' ou 'el_grandioso' (o lado sem banco achado fica com a área do El Grandioso com o sinal
+    acertado, em volta do banco dele, de onde partem os técnicos)."""
+    campos, origem = {}, {}
+    for nome, ref, lado in (('home', casa, -1), ('away', visitante, 1)):
+        z = zona(ref, lado) if ref is not None else None
+        origem[nome] = 'banco' if z else 'el_grandioso'
+        for c, v in zip(CAMPOS_ZONA, z or ZONA_EG[nome]):
+            campos[f'stad{nome}techzone{c}'] = int(v)
+    return campos, origem

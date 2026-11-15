@@ -45,7 +45,6 @@ class ConversaoPes(C16.Conversao):
         super().__init__(amb, cfg, base_proj, dup, prep, work)
         self.report = collections.OrderedDict(base_id=C16.BASE_ID, novo_id=self.N, origem='pes21', fonte_id=self.rc['fonte_id'], prep=str(self.prep))
         self._cad = None
-        self._zonas = {}
 
     # ------------------------------------------------------------ banco de reservas, técnicos e áreas técnicas
     def cadeiras_do_banco(self):
@@ -59,7 +58,8 @@ class ConversaoPes(C16.Conversao):
 
     def tecnicos_no_banco(self):
         """Técnicos, auxiliares e áreas técnicas acompanham o banco do estádio novo (motor/pes21/banco.py): no El Grandioso
-        eles ficam em volta do banco dele, que não é onde fica o do PES."""
+        eles ficam em volta do banco dele, que não é onde fica o do PES. As áreas técnicas saem dos bancos guardados aqui
+        (self._bancos), mesmo com os reservas escondidos, em campos_do_banco()."""
         from ..fifa16 import bancos, personagens as pe
         cad = self.cadeiras_do_banco()
         d = self.ebx_dump(self.S + 'choreo_seats')
@@ -69,10 +69,11 @@ class ConversaoPes(C16.Conversao):
             meus = [[t['x'], t['y'], t['z']] for t in orig if np.sign(t['x']) == lado]
             pts = bancos.lugares_dos_reservas(cad, len(meus), lado) if len(cad) and meus else []
             if meus and pts:
-                eg[lado], novo[lado] = banco.referencia(meus), banco.referencia(pts)
+                eg[lado], novo[lado] = bancos.referencia(meus), bancos.referencia(pts)
         rel = {}
         if not novo:
-            self.report['personagens']['tecnicos'] = 'sem cadeiras de banco no modelo: técnicos e áreas técnicas ficam como no El Grandioso'
+            self.report['personagens']['tecnicos'] = ('sem cadeiras de banco no modelo: técnicos ficam como no El Grandioso, '
+                                                      'e as áreas técnicas em volta do banco dele')
             return
         grade = pe.Grade()
         grade.triangulos(self.triangulos16())
@@ -95,15 +96,11 @@ class ConversaoPes(C16.Conversao):
                 rel[camada] = [round(c, 2) for c in p]
             if ops:
                 self.ebx_edit_mais(name, ops, 'tecnicos')
-        self._zonas = banco.zonas(novo.get(-1), novo.get(1))
+        self._bancos = dict(novo)
         rel['bancos'] = {('casa' if k < 0 else 'visitante'): dict(de_x=round(v[0], 2), ate_x=round(v[1], 2), z=round(v[2], 2)) for k, v in novo.items()}
-        rel['areas_tecnicas_cm'] = self._zonas
         self.report['personagens']['tecnicos'] = rel
         base.aviso('banco de reservas: ' + '; '.join(f"{n} em |x| de {v['de_x']:.1f} a {v['ate_x']:.1f} m" for n, v in rel['bancos'].items())
                    + '; técnicos, auxiliares e áreas técnicas acompanham o banco novo')
-
-    def campos_do_banco(self):
-        return dict(self._zonas)
 
     def banners_automaticos(self):
         """O PES não marca onde ficam os banners dos times: eles vão para as frentes dos anéis da torcida achadas na

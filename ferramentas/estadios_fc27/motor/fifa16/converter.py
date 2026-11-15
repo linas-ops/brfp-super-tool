@@ -105,6 +105,7 @@ class Conversao:
         self.luz = None  # pré-cálculo de luz de outro estádio (motor/fifa16/luz.py): desativado
         self.lugares = None  # lugares da torcida do FIFA 16 (m), quando o estádio tem crowd_<id>_1.dat
         self._tri16 = None
+        self._bancos = {}  # lado (-1 = casa, 1 = visitante) -> bancos.referencia() do banco novo, para as áreas técnicas
 
     def u5(self, *parts):
         return str(uuid.uuid5(NS, f'{self.ident}:' + ':'.join(parts)))
@@ -1211,6 +1212,8 @@ class Conversao:
                 for i, p in zip(mine, pts):
                     for axis, vec in (('right', [1.0, 0.0, 0.0]), ('up', [0.0, 1.0, 0.0]), ('forward', [0.0, 0.0, 1.0]), ('trans', p)):
                         ops.append(dict(op='set', target={'index': i}, path=f'BlueprintTransform.{axis}', value={'vec3': [float(c) for c in vec]}))
+                if mine and pts:
+                    self._bancos[side] = bancos.referencia(pts[:len(mine)])
                 report['reservas_' + ('casa' if side < 0 else 'visitante')] = dict(fc27=len(mine), fifa16=len(pts), movidos=min(len(mine), len(pts)))
         else:
             cad = self.cadeiras_do_banco() if modo == 'cadeiras' else None
@@ -1222,6 +1225,8 @@ class Conversao:
                     pts = sorted(groups.get(key, []), key=lambda p: abs(p[0]))
                 else:
                     pts = []
+                if mine and pts:
+                    self._bancos[side] = bancos.referencia(pts[:len(mine)])
                 for k, i in enumerate(mine):
                     t = trans[i]
                     if k < len(pts):
@@ -1245,8 +1250,17 @@ class Conversao:
         self.report['personagens'] = report
 
     def campos_do_banco(self):
-        """Outros campos inteiros da linha do estádio no banco (stadiums) que a conversão muda: nenhum no FIFA 16."""
-        return {}
+        """Outros campos inteiros da linha do estádio no banco (stadiums) que a conversão muda: as áreas técnicas, no lado
+        do campo em que ficam os bancos em que os reservas sentaram (motor/fifa16/bancos.py, zonas()). As do El Grandioso
+        ficam do outro lado do campo, e os técnicos iam para lá; um lado sem banco fica com a do El Grandioso com o sinal
+        acertado, em volta do banco dele."""
+        from . import bancos
+        campos, origem = bancos.zonas(self._bancos.get(-1), self._bancos.get(1))
+        self.report['areas_tecnicas'] = dict(cm=campos, de_onde={('casa' if k == 'home' else 'visitante'): v for k, v in origem.items()})
+        sem = [('casa' if k == 'home' else 'visitante') for k, v in origem.items() if v != 'banco']
+        if sem:
+            base.aviso('áreas técnicas: ' + ' e '.join(sem) + ' sem banco achado, em volta do banco do El Grandioso')
+        return campos
 
     def campos_do_gol(self):
         """Rede do gol na linha do estádio: a quadrada (padrão) ou a funda do El Grandioso (receita "rede_gol": "veu")."""

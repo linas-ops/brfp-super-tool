@@ -126,7 +126,7 @@ O que entra no FC 27:
 | Luzes da torcida | As luzes da arquibancada do El Grandioso acompanham a torcida do FIFA 16 (opção "Luzes da torcida", abaixo). |
 | Banners dos times | Os banners dos times do FC 27 nas peças marcadas como Banner dos times; os do El Grandioso saem. |
 | Glares | Brilhos nas lâmpadas do `.lnx`, de dia e de noite, e fachos de luz das lâmpadas da noite. |
-| Personagens | Gandulas, fotógrafos e técnicos vão para os marcadores `slc_` do FIFA 16, quando existem; os outros seguem a opção "Personagens laterais". Os reservas sentam nas cadeiras do banco do estádio novo (opção "Reservas no banco"). |
+| Personagens | Gandulas, fotógrafos e técnicos vão para os marcadores `slc_` do FIFA 16, quando existem; os outros seguem a opção "Personagens laterais". Os reservas sentam nas cadeiras do banco do estádio novo (opção "Reservas no banco"), e as áreas técnicas do banco de dados ficam à frente desse banco. |
 | El Grandioso | A arquitetura dele some. Nenhum subset fica vazio: os que sobram ganham um triângulo de área zero, e as peças que a lógica do jogo liga e desliga vão para baixo do piso. |
 
 ## Converter PES 2021 → FC 27
@@ -184,8 +184,13 @@ O que é diferente do FIFA 16:
     um assento o piso tem de ser mais baixo, e o banco é o grupo de fileiras mais perto do meio-campo;
   - os marcadores dos técnicos e dos auxiliares, à mesma distância da ponta do banco que têm no El Grandioso;
   - as áreas técnicas da linha do estádio no banco de dados (`stadiums.stadhometechzone…` e `stadawaytechzone…`), que
-    são onde o técnico anda durante a partida. Na duplicata elas eram as do El Grandioso, e os técnicos ficavam ao lado
-    do abrigo do Camp Nou, fora dele.
+    são onde o técnico anda durante a partida. Elas ficam nos eixos do mundo do estádio, como os marcadores dos técnicos:
+    na maioria dos estádios do FC 27, a da casa em −X e a do visitante em +X, as duas em −Z, do lado dos bancos (nos
+    poucos com os técnicos em +Z, as áreas também ficam em +Z). As do El Grandioso são a exceção: estão com o sinal
+    trocado, do outro lado do campo. A 2.0 gravava as áreas novas do mesmo jeito, e os técnicos iam para o lado oposto ao
+    do banco (no teste da Neo Química Arena, girando o estádio ou não); desde a 2.1 elas ficam à frente do banco novo, no
+    mesmo lado do campo. Um lado sem banco achado fica com a área do El Grandioso com o sinal acertado, em volta do banco
+    dele.
 - **Personagens laterais**: o PES não tem marcadores no modelo. Os outros partem das posições do El Grandioso e são
   conferidos contra a geometria do estádio novo (opção "Ajustar ao estádio").
 - **Texturas** em formato que não seja BC1, BC3 ou 32 bits sem compressão (BC7, por exemplo) entram como um painel cinza,
@@ -279,6 +284,11 @@ as cadeiras.
 | **Esconder** | Todos saem de vista. |
 
 O resultado da conversão diz quantas cadeiras achou e quantos reservas sentaram. **Precisa de teste em partida.**
+
+As áreas técnicas da linha do estádio no banco de dados (onde o técnico anda durante a partida) acompanham o banco em
+que os reservas sentaram, à frente dele e no mesmo lado do campo; sem banco (ou com os reservas escondidos), ficam em
+volta do banco do El Grandioso. Até a 2.0 a conversão do FIFA 16 deixava as do El Grandioso, que estão do outro lado do
+campo (veja "Banco de reservas, técnicos e áreas técnicas", em Converter PES 2021 → FC 27).
 
 ## Banners dos times
 
