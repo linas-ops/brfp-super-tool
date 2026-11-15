@@ -1262,6 +1262,40 @@ class Conversao:
             base.aviso('áreas técnicas: ' + ' e '.join(sem) + ' sem banco achado, em volta do banco do El Grandioso')
         return campos
 
+    def stage_colisao(self):
+        """Colisão do chão e das paredes em volta do campo, onde a bola bate e os jogadores param (motor/fifa16/colisao.py).
+        Receita "colisao": "estadio" (padrão: bacia nova tirada da geometria do estádio novo, com as paredes na frente da
+        arquibancada; os objetos soltos do El Grandioso saem) ou "el_grandioso" (fica a dele, que vai até depois da pista
+        de atletismo: os jogadores atravessam uma arquibancada mais perto do campo)."""
+        from . import colisao
+        modo = self.rc.get('colisao') or 'estadio'
+        if modo not in ('estadio', 'el_grandioso'):
+            falha('modo de colisão desconhecido: ' + str(modo))
+        if modo == 'el_grandioso':
+            self.report['colisao'] = 'a do El Grandioso (receita)'
+            return
+        alvos = colisao.recursos(self.p, self.S)
+        if not alvos['bacia']:
+            self.report['colisao'] = 'o estádio não tem a bacia de colisão do El Grandioso: fica como está'
+            base.aviso('colisão: ' + self.report['colisao'])
+            return
+        tri, rel, (d, u) = colisao.bacia(self.triangulos16())
+        self.res_edits[alvos['bacia']] = (colisao.payload(tri), colisao.resmeta(len(tri)))
+        for nome in alvos['soltos']:
+            t = colisao.vazio()
+            self.res_edits[nome] = (colisao.payload(t), colisao.resmeta(len(t)))
+        rel['objetos_do_el_grandioso_fora'] = len(alvos['soltos'])
+        if alvos['placas']:
+            cx = colisao.placas(self.p.raw('res', alvos['placas']))
+            rel['placas_alem_da_parede'] = colisao.placas_dentro(cx, d, u)
+        self.report['colisao'] = rel
+        lat, fun = rel['linha_lateral_m'], rel['linha_de_fundo_m']
+        base.aviso(f"colisão: paredes na frente da arquibancada, a {lat[1]:.0f} m da linha lateral e {fun[1]:.0f} m da linha de "
+                   f"fundo (mediana), {rel['triangulos']} triângulos")
+        if rel.get('placas_alem_da_parede'):
+            base.aviso(f"colisão: {rel['placas_alem_da_parede']} placas de publicidade do El Grandioso ficam além da parede "
+                       f"nova (dentro da arquibancada)")
+
     def campos_do_gol(self):
         """Rede do gol na linha do estádio: a quadrada (padrão) ou a funda do El Grandioso (receita "rede_gol": "veu")."""
         modo = self.rc.get('rede_gol') or 'quadrada'
@@ -1394,7 +1428,7 @@ class Conversao:
                  ('meshes', self.build_host_mesh), ('caixas', self.stage_host_blueprint), ('esconder', self.stage_hide),
                  ('telao', self.stage_scoreclock), ('gramado', self.stage_pitch), ('torcida', self.stage_crowd),
                  ('luzes da torcida', self.stage_luzes), ('glares', self.stage_glares), ('personagens', self.stage_slc),
-                 ('banco', self.stage_db)]
+                 ('colisão', self.stage_colisao), ('banco', self.stage_db)]
         if int(self.rc.get('luz') or BASE_ID) != BASE_ID:
             falha(f"o pré-cálculo de luz de outro estádio (estádio {self.rc['luz']}) está desativado: com ele a partida fica "
                   f"carregando sem fim. A conversão usa o do El Grandioso ({BASE_ID}).")

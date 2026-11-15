@@ -108,6 +108,7 @@ motor desta ferramenta reproduz a v3 byte a byte. Os estádios do FIFA 16 têm t
    - **luzes da torcida à noite** (veja abaixo);
    - recuo do gramado no lado dos bancos;
    - placas baixas de madeira do El Grandioso;
+   - rede do gol e colisão em volta do campo (veja abaixo);
    - cadeiras da torcida (cores do FIFA 16 ou uma cor);
    - lado da torcida da casa;
    - altura do anel superior.
@@ -127,6 +128,7 @@ O que entra no FC 27:
 | Banners dos times | Os banners dos times do FC 27 nas peças marcadas como Banner dos times; os do El Grandioso saem. |
 | Glares | Brilhos nas lâmpadas do `.lnx`, de dia e de noite, e fachos de luz das lâmpadas da noite. |
 | Personagens | Gandulas, fotógrafos e técnicos vão para os marcadores `slc_` do FIFA 16, quando existem; os outros seguem a opção "Personagens laterais". Os reservas sentam nas cadeiras do banco do estádio novo (opção "Reservas no banco"), e as áreas técnicas do banco de dados ficam à frente desse banco. |
+| Colisão | O chão e as paredes invisíveis em volta do campo saem do modelo do estádio novo, com as paredes na frente da arquibancada (opção "Colisão em volta do campo", abaixo). |
 | El Grandioso | A arquitetura dele some. Nenhum subset fica vazio: os que sobram ganham um triângulo de área zero, e as peças que a lógica do jogo liga e desliga vão para baixo do piso. |
 
 ## Converter PES 2021 → FC 27
@@ -252,6 +254,28 @@ O El Grandioso usa a rede funda (tipo 1, com 3,20 m de fundo: o "véu de noiva")
 estádios têm; a maioria usa a quadrada (tipo 0, com 2,29 m). Até a 2.0, todo estádio convertido herdava a do El
 Grandioso. Desde a 2.1, a conversão grava a quadrada na linha do estádio novo no banco (`stadiums.stadiumgoalnettype` e
 `stadiumgloalnetdepth`, com a grafia do próprio jogo); a opção **Rede do gol** volta à do El Grandioso.
+
+## Colisão em volta do campo
+
+Cada estádio do FC 27 tem uma "bacia" de colisão em que a bola bate e os jogadores param: o chão em volta do campo e
+paredes invisíveis baixas, viradas para ele (um RES de física do estádio, só com triângulos; no Old Trafford, paredes de
+1 a 3 m na frente da arquibancada). A do El Grandioso vai até depois da pista de atletismo (até 88 m do centro nos fundos
+e 60 m nas laterais), e até a 2.0 todo estádio convertido ficava com ela: numa arquibancada mais perto do campo, os
+jogadores entravam nela até bater na parede invisível do El Grandioso (relatado na comemoração de um gol na Neo Química
+Arena do PES).
+
+Desde a 2.1 a conversão faz a bacia do estádio novo: de cada direção a partir do centro do campo, acha no modelo o
+primeiro obstáculo na altura dos jogadores (de 0,55 a 2,2 m acima do gramado) a partir de 2 m depois da borda do campo,
+e põe ali uma parede de 0,5 m abaixo a 2,5 m acima do gramado; onde não há obstáculo até 25 m da borda (túnel, vão entre
+arquibancadas), a parede fica nesse limite. O que é mais baixo que 0,55 m não conta (os tapetes de publicidade atrás do
+gol do FIFA 16 têm 46 cm e punham a parede a 2,6 m da linha de fundo do Allianz Parque). O chão vai do centro até as
+paredes, na altura do gramado. Os objetos soltos
+do El Grandioso que tinham colisão (caixas perto dos abrigos e dos cantos, que não existem no estádio novo) saem; a
+colisão das placas de publicidade fica, porque as placas do El Grandioso continuam. O resultado diz a que distância das
+linhas as paredes ficaram e avisa se alguma placa ficou além da parede (dentro da arquibancada). Na Neo Química Arena do
+PES: paredes a uns 10 m da linha lateral e 9 m da de fundo (as do El Grandioso ficavam a até 26 e 36 m), 474 triângulos;
+no Allianz Parque do FIFA 16, 14 e 10 m. A opção **Colisão em volta do campo** volta à do El Grandioso. **Precisa de teste
+em partida.**
 
 ## Personagens laterais
 
