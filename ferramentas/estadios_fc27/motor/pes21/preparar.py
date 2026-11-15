@@ -161,7 +161,9 @@ def preparar(pasta, out, receita):
     groups = {}
     shadow, jumbo, faixas = [], [], []
     sobras = 0
-    for p in est.pecas():
+    pecas = est.pecas()
+    report['notes'].extend(est.avisos)
+    for p in pecas:
         i, m = p['prim'], p['malha']
         mat = m['material'] or dict(shader='', nome='', texturas={})
         shader, camada = mat['shader'], p['modelo']['nome']
@@ -269,8 +271,13 @@ def preparar(pasta, out, receita):
     # torcida: lugares das áreas do PES, na altura dos degraus da geometria preparada
     arq = est.arquivos()
     tor = None
-    if arq['torcida'].is_file():
-        areas = T.ler_areas(arq['torcida'])
+    try:
+        areas = T.ler_areas(arq['torcida']) if arq['torcida'].is_file() else None
+    except (OSError, ValueError) as ex:
+        areas = None
+        report['notes'].append(f'{arq["torcida"].name}: {ex}; a torcida do El Grandioso fica')
+    if areas is not None and len(areas['quad']):
+        report['notes'].extend(areas['avisos'])
         areas['quad'] = girar(areas['quad'], giro)
         tris = np.concatenate(shadow) if shadow else np.zeros((0, 3, 3))
         lug = T.lugares(areas, tris)

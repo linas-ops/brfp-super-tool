@@ -1,11 +1,13 @@
 """Torcida de um estádio do PES 2021: as áreas do audiarea.bin viram lugares, como os do crowd_<id>.dat do FIFA 16.
 
 O PES não guarda lugar por lugar: guarda áreas (quadriláteros inclinados sobre a arquibancada) que o jogo preenche.
-audiarea.bin (conferido no Camp Nou):
-  0x00  u32 1, u32 1, depois 4 lados x 3 deslocamentos de bloco (0 = não tem)
-  bloco  u8 lado, u8 tipo, u16 1, u32 deslocamento da caixa, caixa (6 floats), u32 áreas, e por área (96 bytes):
-         u32 número, f32 escala (comprimento da rampa / 10), f32 e f32 marca (1 = comum, 5 = um setor à parte),
-         4 cantos (x, y, z) e 4 UV no mapa de cores das cadeiras (audi\\sourceimages\\au_seat.png)
+audiarea.bin (conferido em 100 estádios: o Camp Nou, o San Siro e um pacote de estádios brasileiros):
+  0x00   u32 e u32 (quase sempre 1 e 1; há 5 e 0, 0 e 0), depois 4 lados x 3 deslocamentos de bloco (0 = não tem)
+  bloco  u8 lado, u8 tipo, u16 grupos e o deslocamento (u32) de cada grupo; um bloco sem grupos tem só esses 4 bytes
+  grupo  caixa (6 floats), u32 áreas, e por área (96 bytes):
+         u32 número, f32 escala (comprimento da rampa / 10), f32 valor e f32 outro valor quase igual, de 0 a 5
+         (1 é o comum; 5 marca um setor à parte, que no Camp Nou é o anel inferior atrás de um gol, onde fica a torcida
+         organizada), 4 cantos (x, y, z) e 4 UV no mapa de cores das cadeiras (audi\\sourceimages\\au_seat.png)
 Cada área é preenchida por fileiras (da borda de baixo para a de cima) e lugares ao longo da fileira. As fileiras ficam no
 meio dos degraus do estádio embaixo da área (achados na geometria preparada, pela linha do meio da área); sem degraus
 regulares, de 80 em 80 cm. A altura de cada lugar é a do degrau embaixo dele, para ninguém ficar dentro do degrau nem no ar.
@@ -26,11 +28,14 @@ PROCURA = (0.9, 0.9)  # quanto abaixo e acima do plano da área o degrau é proc
 CELULA = 2.0
 DEGRAU = (0.45, 1.5)   # profundidade de um degrau que recebe uma fileira (m)
 SALTO = 0.08           # subida que separa dois degraus (m)
+SETOR = 4.5            # valor a partir do qual a área é do setor que o PES marca à parte (o 5; há 4,7 e 4,86 também)
+CABECALHO = 56
 
 
 def ler_areas(origem):
     """Áreas da torcida de um audiarea.bin (ou do pacote audiarea_st<NNN>.fpk): dict com quad (n, 4, 3), uv (n, 4, 2),
-    escala, visitante, lado e tipo (n)."""
+    escala, valor, visitante (o setor marcado à parte, valor >= SETOR), lado e tipo (n), e avisos (lista de textos: um
+    grupo que passa do fim do arquivo, coisa de mod editado à mão, fica só com as áreas inteiras)."""
     origem = Path(origem)
     if origem.suffix.lower() == '.fpk':
         pk = fpk.Fpk(origem)
@@ -40,31 +45,45 @@ def ler_areas(origem):
         b = pk.ler(nome)
     else:
         b = origem.read_bytes()
-    if len(b) < 56 or struct.unpack_from('<II', b, 0) != (1, 1):
-        raise ValueError('audiarea.bin de versão desconhecida')
-    quad, uv, escala, marca, lado, tipo = [], [], [], [], [], []
-    for off in struct.unpack_from('<12I', b, 8):
+    blocos = struct.unpack_from('<12I', b, 8) if len(b) >= CABECALHO else ()
+    if not blocos or any(o and not CABECALHO <= o <= len(b) - 4 for o in blocos):
+        raise ValueError('audiarea.bin com cabeçalho desconhecido (as áreas da torcida não são lidas)')
+    quad, uv, escala, valor, lado, tipo, avisos = [], [], [], [], [], [], []
+    for off in blocos:
         if not off:
             continue
-        if off + 0x24 > len(b):
-            raise ValueError('audiarea.bin truncado')
-        ld, tp, um, caixa = struct.unpack_from('<BBHI', b, off)
-        n, = struct.unpack_from('<I', b, off + 0x20)
-        if caixa != off + 8 or off + 0x24 + 96 * n > len(b):
-            raise ValueError('bloco de áreas da torcida com layout desconhecido')
-        rec = np.frombuffer(b, '<f4', 24 * n, off + 0x24).reshape(n, 24).astype(np.float64)
-        quad.append(rec[:, 4:16].reshape(n, 4, 3))
-        uv.append(rec[:, 16:24].reshape(n, 4, 2))
-        escala.append(rec[:, 1])
-        marca.append(rec[:, 2])
-        lado.append(np.full(n, ld))
-        tipo.append(np.full(n, tp))
+        ld, tp, ng = struct.unpack_from('<BBH', b, off)
+        if off + 4 + 4 * ng > len(b):
+            raise ValueError(f'bloco de áreas da torcida em {off:#x} passa do fim do audiarea.bin')
+        for g in struct.unpack_from(f'<{ng}I', b, off + 4):
+            if not off + 4 + 4 * ng <= g <= len(b) - 28:
+                raise ValueError(f'grupo de áreas da torcida em {g:#x} fora do audiarea.bin')
+            n, = struct.unpack_from('<I', b, g + 24)
+            cabe = (len(b) - g - 28) // 96
+            if n > cabe:
+                q = n - cabe
+                avisos.append(f"{q} {'área' if q == 1 else 'áreas'} da torcida {'fica' if q == 1 else 'ficam'} de fora: "
+                              'o audiarea.bin do mod termina antes')
+                n = cabe
+            if not n:
+                continue
+            rec = np.frombuffer(b, '<f4', 24 * n, g + 28).reshape(n, 24).astype(np.float64)
+            quad.append(rec[:, 4:16].reshape(n, 4, 3))
+            uv.append(rec[:, 16:24].reshape(n, 4, 2))
+            escala.append(rec[:, 1])
+            valor.append(rec[:, 2])
+            lado.append(np.full(n, ld))
+            tipo.append(np.full(n, tp))
     if not quad:
-        return dict(quad=np.zeros((0, 4, 3)), uv=np.zeros((0, 4, 2)), escala=np.zeros(0), visitante=np.zeros(0, bool),
-                    lado=np.zeros(0, int), tipo=np.zeros(0, int))
-    marca = np.concatenate(marca)
-    return dict(quad=np.concatenate(quad), uv=np.concatenate(uv), escala=np.concatenate(escala), visitante=marca > 2.5,
-                lado=np.concatenate(lado), tipo=np.concatenate(tipo))
+        return dict(quad=np.zeros((0, 4, 3)), uv=np.zeros((0, 4, 2)), escala=np.zeros(0), valor=np.zeros(0), visitante=np.zeros(0, bool),
+                    lado=np.zeros(0, int), tipo=np.zeros(0, int), avisos=avisos)
+    valor = np.concatenate(valor)
+    quad = np.concatenate(quad)
+    ok = np.isfinite(quad).all(axis=(1, 2)) & (np.abs(quad) < 1e4).all(axis=(1, 2))
+    if not ok.all():
+        avisos.append(f'{int((~ok).sum())} áreas da torcida com cantos inválidos ficam de fora')
+    return dict(quad=quad[ok], uv=np.concatenate(uv)[ok], escala=np.concatenate(escala)[ok], valor=valor[ok], visitante=valor[ok] >= SETOR,
+                lado=np.concatenate(lado)[ok], tipo=np.concatenate(tipo)[ok], avisos=avisos)
 
 
 def _dist_campo(p):

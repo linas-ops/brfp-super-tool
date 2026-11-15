@@ -177,11 +177,25 @@ def analisar(pasta, miniaturas=None):
         x['piso'] = x['prim'] in pista
     torcida = None
     if f['torcida'].is_file():
-        areas = T.ler_areas(f['torcida'])
-        torcida = dict(areas=len(areas['quad']), lugares=int(T.estimar(areas)), visitantes_areas=int(areas['visitante'].sum()),
-                       altura=[round(float(areas['quad'][..., 1].min()), 1), round(float(areas['quad'][..., 1].max()), 1)],
-                       cores_das_cadeiras=f['cadeiras'].is_file())
-    glares = {k: len(brilhos.lampadas(f[a])) for k, a in (('dia', 'brilhos_dia'), ('noite', 'brilhos_noite')) if f[a].is_file()}
+        try:
+            areas = T.ler_areas(f['torcida'])
+        except (OSError, ValueError) as ex:
+            torcida = dict(areas=0, lugares=0, visitantes_areas=0, altura=None, cores_das_cadeiras=f['cadeiras'].is_file(),
+                           avisos=[f'{ex}: a torcida do El Grandioso fica'])
+        else:
+            q = areas['quad']
+            torcida = dict(areas=len(q), lugares=int(T.estimar(areas)) if len(q) else 0, visitantes_areas=int(areas['visitante'].sum()),
+                           altura=[round(float(q[..., 1].min()), 1), round(float(q[..., 1].max()), 1)] if len(q) else None,
+                           cores_das_cadeiras=f['cadeiras'].is_file(),
+                           avisos=areas['avisos'] + ([] if len(q) else ['o audiarea.bin não tem áreas de torcida: a torcida do El Grandioso fica']))
+    glares, avisos = {}, list(est.avisos)
+    for k, a in (('dia', 'brilhos_dia'), ('noite', 'brilhos_noite')):
+        if f[a].is_file():
+            try:
+                glares[k] = len(brilhos.lampadas(f[a]))
+            except (OSError, ValueError) as ex:
+                motivo = str(ex).replace(': ' + str(f[a]), '')
+                avisos.append(f'{f[a].name} não deu para ler ({motivo}): ficam os glares de {k} do El Grandioso')
     um_lado = [x['prim'] for x in pecas if x['papel'] == 'opaco' and not x['dois_lados']]
     receita = dict(origem='pes21', fonte_id=est.sid, giro=giro,
                    descartar={str(x['prim']): x['motivo'] for x in pecas if x['papel'] == 'descartar'},
@@ -191,7 +205,7 @@ def analisar(pasta, miniaturas=None):
     return dict(origem='pes21', pasta=str(Path(pasta)), asset=str(est.asset), fonte_id=est.sid, fifa16_id=est.sid,
                 arquivos={k: str(v) for k, v in f.items()}, existe={k: Path(v).is_file() for k, v in f.items()},
                 pecas=pecas, camadas=dict(collections.Counter(x['camada'] for x in pecas)), localizadores={}, torcida=torcida, glares=glares,
-                giro=giro, bancos=dict(cadeiras_em_menos_z=cad_menos, cadeiras_em_mais_z=cad_mais), sobras_longe=sobras, receita=receita,
+                giro=giro, bancos=dict(cadeiras_em_menos_z=cad_menos, cadeiras_em_mais_z=cad_mais), sobras_longe=sobras, receita=receita, avisos=avisos,
                 resumo=dict(pecas=len(pecas), descartadas=sum(1 for x in pecas if x['papel'] == 'descartar'),
                             vertices=sum(x['vertices'] for x in pecas if x['papel'] != 'descartar'),
                             triangulos=sum(x['triangulos'] for x in pecas if x['papel'] != 'descartar')))

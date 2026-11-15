@@ -141,8 +141,8 @@ Blender nem outro programa:
 | `…\audi\sourceimages\au_seat.png` | a cor de cada cadeira da torcida |
 | `…\effect\#Win\effect_st<NNN>_df.fpk` e `_nf.fpk` | as lâmpadas dos glares, de dia e de noite |
 
-1. **Estádio do PES 2021**: escolha a pasta do estádio, a do mod (a que tem `Asset\model\bg\st<NNN>`). Ela precisa ter
-   um estádio só.
+1. **Estádio do PES 2021**: escolha a pasta do estádio, a do mod (a que tem `Asset\model\bg\st<NNN>`). Se ela tiver
+   mais de um estádio (`st009` e `st012`, por exemplo), escolha a pasta `Asset\model\bg\st<NNN>` do que você quer.
 2. **Estádio novo**, **Peças** e **Opções**: como no FIFA 16. Cada peça é uma malha dos modelos do PES.
 3. **Converter**.
 
@@ -162,11 +162,13 @@ O que é diferente do FIFA 16:
   que não aparecem.
 - **Torcida**: o PES não guarda lugar por lugar, guarda áreas inclinadas sobre a arquibancada. A ferramenta as preenche:
   uma fileira no meio de cada degrau do estádio embaixo da área (sem degraus regulares, de 80 em 80 cm), um lugar a cada
-  50 cm, cada um na altura do degrau. A cor da cadeira vem do `au_seat.png`. A organizada da casa, que o PES não marca,
-  fica no anel inferior atrás do gol da casa.
-- **Setor marcado no PES**: o PES marca à parte um setor da torcida. Por padrão ele entra como torcida comum e enche como
-  o resto. Como bloco de visitantes do FC 27 (opção), ele pode ficar vazio na partida: no Camp Nou é todo o anel inferior
-  atrás de um gol, e foi o que ficou sem torcida no primeiro teste.
+  50 cm, cada um na altura do degrau. A cor da cadeira vem do `au_seat.png`. A organizada da casa do FC 27 fica no anel
+  inferior atrás do gol da casa. As áreas da torcida foram conferidas em 100 estádios do PES 2021 (o arquivo muda um pouco
+  de um mod para outro); se o `audiarea.bin` de um mod não der para ler, a análise avisa e a torcida do El Grandioso fica.
+- **Setor marcado no PES**: o PES dá a cada área da torcida um valor de 0 a 5, e as áreas com 5 formam um setor à parte
+  (no Camp Nou, todo o anel inferior atrás de um gol; pelo jeito, o setor da torcida organizada). Por padrão esse setor
+  entra como torcida comum e enche como o resto. Como bloco de visitantes do FC 27 (opção), ele pode ficar vazio na
+  partida, e foi o que ficou sem torcida no primeiro teste do Camp Nou.
 - **Luzes da torcida à noite**: o padrão é **Cobrem toda a torcida** (veja "Luz da torcida à noite"). A torcida do PES
   costuma ser maior e mais alta que a do El Grandioso; só acompanhando, o terceiro anel do Camp Nou ficava com 7% da luz.
 - **Banco de reservas, técnicos e áreas técnicas**: no El Grandioso tudo isso fica em volta do banco dele (|x| de 3,4 a

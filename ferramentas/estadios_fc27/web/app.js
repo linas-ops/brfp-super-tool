@@ -367,6 +367,7 @@ function renderConverter() {
       if (an.giro === 180) c1.corpo.append(nota(`Os bancos de reservas deste estádio ficam em +Z (${an.bancos.cadeiras_em_mais_z} cadeiras de banco achadas, contra ${an.bancos.cadeiras_em_menos_z} do outro lado): o estádio gira meia volta, porque o FC 27 tem os bancos em −Z. Dá para mudar em "Lado dos bancos", nas Opções.`, 'info'));
       if (!an.existe?.torcida) c1.corpo.append(nota('Sem audiarea.bin: a torcida do El Grandioso fica.', 'alerta'));
       else if (!an.torcida?.cores_das_cadeiras) c1.corpo.append(nota('Sem audi\\sourceimages\\au_seat.png: as cadeiras da torcida ficam cinza (ou escolha uma cor nas Opções).', 'alerta'));
+      for (const a of [...(an.torcida?.avisos || []), ...(an.avisos || [])]) c1.corpo.append(nota(esc(a), 'alerta'));
       if (!Object.keys(an.glares || {}).length) c1.corpo.append(nota('Sem brilhos de lâmpadas no PES (effect_st…_df/_nf.fpk): os glares do El Grandioso ficam.', 'alerta'));
       c1.corpo.append(nota('O PES não tem marcadores de personagens laterais: gandulas, fotógrafos e técnicos partem das posições do El Grandioso e são conferidos contra o estádio novo (veja "Personagens laterais" nas Opções).', 'info'));
     } else c1.corpo.append(el('div', { style: { marginTop: '10px' } }, nota('Receita sugerida pela análise: as camadas do FIFA 16 dizem o que sai (placas, gramado, céu e relógio que o FIFA 16 preenchia na hora do jogo) e onde entram os banners dos times. Confira a lista de peças abaixo e marque como Banner dos times as faixas e bandeiras do estádio que devem dar lugar a eles.', 'info')));
@@ -497,7 +498,7 @@ function cartaoOpcoes() {
     campo2('Recuo do gramado no lado dos bancos', el('div', { class: 'linha-acoes' }, recorte, 'z ≥', rz, '|x| <', rx), 'Para bancos rebaixados (Morumbi: z −37,8 m, |x| < 30 m).'),
     campo2('Placas baixas de madeira do El Grandioso (lado dos bancos)', placas, 'Esconda se cruzarem os bancos do estádio novo.'),
     campo2('Cadeiras da torcida', el('div', { class: 'linha-acoes' }, cad, cor), ''),
-    pes ? campo2('Setor marcado no PES', setor, `O PES marca à parte um setor da torcida (${fmtInt(an?.torcida?.visitantes_areas ?? 0)} áreas neste estádio). Torcida comum: ele enche como o resto. Bloco de visitantes: vira o setor dos visitantes do FC 27, que pode ficar vazio na partida.`) : null,
+    pes ? campo2('Setor marcado no PES', setor, `O PES marca à parte as áreas da torcida com o valor 5 (${fmtInt(an?.torcida?.visitantes_areas ?? 0)} áreas neste estádio; no Camp Nou, o anel inferior atrás de um gol). Torcida comum: elas enchem como o resto. Bloco de visitantes: vira o setor dos visitantes do FC 27, que pode ficar vazio na partida.`) : null,
     campo2('Torcida da casa', lado, pes ? 'O El Grandioso põe a casa em −X. A organizada da casa fica no anel inferior atrás do gol da casa.' : 'O FIFA 16 e o El Grandioso põem a casa em −X.'),
     campo2('Anel superior da torcida acima de (m)', tier, 'Lugares mais altos que isso contam como anel superior.')));
   return co;

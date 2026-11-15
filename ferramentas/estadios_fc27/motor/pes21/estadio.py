@@ -12,6 +12,7 @@ bancos pode ser o contrário (o PES aceita os bancos em +Z), e aí o estádio gi
 """
 from __future__ import annotations
 import re
+import struct
 from pathlib import Path
 
 import numpy as np
@@ -40,7 +41,8 @@ def localizar(pasta):
     if not achados:
         raise ValueError('não achei Asset\\model\\bg\\st<número>\\#Win\\st<número>.fpk nessa pasta')
     if len(achados) > 1:
-        raise ValueError('a pasta tem mais de um estádio: ' + ', '.join(d.name for d in achados))
+        raise ValueError(f'a pasta tem mais de um estádio ({", ".join(d.name for d in achados)}): escolha a pasta de um deles, '
+                         f'em {achados[0].parent}')
     d = achados[0]
     return d.parent.parent.parent, d.name.lower()
 
@@ -80,6 +82,7 @@ class Estadio:
         self._modelos = None
         self._pecas = None
         self._tex = {}
+        self.avisos = []  # o que não deu para ler e ficou de fora (pacote do telão, modelo estragado no mod)
 
     # ------------------------------------------------------------ arquivos
     def arquivos(self):
@@ -106,11 +109,24 @@ class Estadio:
             for origem, pacote, cena in (('estadio', f['modelo'], f['cena']), ('telao', f['telao'], f['cena_telao'])):
                 if not pacote.is_file():
                     continue
-                onde = self._cena(cena)
-                for nome, dados in fpk.Fpk(pacote).itens():
+                try:
+                    onde = self._cena(cena)
+                    itens = list(fpk.Fpk(pacote).itens())
+                except (OSError, ValueError, struct.error) as ex:
+                    if origem == 'estadio':
+                        raise ValueError(f'{ex}') from ex
+                    motivo = str(ex).replace(': ' + str(pacote), '').replace(': ' + str(cena), '')
+                    self.avisos.append(f'{pacote.name} não deu para ler ({motivo}): o telão do PES fica de fora')
+                    continue
+                for nome, dados in itens:
                     if not nome.lower().endswith('.fmdl'):
                         continue
-                    out.append(dict(nome=nome.rsplit('/', 1)[-1][:-5], caminho=nome, origem=origem, fmdl=fmdl.Fmdl(dados, nome),
+                    try:
+                        modelo = fmdl.Fmdl(dados, nome)
+                    except (ValueError, struct.error, IndexError) as ex:
+                        self.avisos.append(f"o modelo {nome.rsplit('/', 1)[-1]} não deu para ler ({ex}) e fica de fora")
+                        continue
+                    out.append(dict(nome=nome.rsplit('/', 1)[-1][:-5], caminho=nome, origem=origem, fmdl=modelo,
                                     matriz=onde.get(nome.lower(), np.eye(4))))
             if not any(m['origem'] == 'estadio' for m in out):
                 raise ValueError(f'o pacote {f["modelo"].name} não tem modelos (.fmdl)')
