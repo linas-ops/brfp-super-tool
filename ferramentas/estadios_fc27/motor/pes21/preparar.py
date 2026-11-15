@@ -4,7 +4,9 @@ Grava a mesma pasta que a preparação do FIFA 16 (motor/fifa16/preparar.py), pa
   subsets.json / geometry.bin   um subset por material (papel + textura): metros, soldado, com normais/tangentes/binormais
                                 e UV0; subsets acima de max_vertices viram peças do mesmo material; as telas do telão num
                                 subset próprio, uma parte por lado
-  textures.json / textures/*.bin  cadeias de mips BC1/BC3: os mips do PES byte a byte, os que faltam são gerados
+  textures.json / textures/*.bin  cadeias de mips BC1/BC3: os mips do PES byte a byte, os que faltam são gerados; e os
+                                mapas normal (BC5) e de coeficientes (BC1 linear) de cada material, tirados dos mapas
+                                normal, especular e de metal do PES (motor/pes21/mapas.py)
   locators.json                 vazio (o PES não tem marcadores de personagens no modelo)
   banners.json                  triângulos das peças com o papel "banner", que saem do modelo
   torcida.json / torcida.bin    lugares da torcida gerados das áreas do PES (motor/pes21/torcida.py), na altura dos degraus
@@ -13,6 +15,7 @@ Grava a mesma pasta que a preparação do FIFA 16 (motor/fifa16/preparar.py), pa
 O PES já usa metros, Y para cima e a mão direita, como o FC 27: a única transformação é a meia volta em torno do centro do
 campo quando os bancos de reservas estão em +Z (receita "giro": 180). No PES cada malha é desenhada só pelo lado das
 normais, a não ser que seja marcada como de dois lados (0x20): a receita traz as outras em "um_lado".
+Os quadros tangentes saem no sentido dos meshes nativos do FC 27 (-dP/du, -dP/dv), o que os mapas normal pedem.
 """
 from __future__ import annotations
 import hashlib
@@ -25,7 +28,7 @@ import numpy as np
 from ..fifa16 import bcn
 from ..fifa16.preparar import (ALPHA_OFFSET, GRASS_TINT, VIEW_REF, bbox, expand_double_sided, expand_view_sided, face_normals,
                                full_chain, recolour_chain, split_pieces, stats, tangents, weld)
-from . import brilhos, estadio as E, torcida as T
+from . import brilhos, estadio as E, mapas, torcida as T
 
 PADRAO = dict(faces='view', sombra_mesclada=False, max_vertices=60000, um_lado=[], chao={}, telao=[], grama=[], descartar={},
               papel={}, prefixo='pes21', tom_grama=GRASS_TINT.tolist(), vista=VIEW_REF.tolist(), deslocamento_alpha=ALPHA_OFFSET, giro=0)
@@ -142,6 +145,41 @@ def preparar(pasta, out, receita):
         por_caminho[k] = key
         return key, name
 
+    por_mapa = {}  # (uso, caminhos) -> chave (ou None)
+    mapas_fora = []
+
+    def maps_for(peca):
+        """Chaves do mapa normal e do mapa de coeficientes do material da peça (None quando o material não tem ou o
+        mapa do PES não serve: fica o do modelo do El Grandioso)."""
+        mat = peca['malha']['material'] or dict(texturas={})
+        tx = mat['texturas']
+        out = []
+        for uso, papeis in (('normal', ('NormalMap_Tex_NRM',)), ('coeficientes', ('SpecularMap_Tex_LIN', 'MetalnessMap_Tex_LIN'))):
+            cams = tuple(tx.get(x) or '' for x in papeis)
+            k = (uso,) + tuple(c.lower() for c in cams)
+            if k not in por_mapa:
+                por_mapa[k] = None
+                nomes = [c.rsplit('/', 1)[-1] for c in cams if c]
+                if nomes:
+                    texs = [est.textura(c) if c else None for c in cams]
+                    try:
+                        chain, info = mapas.normal(texs[0]) if uso == 'normal' else mapas.coeficientes(*texs)
+                    except ValueError as ex:
+                        chain, info = None, str(ex)
+                    if chain is None:
+                        if info != 'plano':
+                            mapas_fora.append(f'{nomes[0]} ({info})')
+                    else:
+                        blob = b''.join(d for _, _, d in chain)
+                        limpo = re.sub(r'[^a-z0-9_]+', '_', Path(nomes[0]).stem.lower()).strip('_') or uso
+                        key = add_texture(f"{limpo}_{'nrm' if uso == 'normal' else 'coef'}_{hashlib.sha256(blob).hexdigest()[:8]}", chain,
+                                          'BC5' if uso == 'normal' else 'BC1', nomes,
+                                          note='mapa normal do PES' if uso == 'normal' else 'coeficientes dos mapas especular e de metal do PES')
+                        textures[key].update(uso=uso, mapa=info)
+                        por_mapa[k] = key
+            out.append(por_mapa[k])
+        return out
+
     geo = bytearray()
     subsets = []
 
@@ -213,9 +251,12 @@ def preparar(pasta, out, receita):
             report['kept'].append(dict(prim=i, name=m['grupo'], shader=shader, layer=camada, role=role, triangles=int(keep.sum())))
             continue
         Tt, Bt = tangents(Pt, Nt, Ut)
+        Tt, Bt = -Tt, -Bt  # o sentido dos quadros dos meshes nativos do FC 27, que os mapas normal pedem (motor/pes21/mapas.py)
         tex_key, tex_name = texture_for(p, i in grass_prims)
-        groups.setdefault((role, tex_key), []).append((i, Pt, Nt, Ut, Tt, Bt))
+        nrm_key, coef_key = maps_for(p) if i not in grass_prims else (None, None)
+        groups.setdefault((role, tex_key, nrm_key, coef_key), []).append((i, Pt, Nt, Ut, Tt, Bt))
         report['kept'].append(dict(prim=i, name=m['grupo'], shader=shader, layer=camada, role=role, texture=tex_name, texture_key=tex_key,
+                                   normal_key=nrm_key, coeff_key=coef_key,
                                    triangles_pes=int(len(idx)), triangles_out=int(len(Pt)), ground_dy=dy,
                                    sides='só o lado das normais' if sides == 'view' and role == 'opaque' and i in single else None))
         if role == 'opaque':
@@ -224,7 +265,7 @@ def preparar(pasta, out, receita):
         raise ValueError('nenhuma peça do estádio ficou na conversão: confira a lista de peças')
 
     max_v = r['max_vertices']
-    for (role, tex_key), items in sorted(groups.items(), key=lambda kv: (kv[0][0], min(x[0] for x in kv[1]))):
+    for (role, tex_key, nrm_key, coef_key), items in sorted(groups.items(), key=lambda kv: (kv[0][0], min(x[0] for x in kv[1]))):
         P = np.concatenate([x[1] for x in items]); N = np.concatenate([x[2] for x in items]); U = np.concatenate([x[3] for x in items])
         Tg = np.concatenate([x[4] for x in items]); B = np.concatenate([x[5] for x in items])
         Pw, Nw, Uw, Tw, Bw, I = weld(P, N, U, Tg, B)
@@ -233,7 +274,7 @@ def preparar(pasta, out, receita):
         pieces = split_pieces(Pw, Nw, Uw, Tw, Bw, I, max_v)
         for k, (Pp, Np, Up, Tp, Bp, Ip) in enumerate(pieces):
             emit(name if len(pieces) == 1 else f'{name}_p{k}', role, prims_in, tex_key, Pp, Np, Up, Tp, Bp, Ip,
-                 extra=dict(material=name, piece=k, pieces=len(pieces)))
+                 extra=dict(material=name, piece=k, pieces=len(pieces), normal=nrm_key, coeff=coef_key))
 
     if r['sombra_mesclada'] and shadow:
         S = np.concatenate(shadow).reshape(-1, 3)
@@ -306,15 +347,19 @@ def preparar(pasta, out, receita):
             except (OSError, ValueError) as ex:
                 report['notes'].append(f'{arq[a].name}: {ex}')
     (out / 'lampadas.json').write_text(json.dumps(lamp), encoding='utf8')
+    if mapas_fora:
+        report['notes'].append(f'{len(mapas_fora)} mapas do PES ficaram de fora e esses materiais usam os do El Grandioso: '
+                               + ', '.join(mapas_fora[:6]) + (' e outros' if len(mapas_fora) > 6 else ''))
     if sobras:
         report['notes'].append(f'{sobras} triângulos a mais de {E.LIMITE:.0f} m do centro do campo ficaram de fora (sobras escondidas pelo autor)')
     report['subsets'] = len(subsets)
     report['torcida'] = tor
     report['lampadas'] = {k: len(v) for k, v in lamp.items()}
     report['textures'] = {k: dict(sources=sorted(set(v['sources'])), size=f"{v['width']}x{v['height']}", format=v['format'], mips=v['mips'],
-                                  pes_mips=v['fifa_mips'], note=v['note']) for k, v in textures.items()}
+                                  pes_mips=v['fifa_mips'], note=v['note'], uso=v.get('uso', 'cor'), mapa=v.get('mapa')) for k, v in textures.items()}
     (out / 'report.json').write_text(json.dumps(report, indent=1, ensure_ascii=False), encoding='utf8')
     return dict(subsets=len(subsets), textures=len(textures), vertices=sum(s['vertices'] for s in subsets),
                 triangles=sum(s['triangles'] for s in subsets), geometry_mb=round(len(geo) / 2**20, 1),
                 texture_mb=round(sum(v['bytes'] for v in textures.values()) / 2**20, 1), bbox=meta['bbox'], jumbotron=bool(jumbo),
+                mapas={u: sum(1 for v in textures.values() if v.get('uso') == u) for u in ('normal', 'coeficientes')},
                 torcida=tor, lampadas=report['lampadas'], notas=report['notes'])

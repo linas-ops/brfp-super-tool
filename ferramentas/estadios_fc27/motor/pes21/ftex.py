@@ -5,7 +5,8 @@ Layout (conferido nas texturas do Camp Nou do PES 2021):
   0x1C  u32 tipo (cor, linear, normal...), u8 arquivos .ftexs (0 no PES 2021 de PC)
   0x40  um registro de 16 bytes por mip: u32 deslocamento, u32 tamanho, u32 tamanho no arquivo, u8 nível, u8 arquivo, u16 blocos
         no deslocamento, com blocos: (u16 tamanho no arquivo, u16 tamanho, u32 deslocamento a partir da tabela; bit 31 = sem
-        compressão) e os blocos em zlib; sem blocos: os dados, em zlib quando o tamanho no arquivo difere do tamanho
+        compressão) e os blocos em zlib (ou sem compressão e sem a marca, com o tamanho no arquivo igual ao tamanho, como
+        nos mips pequenos de muitos mods); sem blocos: os dados, em zlib quando o tamanho no arquivo difere do tamanho
 Formatos: 0 RGBA de 32 bits (B, G, R, A), 2 BC1 (DXT1), 3 BC2, 4 BC3 (DXT5), 8 BC4, 9 BC5, 10 BC6H, 11 BC7, 12 RGBA de 16 bits
 em ponto flutuante.
 """
@@ -17,6 +18,19 @@ FORMATOS = {0: 'BGRA8', 1: 'R8', 2: 'BC1', 3: 'BC2', 4: 'BC3', 8: 'BC4', 9: 'BC5
             14: 'RGB10A2', 15: 'R11G11B10F'}
 BLOCO = {'BC1': 8, 'BC2': 16, 'BC3': 16, 'BC4': 8, 'BC5': 16, 'BC6H': 16, 'BC7': 16}
 PIXEL = {'BGRA8': 4, 'R8': 1, 'RGBA16F': 8, 'RGBA32F': 16, 'RGB10A2': 4, 'R11G11B10F': 4}
+
+
+def _bloco(d, u, bruto):
+    """Um bloco de um mip: em zlib, ou sem compressão quando marcado (bit 31) ou quando o tamanho no arquivo é o tamanho
+    (muitas texturas de mods guardam assim os mips pequenos, de 16 e 64 bytes, sem a marca)."""
+    if bruto:
+        return d
+    try:
+        return zlib.decompress(d)
+    except zlib.error as ex:
+        if len(d) == u:
+            return d
+        raise ValueError(f'bloco de mip estragado ({ex})') from None
 
 
 def tamanho_mip(w, h, fmt):
@@ -48,15 +62,14 @@ class Ftex:
         if blocos == 0:
             dados = b[off:off + (comp or tam)]
             if comp and comp != tam:
-                dados = zlib.decompress(dados)
+                dados = _bloco(dados, tam, False)
         else:
             partes = []
             for k in range(blocos):
                 c, u, o = struct.unpack_from('<HHI', b, off + 8 * k)
                 bruto = bool(o & 0x80000000)
                 o &= 0x7FFFFFFF
-                d = b[off + o:off + o + c]
-                partes.append(d if bruto else zlib.decompress(d))
+                partes.append(_bloco(b[off + o:off + o + c], u, bruto))
             dados = b''.join(partes)
         if len(dados) != tam:
             raise ValueError(f'{self.path.name}: mip {nivel} com {len(dados)} bytes, esperado {tam}')

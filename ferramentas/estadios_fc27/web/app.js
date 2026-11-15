@@ -10,6 +10,8 @@ const S = {
   dup: { modo: 'novo', projeto: '', grupos: [], busca: '', inicioIds: 700 },
   conv: { origem: 'fifa16', pasta: '', analise: null, pronta: null, usarPronta: true, modo: 'novo', projeto: '', novoId: '', nome: '', filtro: 'todas',
           pecas: {}, opcoes: {} },
+  lote: { raiz: '', achados: null, itens: [], filtro: '', inicioIds: 700, modo: 'junto', projetoModo: 'novo', projeto: '',
+          opcoes: { rede: 'quadrada', banners: 'automaticos', luzes: 'padrao', personagens: 'padrao', reservas: 'padrao' } },
   exec: null,
 };
 
@@ -29,7 +31,7 @@ async function iniciar() {
     if (!ok) { statusEsq('Faltam componentes (numpy, SciPy, zstandard): use "Instalar componentes".'); }
     S.inicio = await api('inicio');
   }
-  renderDuplicar(); renderConverter(); renderResultados();
+  renderDuplicar(); renderConverter(); renderLote(); renderResultados();
   if (S.inicio.exec?.rodando) abrirExec();
   await carregarAmbiente(true);
 }
@@ -59,7 +61,7 @@ async function carregarEstadios() {
   statusEsq('Lendo o catálogo de estádios do jogo…');
   try { S.cat = await api('estadios'); S.catErro = null; } catch (e) { S.cat = null; S.catErro = e.message; }
   statusEsq(S.cat ? `${S.cat.estadios.length} estádios no jogo` : 'Catálogo indisponível');
-  renderDuplicar(); renderConverter();
+  renderDuplicar(); renderConverter(); renderLote();
 }
 
 function janelaAmbiente() {
@@ -93,8 +95,10 @@ function guia() {
   modal({ titulo: 'Estádios FC 27', largo: true, corpo: el('div', { style: { color: 'var(--texto-2)', lineHeight: '1.6' }, html: `
     <p><b>Duplicar estádio</b>: escolha um ou mais estádios do FC 27 e quantas cópias de cada. Cada cópia é um estádio novo, com ID e nome próprios, e tudo o que é do estádio (meshes, texturas, mundo, torcida, física, luz) ganha identidade própria, como as duplicatas 702 e 703 testadas em partida. Pode criar um projeto do zero ou acrescentar as cópias a um projeto seu do FET (o banco, o mapa de estádios e os loaders partem da versão do projeto).</p>
     <p><b>Converter FIFA 16 → FC 27</b>: a base é <b>sempre o El Grandioso (181)</b>. A ferramenta duplica o El Grandioso no ID novo e põe o estádio do FIFA 16 no lugar da arquitetura dele: modelo, texturas, telão, torcida, glares e personagens laterais (os reservas nas cadeiras do banco do estádio novo), com o gramado do FC 27 recortado até o piso do estádio e sem a pista de atletismo do El Grandioso. O caminho é o mesmo do Morumbi v3, que funcionou em partida.</p>
-    <p><b>Converter PES 2021 → FC 27</b>: o mesmo caminho, com a pasta do estádio do PES 2021 (a do mod, com <span class="mono">Asset\\model\\bg\\st…</span>). A ferramenta lê os modelos, as texturas, as telas, as áreas da torcida e os brilhos das lâmpadas do PES; se os bancos de reservas estiverem do outro lado do campo, o estádio gira meia volta. Placas, figurantes, vidros e brilhos do PES não entram. <b>Precisa de teste em partida.</b></p>
-    <p><b>Banners dos times</b>: na lista de peças, marque como <b>Banner dos times</b> as faixas e bandeiras do estádio que devem dar lugar aos banners dos times. Elas saem do modelo e os banners dos times do FC 27 entram no lugar delas. No FIFA 16, a análise já marca as peças que ele deixava vazias para os banners dele.</p>
+    <p><b>Converter PES 2021 → FC 27</b>: o mesmo caminho, com a pasta do estádio do PES 2021 (a do mod, com <span class="mono">Asset\\model\\bg\\st…</span>). A ferramenta lê os modelos, as texturas, as telas, as áreas da torcida e os brilhos das lâmpadas do PES; se os bancos de reservas estiverem do outro lado do campo, o estádio gira meia volta. Os materiais levam o relevo (mapa normal) e o brilho, a rugosidade e o metal (coeficientes) dos mapas do PES. Placas, figurantes, vidros e brilhos do PES não entram. <b>Precisa de teste em partida.</b></p>
+    <p><b>Converter em lote</b>: escolha uma pasta, e a ferramenta acha nas subpastas os estádios do FIFA 16 e do PES 2021 (um pacote inteiro, como o Brasil MEGA Stadium Pack, de uma vez). Marque os que quer, ajuste o ID e o nome de cada um, e eles são convertidos um depois do outro, com a receita sugerida pela análise de cada estádio. Num projeto só (o recomendado: no FET só um projeto de estádio fica ativo por vez), cada estádio entra no projeto dos anteriores; um estádio que der erro fica de fora e os outros seguem.</p>
+    <p><b>Rede do gol</b>: o El Grandioso tem a rede funda ("véu de noiva"), que só ele e mais quatro estádios do FC 27 usam. Desde a 2.1 o estádio convertido sai com a rede quadrada da maioria dos estádios (dá para voltar à do El Grandioso nas Opções).</p>
+    <p><b>Banners dos times</b>: na lista de peças, marque como <b>Banner dos times</b> as faixas e bandeiras do estádio que devem dar lugar aos banners dos times. Elas saem do modelo e os banners dos times do FC 27 entram no lugar delas. No FIFA 16, a análise já marca as peças que ele deixava vazias para os banners dele. No PES 2021, que não marca nada, os banners vão sozinhos para as muretas na frente dos anéis da torcida (ou nas peças que você marcar).</p>
     <p><b>Luz da torcida à noite</b>: o pré-cálculo de luz é sempre o do El Grandioso (com o de outro estádio a partida fica carregando sem fim). As luzes da arquibancada do El Grandioso acompanham a torcida do estádio novo, para ela ficar iluminada como a do El Grandioso.</p>
     <p>A ferramenta nunca sobrescreve um projeto: o resultado é sempre um arquivo novo, conferido de volta depois de gravado (ordem das instâncias de cada EBX, referências, RES, chunks, shaders, banco).</p>` }),
     botoes: [{ rotulo: 'Fechar', classe: 'btn-primario', padrao: true }] });
@@ -105,6 +109,7 @@ function idsUsados() {
   const s = new Set([...(S.cat?.ids_usados || []), ...(S.inicio?.ids_gerados || [])]);
   for (const g of S.dup.grupos) for (const c of g.copias) if (c.id) s.add(Number(c.id));
   if (S.conv.novoId) s.add(Number(S.conv.novoId));
+  for (const it of S.lote.itens) if (it.marcado && it.id) s.add(Number(it.id));
   return s;
 }
 
@@ -234,6 +239,8 @@ const sai = (v) => v.papel === 'descartar' || v.papel === 'banner';
 const ehPes = () => S.conv.origem === 'pes21';
 const J = () => (ehPes() ? 'PES 2021' : 'FIFA 16');
 const ORCAMENTO_MB = 33;  // os seis meshes do El Grandioso que recebem o estádio (5,5 MB cada)
+const REDES_DO_GOL = [['quadrada', 'Quadrada (a da maioria dos estádios do FC 27)'], ['veu', 'Funda, "véu de noiva" (a do El Grandioso)']];
+const AJUDA_REDE = 'O El Grandioso usa a rede funda (3,20 m de fundo), que só ele e mais quatro estádios do FC 27 têm; a quadrada (2,29 m) é a da maioria. Até a 2.0 todo estádio convertido saía com a rede do El Grandioso.';
 
 function trocarOrigem(o) {
   if (S.conv.origem === o) return;
@@ -278,7 +285,7 @@ function carregarPecas() {
     lado_casa: r.torcida?.lado_casa || '-x', tier2: r.torcida?.tier2_acima_de ?? 14,
     ajuste: r.ajuste_automatico ?? true, personagens: r.personagens || 'ajustar',
     reservas: r.reservas || 'cadeiras', luzes: r.luzes_torcida || (ehPes() ? 'cobrir' : 'acompanhar'),
-    setor: r.torcida?.setor_pes || 'comum',
+    setor: r.torcida?.setor_pes || 'comum', banners: r.banners || 'automaticos', rede: r.rede_gol || 'quadrada',
   };
   if (o.cadeiras !== 'fifa16') { o.cor = o.cadeiras; o.cadeiras = 'cor'; }
 }
@@ -303,10 +310,12 @@ function receitaDaTela() {
   r.placas_madeira_bancos = o.placas;
   r.torcida = { cadeiras: o.cadeiras === 'cor' ? o.cor : 'fifa16', lado_casa: o.lado_casa, tier2_acima_de: Number(o.tier2) };
   if (ehPes()) r.torcida.setor_pes = o.setor;
+  if (ehPes()) r.banners = o.banners;
   r.ajuste_automatico = !!o.ajuste;
   r.personagens = o.personagens;
   r.reservas = o.reservas;
   r.luzes_torcida = o.luzes;
+  r.rede_gol = o.rede;
   r.luz = BASE.id;
   if (ehPes()) r.giro = Number(o.giro) || 0;
   const b = receitaBase() || {};
@@ -363,7 +372,7 @@ function renderConverter() {
         c.usarPronta ? 'pronta' : 'auto', (v) => { c.usarPronta = v === 'pronta'; carregarPecas(); renderConverter(); }));
       c1.corpo.append(t);
     } else if (pes) {
-      c1.corpo.append(el('div', { style: { marginTop: '10px' } }, nota('Receita sugerida pela análise: os materiais do PES dizem o que sai (figurantes e equipamentos de transmissão, vidros e brilhos), o que é telão, grama em volta do campo, opaco ou alpha. Confira a lista de peças abaixo e marque como Banner dos times as faixas e bandeiras do estádio que devem dar lugar aos banners dos times do FC 27.', 'info')));
+      c1.corpo.append(el('div', { style: { marginTop: '10px' } }, nota('Receita sugerida pela análise: os materiais do PES dizem o que sai (figurantes e equipamentos de transmissão, vidros e brilhos), o que é telão, grama em volta do campo, opaco ou alpha. Os banners dos times do FC 27 vão sozinhos para as frentes dos anéis da torcida; se o estádio tiver faixas próprias que devem dar lugar a eles, marque-as como Banner dos times na lista de peças abaixo.', 'info')));
       if (an.giro === 180) c1.corpo.append(nota(`Os bancos de reservas deste estádio ficam em +Z (${an.bancos.cadeiras_em_mais_z} cadeiras de banco achadas, contra ${an.bancos.cadeiras_em_menos_z} do outro lado): o estádio gira meia volta, porque o FC 27 tem os bancos em −Z. Dá para mudar em "Lado dos bancos", nas Opções.`, 'info'));
       if (!an.existe?.torcida) c1.corpo.append(nota('Sem audiarea.bin: a torcida do El Grandioso fica.', 'alerta'));
       else if (!an.torcida?.cores_das_cadeiras) c1.corpo.append(nota('Sem audi\\sourceimages\\au_seat.png: as cadeiras da torcida ficam cinza (ou escolha uma cor nas Opções).', 'alerta'));
@@ -476,9 +485,14 @@ function cartaoOpcoes() {
   const setor = el('select', {}, [['comum', 'Torcida comum (recomendado)'], ['visitantes', 'Bloco de visitantes']]
     .map(([k, t]) => el('option', { value: k, selected: o.setor === k }, t)));
   setor.onchange = () => { o.setor = setor.value; };
+  const bann = el('select', {}, [['automaticos', 'Nas frentes dos anéis da torcida (recomendado)'], ['nenhum', 'Sem banners dos times']]
+    .map(([k, t]) => el('option', { value: k, selected: o.banners === k }, t)));
+  bann.onchange = () => { o.banners = bann.value; };
   const giro = el('select', {}, [[0, 'Não girar (bancos em −Z no PES)'], [180, 'Girar meia volta (bancos em +Z no PES)']]
     .map(([k, t]) => el('option', { value: k, selected: Number(o.giro) === k }, t)));
   giro.onchange = () => { o.giro = Number(giro.value); };
+  const rede = el('select', {}, REDES_DO_GOL.map(([k, t]) => el('option', { value: k, selected: o.rede === k }, t)));
+  rede.onchange = () => { o.rede = rede.value; };
   co.corpo.append(el('div', { class: 'grade2' },
     pes ? campo2('Lado dos bancos', giro, `O FC 27 e o El Grandioso têm os bancos de reservas em −Z. A análise achou ${an?.bancos?.cadeiras_em_mais_z ?? 0} cadeiras de banco em +Z e ${an?.bancos?.cadeiras_em_menos_z ?? 0} em −Z, e sugeriu ${an?.giro === 180 ? 'girar' : 'não girar'}.`) : null,
     campo2('Faces', faces, pes
@@ -498,6 +512,8 @@ function cartaoOpcoes() {
     campo2('Recuo do gramado no lado dos bancos', el('div', { class: 'linha-acoes' }, recorte, 'z ≥', rz, '|x| <', rx), 'Para bancos rebaixados (Morumbi: z −37,8 m, |x| < 30 m).'),
     campo2('Placas baixas de madeira do El Grandioso (lado dos bancos)', placas, 'Esconda se cruzarem os bancos do estádio novo.'),
     campo2('Cadeiras da torcida', el('div', { class: 'linha-acoes' }, cad, cor), ''),
+    campo2('Rede do gol', rede, AJUDA_REDE),
+    pes ? campo2('Banners dos times', bann, 'O PES não marca onde ficam os banners dos times. Automático: eles vão para as muretas na frente dos anéis da torcida (faces viradas para o campo, com a torcida logo atrás e acima, acima das placas de publicidade e fora do meio do lado dos bancos), em fileiras de banners de ~2 m de altura, como no El Grandioso. Peças marcadas como Banner dos times na lista têm prioridade.') : null,
     pes ? campo2('Setor marcado no PES', setor, `O PES marca à parte as áreas da torcida com o valor 5 (${fmtInt(an?.torcida?.visitantes_areas ?? 0)} áreas neste estádio; no Camp Nou, o anel inferior atrás de um gol). Torcida comum: elas enchem como o resto. Bloco de visitantes: vira o setor dos visitantes do FC 27, que pode ficar vazio na partida.`) : null,
     campo2('Torcida da casa', lado, pes ? 'O El Grandioso põe a casa em −X. A organizada da casa fica no anel inferior atrás do gol da casa.' : 'O FIFA 16 e o El Grandioso põem a casa em −X.'),
     campo2('Anel superior da torcida acima de (m)', tier, 'Lugares mais altos que isso contam como anel superior.')));
@@ -511,6 +527,214 @@ async function converter() {
   if (!c.novoId) { aviso('Escolha o ID novo.', { tipo: 'aviso' }); return; }
   await tarefa('converter', { origem: c.origem, [ehPes() ? 'pasta_pes' : 'pasta16']: c.pasta, novo_id: Number(c.novoId), nome: c.nome.trim(), receita: receitaDaTela(), modo: c.modo,
     projeto_base: c.modo === 'projeto' ? c.projeto : null });
+}
+
+// ------------------------------------------------------------------ converter em lote
+const MIN_POR_ESTADIO = 7;    // minutos de uma conversão (Camp Nou: 6 a 7)
+const MB_POR_ESTADIO = 180;   // quanto um estádio convertido ocupa no projeto (Camp Nou: 183 MB)
+
+function idLivreLote() {
+  const u = idsUsados();
+  let x = Number(S.lote.inicioIds) || 700;
+  while (u.has(x)) x++;
+  return x;
+}
+
+function numerarLote() {
+  for (const it of S.lote.itens) it.id = '';
+  for (const it of S.lote.itens) if (it.marcado) it.id = idLivreLote();
+}
+
+async function procurarLote(pasta = null) {
+  statusEsq('Procurando estádios nas subpastas…');
+  const L = S.lote;
+  try {
+    const r = await api('procurar', pasta ? { pasta } : {});
+    if (r.cancelado) { statusEsq('Pronto'); return; }
+    L.raiz = r.raiz; L.achados = r; L.filtro = '';
+    L.itens = r.estadios.map((e) => ({ ...e, marcado: !e.problema && e.sugerido !== false, id: '', nomeNovo: e.nome }));
+    numerarLote();
+    const n = r.estadios.length;
+    statusEsq(`${n} estádio${n === 1 ? '' : 's'} achado${n === 1 ? '' : 's'} em ${r.raiz}`);
+  } catch (e) { aviso(e.message, { tipo: 'erro' }); statusEsq('Pronto'); }
+  renderLote();
+}
+
+function renderLote() {
+  const pag = $('#pag-lote');
+  if (!pag) return;
+  pag.innerHTML = '';
+  const L = S.lote;
+  pag.append(el('div', { class: 'cab-detalhe' }, el('div', {}, el('h1', {}, 'Converter em lote'),
+    el('div', { class: 'sub' }, 'Vários estádios do FIFA 16 e do PES 2021 de uma vez, um depois do outro, cada um sobre uma duplicata do El Grandioso e com a receita sugerida pela análise dele.'))));
+  const c1 = cartao('Estádios de origem', 'Escolha uma pasta: a ferramenta procura nas subpastas os estádios do FIFA 16 (data\\sceneassets\\stadium) e do PES 2021 (Asset\\model\\bg\\st<número>). Um pacote com vários estádios, como o Brasil MEGA Stadium Pack, entra inteiro.');
+  c1.corpo.append(linhaCaminho(L.raiz, 'Escolha ou cole a pasta com os estádios', () => procurarLote(), (v) => procurarLote(v)));
+  const a = L.achados;
+  if (a) {
+    if (!a.estadios.length) c1.corpo.append(nota('Nenhum estádio do FIFA 16 ou do PES 2021 nessa pasta.', 'alerta'));
+    if (a.total_compactados) {
+      const n = a.total_compactados;
+      const z = nota(`${n} arquivo${n > 1 ? 's' : ''} compactado${n > 1 ? 's' : ''} (.rar, .zip, .7z) fic${n > 1 ? 'aram' : 'ou'} de fora: extraia antes para a ferramenta achar os estádios ${n > 1 ? 'deles' : 'dele'}.`, 'info');
+      z.title = a.compactados.join('\n');
+      c1.corpo.append(z);
+    }
+  }
+  if (a && a.estadios.length) {
+    const busca = el('input', { type: 'search', placeholder: 'Filtrar por nome ou pasta…', value: L.filtro });
+    const ini = el('input', { type: 'number', min: 1, max: 32767, value: L.inicioIds, style: { width: '90px' } });
+    const visiveis = () => {
+      const q = L.filtro.trim().toLowerCase();
+      return L.itens.filter((it) => !q || `${it.nomeNovo} ${it.rotulo} ${it.fonte_id}`.toLowerCase().includes(q));
+    };
+    const marcar = (v) => {
+      for (const it of visiveis()) if (!it.problema) { it.marcado = v; if (v && !it.id) it.id = idLivreLote(); }
+      preencher(); renderResumoLote();
+    };
+    c1.corpo.append(el('div', { class: 'linha-acoes', style: { margin: '10px 0 8px' } }, el('div', { class: 'cresce' }, busca),
+      el('button', { class: 'btn peq', onclick: () => marcar(true) }, 'Marcar todos'), el('button', { class: 'btn peq', onclick: () => marcar(false) }, 'Desmarcar todos'),
+      el('label', { class: 'peq-txt mudo', style: { display: 'flex', gap: '6px', alignItems: 'center' } }, 'Primeiro ID', ini),
+      el('button', { class: 'btn peq', title: 'Dá IDs livres em sequência aos estádios marcados, a partir do primeiro ID', onclick: () => { L.inicioIds = Number(ini.value) || 700; numerarLote(); preencher(); renderResumoLote(); } }, 'Numerar')));
+    const tb = el('tbody');
+    c1.corpo.append(el('div', { class: 'lista-estadios lista-lote' }, el('table', { class: 'tabela' },
+      el('thead', {}, el('tr', {}, el('th', {}, ''), el('th', {}, 'Jogo'), el('th', {}, 'Na origem'), el('th', {}, 'Pasta'), el('th', {}, 'ID novo'), el('th', {}, 'Nome no FC 27'))), tb)));
+    const linha = (it) => {
+      const ck = el('input', { type: 'checkbox', checked: it.marcado, disabled: !!it.problema });
+      const id = el('input', { type: 'number', min: 1, max: 32767, value: it.id, class: 'mono', disabled: !it.marcado });
+      const nome = el('input', { type: 'text', value: it.nomeNovo, maxlength: 63, disabled: !it.marcado });
+      const tr = el('tr', { class: it.marcado ? '' : 'desmarcado' }, el('td', { class: 'encolher' }, ck),
+        el('td', { class: 'encolher' }, el('span', { class: 'etiqueta ' + (it.origem === 'pes21' ? 'azul' : 'amarela') }, it.origem === 'pes21' ? 'PES 2021' : 'FIFA 16')),
+        el('td', { class: 'mono encolher' }, String(it.fonte_id)),
+        el('td', { class: 'pasta-lote' }, el('div', { class: 'mono', title: it.pasta }, it.rotulo),
+          it.problema ? el('div', { class: 'problema' }, it.problema) : it.nota ? el('div', { class: 'mudo' }, it.nota) : null),
+        el('td', { class: 'id-lote' }, id), el('td', { class: 'nome-lote' }, nome));
+      ck.onchange = () => {
+        it.marcado = ck.checked;
+        if (it.marcado && !it.id) { it.id = idLivreLote(); id.value = it.id; }
+        id.disabled = nome.disabled = !it.marcado;
+        tr.classList.toggle('desmarcado', !it.marcado);
+        renderResumoLote();
+      };
+      id.onchange = () => { it.id = Number(id.value) || ''; renderResumoLote(); };
+      nome.oninput = () => { it.nomeNovo = nome.value; renderResumoLote(); };
+      return tr;
+    };
+    const preencher = () => {
+      tb.innerHTML = '';
+      for (const it of visiveis()) tb.append(linha(it));
+      if (!tb.children.length) tb.append(el('tr', {}, el('td', { colspan: 6, class: 'vazia' }, 'Nenhum estádio com esse filtro.')));
+    };
+    busca.oninput = () => { L.filtro = busca.value; preencher(); };
+    preencher();
+  }
+  pag.append(c1.el);
+  // projeto do FET
+  const c2 = cartao('Projeto do FET', 'Num projeto só, cada estádio entra no projeto dos anteriores (ele cresce cerca de 180 MB por estádio). Um estádio que der erro fica de fora, e os outros seguem.');
+  c2.corpo.append(segmentado([['junto', 'Todos num projeto só (recomendado)'], ['separados', 'Um projeto para cada estádio']], L.modo, (v) => { L.modo = v; renderLote(); }));
+  if (L.modo === 'junto') {
+    c2.corpo.append(el('div', { style: { marginTop: '10px' } }, segmentado([['novo', 'Projeto novo (do zero)'], ['projeto', 'Adicionar a um projeto existente']], L.projetoModo, (v) => { L.projetoModo = v; renderLote(); })));
+    if (L.projetoModo === 'projeto') c2.corpo.append(linhaCaminho(L.projeto, 'Escolha ou cole o caminho do .fifaproject', async () => {
+      const r = await api('dialogo', { modo: 'abrir', tipo: 'projeto', titulo: 'Projeto do FET em que os estádios convertidos vão entrar' });
+      if (!r.cancelado) { L.projeto = r.caminho; renderLote(); }
+    }, (v) => { L.projeto = v; }));
+  } else {
+    c2.corpo.append(el('div', { style: { marginTop: '10px' } }, nota('Cada estádio vai para um .fifaproject próprio, na pasta que você escolher. No FET só um projeto de estádio fica ativo por vez (todos mexem no mapa de estádios, nos loaders e no banco): para jogar com vários estádios convertidos, use um projeto só.', 'alerta')));
+  }
+  pag.append(c2.el);
+  // opções para todos
+  const o = L.opcoes;
+  const sel = (chave, ops) => {
+    const s = el('select', {}, ops.map(([k, t]) => el('option', { value: k, selected: o[chave] === k }, t)));
+    s.onchange = () => { o[chave] = s.value; };
+    return s;
+  };
+  const co = cartao('Opções para todos os estádios', 'O resto vem da análise de cada estádio (ou da receita guardada, quando há, como a do Morumbi do FIFA 16). Para mexer nas peças de um estádio, converta-o sozinho na aba Converter.');
+  co.corpo.append(el('div', { class: 'grade2' },
+    campo2('Rede do gol', sel('rede', REDES_DO_GOL), AJUDA_REDE),
+    campo2('Banners dos times (PES 2021)', sel('banners', [['automaticos', 'Nas frentes dos anéis da torcida (recomendado)'], ['nenhum', 'Sem banners dos times']]),
+      'O PES não marca onde eles ficam: vão sozinhos para as muretas na frente dos anéis da torcida. No FIFA 16, vão para as peças que a análise marca.'),
+    campo2('Luzes da torcida à noite', sel('luzes', [['padrao', 'O padrão de cada jogo (recomendado)'], ['cobrir', 'Cobrem toda a torcida'], ['acompanhar', 'Acompanham a torcida']]),
+      'Padrão: no PES 2021 as luzes da arquibancada do El Grandioso cobrem toda a torcida; no FIFA 16, acompanham a torcida (o que foi testado em partida).'),
+    campo2('Personagens laterais', sel('personagens', [['padrao', 'Ajustar a cada estádio (recomendado)'], ['esconder', 'Esconder (ficam só os técnicos)']]),
+      'Gandulas, fotógrafos, câmeras, policiais e seguranças: os que ficariam dentro da arquibancada vão para o lugar livre mais perto do campo, ou saem de vista.'),
+    campo2('Reservas no banco', sel('reservas', [['padrao', 'Nas cadeiras do banco (recomendado)'], ['esconder', 'Esconder']]),
+      'As cadeiras do banco são achadas no modelo de cada estádio.')));
+  pag.append(co.el);
+  const btn = el('button', { class: 'btn-primario grande', id: 'btn-lote', html: icone('converter', 16) + 'Converter em lote' });
+  btn.onclick = converterLote;
+  pag.append(el('div', { class: 'rodape-acao' }, el('span', { class: 'resumo', id: 'resumo-lote' }), btn));
+  renderResumoLote();
+}
+
+function faixaDeIds(ids) {
+  const s = [...ids].sort((x, y) => x - y);
+  if (s.length > 1 && s.every((x, k) => !k || x === s[k - 1] + 1)) return `${s[0]}–${s[s.length - 1]}`;
+  return s.length > 8 ? s.slice(0, 8).join(', ') + '…' : s.join(', ');
+}
+
+function renderResumoLote() {
+  const r = $('#resumo-lote');
+  if (!r) return;
+  const L = S.lote;
+  const m = L.itens.filter((i) => i.marcado);
+  const btn = $('#btn-lote');
+  if (btn) btn.disabled = !m.length;
+  if (!m.length) { r.textContent = L.achados ? 'Marque os estádios que vão ser convertidos.' : 'Escolha a pasta com os estádios.'; return; }
+  const ids = m.map((i) => Number(i.id)).filter(Boolean);
+  const rep = [...new Set(ids.filter((x, k) => ids.indexOf(x) !== k))];
+  const usados = new Set(S.cat?.ids_usados || []);
+  const oc = ids.filter((x) => usados.has(x));
+  const falta = m.filter((i) => !i.id || !String(i.nomeNovo).trim()).length;
+  const min = m.length * MIN_POR_ESTADIO;
+  const tempo = min >= 90 ? `${(min / 60).toFixed(1).replace('.', ',')} h` : `${min} min`;
+  const gb = (m.length * MB_POR_ESTADIO / 1024).toFixed(1).replace('.', ',');
+  r.innerHTML = `${m.length} estádio${m.length > 1 ? 's' : ''} → FC 27 <span class="mono">${faixaDeIds(ids)}</span> · cerca de ${tempo}`
+    + (L.modo === 'junto' ? ` · projeto de ~${gb} GB` : '')
+    + (rep.length ? ` <span class="etiqueta vermelha">ID repetido: ${rep.join(', ')}</span>` : '')
+    + (oc.length ? ` <span class="etiqueta vermelha">já existe no jogo: ${oc.join(', ')}</span>` : '')
+    + (falta ? ` <span class="etiqueta vermelha">${falta} sem ID ou nome</span>` : '');
+}
+
+async function converterLote() {
+  const L = S.lote;
+  const m = L.itens.filter((i) => i.marcado);
+  if (!m.length) { aviso('Marque pelo menos um estádio.', { tipo: 'aviso' }); return; }
+  if (m.some((i) => !i.id || !String(i.nomeNovo).trim())) { aviso('Cada estádio marcado precisa de um ID novo e de um nome.', { tipo: 'aviso' }); return; }
+  const o = L.opcoes;
+  const receita = { rede_gol: o.rede, banners: o.banners };
+  if (o.luzes !== 'padrao') receita.luzes_torcida = o.luzes;
+  if (o.personagens !== 'padrao') receita.personagens = o.personagens;
+  if (o.reservas !== 'padrao') receita.reservas = o.reservas;
+  await tarefa('lote', { itens: m.map((i) => ({ origem: i.origem, pasta: i.pasta, novo_id: Number(i.id), nome: i.nomeNovo.trim() })), modo: L.modo,
+    projeto_modo: L.projetoModo, projeto_base: L.modo === 'junto' && L.projetoModo === 'projeto' ? L.projeto : null, receita });
+}
+
+function mostrarLote(alvo, r) {
+  const junto = r.modo === 'junto';
+  const n = r.convertidos + r.falharam;
+  const box = el('div', { class: 'cartao ' + (r.ok ? 'resultado-ok' : 'resultado-erro'), style: { marginTop: '12px' } });
+  const corpo = el('div', { class: 'cartao-corpo' });
+  corpo.append(el('div', { class: 'linha-acoes' }, el('span', { html: icone(r.ok ? 'check' : 'aviso', 18) }),
+    el('b', { class: 'cresce' }, r.ok ? `${n} estádio${n > 1 ? 's' : ''} convertido${n > 1 ? 's' : ''} e verificado${n > 1 ? 's' : ''}` : `${r.convertidos} de ${n} estádios convertidos; ${r.falharam} fic${r.falharam > 1 ? 'aram' : 'ou'} de fora`),
+    el('button', { class: 'btn peq', onclick: () => api('abrir', { caminho: r.saida }) }, junto ? 'Mostrar na pasta' : 'Abrir a pasta')));
+  const min = Math.round((r.segundos || 0) / 60);
+  corpo.append(el('dl', { class: 'kv', style: { marginTop: '10px' } }, el('dt', {}, junto ? 'Projeto' : 'Pasta'), el('dd', { class: 'mono' }, r.saida),
+    junto ? el('dt', {}, 'SHA-256') : null, junto ? el('dd', { class: 'mono' }, r.sha256 || '') : null,
+    el('dt', {}, 'Tempo'), el('dd', {}, min >= 1 ? `${min} min` : `${r.segundos} s`)));
+  const tb = el('tbody');
+  for (const it of r.itens) {
+    tb.append(el('tr', {}, el('td', { class: 'mono' }, String(it.novo_id)), el('td', {}, el('b', {}, it.nome)),
+      el('td', {}, el('span', { class: 'etiqueta ' + (it.ok ? 'verde' : 'vermelha') }, it.ok ? 'verificado' : 'ficou de fora')),
+      el('td', { class: 'num' }, `${Math.round((it.segundos || 0) / 60)} min`),
+      el('td', { class: it.ok ? 'mono mudo' : '' }, it.ok ? (junto ? '' : it.saida || '') : it.erro || '')));
+  }
+  corpo.append(el('div', { class: 'tabela-lote' }, el('table', { class: 'tabela' }, el('thead', {}, el('tr', {}, el('th', {}, 'ID'), el('th', {}, 'Estádio'), el('th', {}, ''),
+    el('th', { class: 'num' }, 'Tempo'), el('th', {}, junto ? '' : 'Projeto'))), tb)));
+  corpo.append(el('div', { style: { marginTop: '10px' } }, nota(junto
+    ? 'Antes de testar: no FET, deixe ativo só este projeto (ele tem todos os estádios do lote). Se o jogo fechar ao iniciar a partida, o FC 27 grava um dump em %LOCALAPPDATA%\\EA SPORTS FC 27\\CrashDumps.'
+    : 'No FET, só um projeto de estádio pode ficar ativo por vez (todos mexem no mapa de estádios, nos loaders e no banco). Para jogar com vários estádios convertidos, converta-os num projeto só.', 'info')));
+  box.append(corpo);
+  alvo.append(box);
+  statusEsq(r.ok ? 'Lote convertido e verificado' : 'Lote convertido em parte');
 }
 
 // ------------------------------------------------------------------ resultados
@@ -566,9 +790,9 @@ function abrirExec() {
       barra.classList.toggle('indeterminado', e.rodando && !e.progresso);
       texto.textContent = e.texto || '';
       for (const l of e.linhas) {
-        const cls = l.startsWith('@@ETAPA') ? 'l-etapa' : l.startsWith('@@ERRO') || l.includes('Traceback') ? 'l-erro' : l.startsWith('@@AVISO') ? 'l-aviso' : '';
+        const cls = l.startsWith('@@ETAPA') ? 'l-etapa' : l.startsWith('@@ERRO') || l.startsWith('@@FALHOU') || l.includes('Traceback') ? 'l-erro' : l.startsWith('@@AVISO') ? 'l-aviso' : '';
         if (l.startsWith('@@PROGRESSO')) continue;
-        cons.append(el('div', { class: cls }, l.replace(/^@@(ETAPA|AVISO|ERRO) /, '').replace('|', ' — ')));
+        cons.append(el('div', { class: cls }, l.replace(/^@@(ETAPA|AVISO|ERRO|FALHOU) /, '').replace('|', ' — ')));
       }
       if (e.linhas.length) cons.scrollTop = cons.scrollHeight;
       desde = e.seq;
@@ -589,6 +813,7 @@ function mostrarResultado(alvo, e) {
     return;
   }
   if (e.tarefa === 'preparar') { aviso('Ambiente pronto.', { tipo: 'sucesso' }); carregarAmbiente(); return; }
+  if (r.tipo === 'lote') { mostrarLote(alvo, r); return; }
   const v = r.verificacao;
   const box = el('div', { class: 'cartao ' + (r.ok ? 'resultado-ok' : 'resultado-erro'), style: { marginTop: '12px' } });
   const corpo = el('div', { class: 'cartao-corpo' });

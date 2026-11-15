@@ -4,6 +4,7 @@ Protocolo de progresso (lido pelo servidor.py, uma linha por evento, sempre com 
   @@ETAPA <id>|<descrição>       começa uma etapa
   @@PROGRESSO <0-100>|<texto>     andamento da etapa atual
   @@AVISO <texto>                 algo que o usuário deve saber, sem parar
+  @@FALHOU <texto>                a etapa atual falhou, mas o trabalho segue (um estádio da conversão em lote)
   @@RESULTADO <json>              resultado final (uma vez, no fim)
   @@ERRO <texto>                  falha que parou o trabalho
 Linhas sem prefixo são registro técnico.
@@ -82,19 +83,29 @@ def walk_strings(v, out):
 
 # ------------------------------------------------------------------ progresso
 _t0 = {}
+_prefixo = {'id': '', 'texto': ''}
+
+
+def prefixo_das_etapas(ident='', texto=''):
+    """Prefixo do id e da descrição das próximas etapas (a conversão em lote marca nelas de qual estádio são)."""
+    _prefixo.update(id=ident, texto=texto)
 
 
 def etapa(ident, descricao):
     _t0['etapa'] = time.time()
-    print(f'@@ETAPA {ident}|{descricao}', flush=True)
+    print(f"@@ETAPA {_prefixo['id']}{ident}|{_prefixo['texto']}{descricao}", flush=True)
 
 
 def progresso(pct, texto=''):
     print(f'@@PROGRESSO {max(0, min(100, int(pct)))}|{texto}', flush=True)
 
 
+def etapa_falhou(texto):
+    print('@@FALHOU ' + str(texto).replace('\n', ' | '), flush=True)
+
+
 def aviso(texto):
-    print(f'@@AVISO {texto}', flush=True)
+    print(f"@@AVISO {_prefixo['texto']}{texto}", flush=True)
 
 
 def log(texto):

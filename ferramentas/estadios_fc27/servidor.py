@@ -22,7 +22,7 @@ sys.path.insert(0, os.path.join(SUPERTOOL, "comum"))
 import base  # noqa: E402
 import componentes  # noqa: E402
 
-VERSAO = "2.0.1"
+VERSAO = "2.1"
 GRUPO = "estadios_fc27"
 RAIZ = base.raiz_trabalho()
 CACHE = os.path.join(AQUI, "cache")
@@ -113,6 +113,10 @@ def acompanhar(proc):
                 EXEC["progresso"], EXEC["texto"] = int(pct or 0), txt
             elif linha.startswith("@@AVISO "):
                 EXEC["avisos"].append(linha[8:])
+            elif linha.startswith("@@FALHOU "):
+                if EXEC["etapas"]:
+                    EXEC["etapas"][-1].update(estado="erro", fim=time.time())
+                EXEC["avisos"].append(linha[9:])
             elif linha.startswith("@@RESULTADO "):
                 try:
                     EXEC["resultado"] = json.loads(linha[12:])
@@ -246,6 +250,54 @@ def api_converter(d):
     return iniciar("converter", f"Convertendo {d['nome']} ({jogo}) sobre o El Grandioso", ["converter"], cfg)
 
 
+def api_procurar(d):
+    """Estádios do FIFA 16 e do PES 2021 dentro de uma pasta e das subpastas dela (motor/lote.py)."""
+    pasta = d.get("pasta")
+    if not pasta:
+        pasta = base.dialogo("pasta", "Pasta com os estádios do FIFA 16 e do PES 2021 (a ferramenta procura nas subpastas)",
+                             PREFS.ler().get("pasta_lote") or RAIZ)
+        if not pasta:
+            return {"cancelado": True}
+    if not os.path.isdir(pasta):
+        raise base.ErroUsuario(f"Pasta não encontrada: {pasta}")
+    PREFS.atualizar(pasta_lote=pasta)
+    return motor(["procurar", pasta], timeout=900)
+
+
+def api_lote(d):
+    """Converte vários estádios, um depois do outro: num projeto só (modo "junto") ou num para cada ("separados")."""
+    itens = d.get("itens") or []
+    if not itens:
+        raise base.ErroUsuario("Marque pelo menos um estádio.")
+    out = []
+    for it in itens:
+        if it.get("origem") not in ("fifa16", "pes21") or not it.get("pasta"):
+            raise base.ErroUsuario("Estádio sem pasta de origem.")
+        if not str(it.get("novo_id", "")).isdigit() or not str(it.get("nome") or "").strip():
+            raise base.ErroUsuario("Cada estádio marcado precisa de um ID novo (número) e de um nome.")
+        out.append(dict(origem=it["origem"], pasta=it["pasta"], novo_id=int(it["novo_id"]), nome=str(it["nome"]).strip()))
+    ids = [x["novo_id"] for x in out]
+    rep = sorted({x for x in ids if ids.count(x) > 1})
+    if rep:
+        raise base.ErroUsuario("IDs novos repetidos: " + ", ".join(map(str, rep)))
+    n = len(out)
+    cfg = {"itens": out, "receita": d.get("receita") or {}}
+    if d.get("modo") == "separados":
+        pasta = d.get("pasta_saida") or base.dialogo("pasta", "Pasta onde os projetos vão ser gravados (um para cada estádio)",
+                                                     PREFS.ler().get("pasta_saida") or RAIZ)
+        if not pasta:
+            return {"cancelado": True}
+        PREFS.atualizar(pasta_saida=pasta)
+        cfg.update(modo="separados", pasta_saida=pasta)
+    else:
+        pb = _projeto_base({"modo": d.get("projeto_modo"), "projeto_base": d.get("projeto_base")})
+        saida = _saida(d, f"Estadios_convertidos_{n}.fifaproject")
+        if not saida:
+            return {"cancelado": True}
+        cfg.update(modo="junto", saida=saida, projeto_base=pb)
+    return iniciar("lote", f"Convertendo {n} estádio{'s' if n > 1 else ''} em lote sobre o El Grandioso", ["lote"], cfg)
+
+
 def api_analisar16(d):
     pasta = d.get("pasta")
     if not pasta:
@@ -346,7 +398,7 @@ def arquivo_imagem(h, q):
 ROTAS_GET = {"inicio": api_inicio, "ambiente": api_ambiente, "estadios": api_estadios, "exec": api_exec, "resultados": api_resultados,
              "versao": lambda _: {"versao": VERSAO}}
 ROTAS_POST = {"preparar": api_preparar, "duplicar": api_duplicar, "converter": api_converter, "analisar16": api_analisar16,
-              "analisarpes": api_analisarpes, "luz16": api_luz16,
+              "analisarpes": api_analisarpes, "luz16": api_luz16, "procurar": api_procurar, "lote": api_lote,
               "parar": api_parar, "dialogo": api_dialogo, "ambiente_pasta": api_ambiente_pasta, "abrir": api_abrir}
 cg, cp = base.rotas_componentes(GRUPO)
 ROTAS_GET.update(cg)

@@ -28,6 +28,17 @@
 .lista-estadios .tabela td { padding: 5px 10px; }
 .lista-estadios tr.ja { opacity: .55; }
 .lista-estadios tr:hover td { background: var(--hover); }
+/* conversão em lote */
+.lista-lote { max-height: 480px; }
+.lista-lote td { vertical-align: middle; }
+.lista-lote td.id-lote input { width: 84px; }
+.lista-lote td.nome-lote input { width: 100%; min-width: 180px; }
+.lista-lote td.pasta-lote { max-width: 380px; }
+.lista-lote td.pasta-lote > div { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; }
+.lista-lote tr.desmarcado td { opacity: .5; }
+.lista-lote .problema { color: var(--erro, #e5484d); }
+.tabela-lote { max-height: 320px; overflow: auto; margin-top: 10px; }
+.tabela-lote td { padding: 4px 8px; vertical-align: top; }
 .nome-est b { font-weight: 600; }
 .nome-est small { display: block; color: var(--texto-3); font: 11px var(--mono); }
 td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }

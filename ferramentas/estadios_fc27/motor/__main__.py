@@ -6,6 +6,8 @@
   python -m motor duplicar <config.json>        duplica estádios (ver motor/duplicar.py)
   python -m motor converter <config.json>       converte um estádio do FIFA 16 (ver motor/fifa16/converter.py) ou, com
                                                 "pasta_pes" na configuração, do PES 2021 (ver motor/pes21/converter.py)
+  python -m motor procurar <pasta>              estádios do FIFA 16 e do PES 2021 dentro de uma pasta (JSON, ver motor/lote.py)
+  python -m motor lote <config.json>            converte vários estádios, um depois do outro (ver motor/lote.py)
   python -m motor analisar16 <pasta FIFA 16>    lê um estádio do FIFA 16 e sugere a receita da conversão
   python -m motor analisarpes <pasta PES 2021>  lê um estádio do PES 2021 e sugere a receita da conversão
   python -m motor luz16 <pasta FIFA 16>         estádios do FC 27 pela cobertura da torcida pela luz pré-calculada
@@ -72,6 +74,16 @@ def main(argv):
             base.gravar_json(Path(res['trabalho']) / 'resultado.json', res)
             if res['ok']:
                 base.log(f"Pasta de trabalho limpa: {base.limpar_trabalho(res['trabalho']) / 2**20:.0f} MB liberados (ficam os relatórios)")
+            base.resultado(res)
+            return 0
+        if cmd == 'procurar':
+            from . import lote
+            print(json.dumps(lote.procurar(args[0]), ensure_ascii=False))
+            return 0
+        if cmd == 'lote':
+            from . import lote
+            res = lote.lote(amb, base.ler_json(args[0]))
+            res['segundos'] = round(time.time() - t0)
             base.resultado(res)
             return 0
         if cmd == 'analisar16':

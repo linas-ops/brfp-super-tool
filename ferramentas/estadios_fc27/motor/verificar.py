@@ -5,12 +5,16 @@ bundles alcançáveis a partir do nível novo, imports EBX disponíveis em cada 
 shader e registros, shader state ids, name hashes, GUID do Enlighten, nomes do estádio de origem que sobraram,
 registro no mapa de estádios e nos loaders, banco. Para o projeto inteiro: SHA-1 dos payloads, a ordem das instâncias
 de todo EBX gravado (o FC 27 acha instâncias exportadas por busca binária: fora de ordem = referência nula = o jogo fecha)
-e os limites que os meshes do FC 27 respeitam.
+e os limites que os meshes do FC 27 respeitam. Com um projeto-base (estádios acrescentados a um projeto do usuário, ou o
+projeto parcial da conversão em lote): nada dele some nem muda, a não ser o que acrescentar um estádio precisa (o banco,
+o mapa de estádios e os loaders), e mesmo nesses o que já estava fica: todas as tabelas do banco iguais byte a byte,
+menos stadiums e audiostadium, que só ganham as linhas dos estádios novos; todas as entradas do mapa de estádios.
 """
 from __future__ import annotations
 import collections
 import hashlib
 import json
+import struct
 import uuid
 from pathlib import Path
 
@@ -38,19 +42,34 @@ def djb64l(s):
 
 
 class Leitura:
-    """Projeto gravado + dumps do SDK dos EBX adicionados/modificados e info dos RES adicionados."""
+    """Projeto gravado + dumps do SDK dos EBX adicionados/modificados e info dos RES adicionados. Com um projeto-base,
+    o que veio dele sem mudança fica fora dessas checagens (é conteúdo do usuário: conferir_projeto_base confere que ele
+    continua igual). Registros sem conteúdo próprio (só ligações, como o FET grava alguns) também ficam fora."""
 
-    def __init__(self, amb, saida, work):
+    def __init__(self, amb, saida, work, projeto_base=None):
         self.amb = amb
         self.p = P.Projeto(saida, amb.cas())
+        self.base = P.Projeto(projeto_base, amb.cas()) if projeto_base else None
         self.work = Path(work) / 'verificacao'
         self.work.mkdir(parents=True, exist_ok=True)
         self.c = amb.indice()
         pp = self.p.parsed
-        self.added_ebx = [e for e in pp['ebx'] if e['flags'] & 1]
-        self.mod_ebx = [e for e in pp['ebx'] if not e['flags'] & 1 and not e['flags'] & 32]
-        self.added_res = [e for e in pp['resources'] if e['flags'] & 1]
-        self.mod_res = [e for e in pp['resources'] if not e['flags'] & 1 and not e['flags'] & 32]
+        da_base = set()
+        if self.base is not None:
+            for kind, sec in P.KINDS.items():
+                for e in self.base.parsed[sec]:
+                    key = e['id'] if kind == 'chunk' else e['name']
+                    o = self.p.record(kind, key)
+                    if o is not None and o.get('sha1') == e.get('sha1'):
+                        da_base.add((kind, P.chave(kind, key)))
+        self.da_base = da_base
+
+        def nosso(kind, e):
+            return 'data_offset' in e and (kind, P.chave(kind, e['name'])) not in da_base
+        self.added_ebx = [e for e in pp['ebx'] if e['flags'] & 1 and nosso('ebx', e)]
+        self.mod_ebx = [e for e in pp['ebx'] if not e['flags'] & 1 and not e['flags'] & 32 and nosso('ebx', e)]
+        self.added_res = [e for e in pp['resources'] if e['flags'] & 1 and nosso('res', e)]
+        self.mod_res = [e for e in pp['resources'] if not e['flags'] & 1 and not e['flags'] & 32 and nosso('res', e)]
         jobs, files = [], {}
         for e in self.added_ebx + self.mod_ebx:
             k = sha256(e['name'].lower().encode())[:20]
@@ -285,7 +304,7 @@ def verificar_copia(L, nova, origem_token, errors, notes, sbd_native_keys=None, 
         if e['name'].endswith('_win32_shaderstateshaderstateassetid') and set(e.get('addedbundles', [])) & set(added):
             for h in e.get('addedbundles', []):
                 per_bundle[h] += 1
-            if e['flags'] & 1:
+            if e['flags'] & 1 and 'data_offset' in e:
                 raw = L.p.raw('res', e['name'])
                 path = e['name'][:-len('shaderstateassetid')]
                 if raw[:16] != hashlib.md5(path.lower().encode()).digest():
@@ -414,14 +433,122 @@ def limites_mesh(L, errors, notes, so_modificados=False):
     notes['maior_lod_mb'] = round(maior / 2**20, 2)
 
 
+def _tabelas(db):
+    """{nome curto da tabela: (início, fim)} no arquivo do banco."""
+    nt = struct.unpack_from('<I', db, 16)[0]
+    b0 = 0x18 + 8 * nt + 4
+    ent = [struct.unpack_from('<4sI', db, 0x18 + 8 * i) for i in range(nt)]
+    o = sorted(range(nt), key=lambda i: ent[i][1])
+    return {ent[i][0].decode('latin1'): (b0 + ent[i][1], b0 + ent[o[k + 1]][1] if k + 1 < nt else len(db)) for k, i in enumerate(o)}
+
+
+def _banco_preservado(L, B, ch_base, ch_novo, ids_novos, errors):
+    """O banco do projeto-base dentro do projeto novo: só stadiums e audiostadium mudam, e só com linhas novas."""
+    from . import t3db
+    cas = L.amb.cas()
+    antes, depois = cas.decompress(B.encoded(ch_base)), cas.decompress(L.p.encoded(ch_novo))
+    meta = L.amb.meta_db()
+    fa, fd = L.work / 'banco_base.db', L.work / 'banco_novo.db'
+    fa.write_bytes(antes)
+    fd.write_bytes(depois)
+    ta = {t.name: t for t in t3db.read_db(str(fa), str(meta))[1]}
+    td = {t.name: t for t in t3db.read_db(str(fd), str(meta))[1]}
+    sa, sd = _tabelas(antes), _tabelas(depois)
+    iguais, linhas = 0, {}
+    for nome, t in ta.items():
+        if nome not in td:
+            errors.append(f'projeto-base: a tabela {nome} do banco sumiu')
+            continue
+        if nome in ('stadiums', 'audiostadium'):
+            k = [f.name for f in t.fields].index('stadiumid')
+            novas = list(td[nome].rows)
+            perdidas = []
+            for r in t.rows:
+                try:
+                    novas.remove(r)
+                except ValueError:
+                    perdidas.append(r[k])
+            if perdidas:
+                errors.append(f'projeto-base: linhas de {nome} que sumiram ou mudaram: ' + ', '.join(perdidas[:10]))
+            alheias = [r[k] for r in novas if int(r[k]) not in ids_novos]
+            if alheias:
+                errors.append(f'projeto-base: {nome} ganhou linhas que não são dos estádios novos: ' + ', '.join(alheias[:10]))
+            linhas[nome] = [len(t.rows), len(td[nome].rows)]
+        elif antes[slice(*sa[t.sn])] != depois[slice(*sd[t.sn])]:
+            errors.append(f'projeto-base: a tabela {nome} do banco mudou')
+        else:
+            iguais += 1
+    for f in (fa, fd):
+        f.unlink()
+    return dict(tabelas_iguais=iguais, linhas_antes_depois=linhas)
+
+
+def conferir_projeto_base(L, projeto_base, ids_novos, errors, notes):
+    """Nada do projeto-base some ou muda, a não ser o banco, o mapa de estádios e os loaders, que só ganham os estádios
+    novos (veja a docstring do módulo)."""
+    from . import duplicar as D
+    B = L.base if L.base is not None else P.Projeto(projeto_base, L.amb.cas())
+    O = L.p
+    registro = {n.lower() for n in [D.SLM, D.SLM_L1] + D.LOADERS}
+    ch_base = B.chunk_db()
+    conferidos, mudados = 0, []
+    for kind, sec in P.KINDS.items():
+        for e in B.parsed[sec]:
+            key = e['id'] if kind == 'chunk' else e['name']
+            o = O.record(kind, key)
+            if o is None:
+                errors.append(f'projeto-base: {kind} {key} sumiu')
+                continue
+            conferidos += 1
+            if e.get('sha1') != o.get('sha1'):
+                if (kind == 'ebx' and key.lower() in registro) or (ch_base is not None and kind == 'chunk' and o is O.chunk_db()):
+                    mudados.append(key)
+                else:
+                    errors.append(f'projeto-base: {kind} {key} mudou')
+            if not set(e.get('addedbundles', [])) <= set(o.get('addedbundles', [])):
+                errors.append(f'projeto-base: {kind} {key} saiu de bundles em que estava')
+            ligacoes = {(x['type'], str(x['value'])) for x in o.get('links', [])}
+            if any((x['type'], str(x['value'])) not in ligacoes for x in e.get('links', [])):
+                errors.append(f'projeto-base: {kind} {key} perdeu ligações')
+    nomes = {b['name'].lower() for b in O.parsed['addedbundles']}
+    for b in B.parsed['addedbundles']:
+        if b['name'].lower() not in nomes:
+            errors.append('projeto-base: o bundle ' + b['name'] + ' sumiu')
+    if not set(B.parsed['shadersources']) <= set(O.parsed['shadersources']):
+        errors.append('projeto-base: chaves de shader do projeto sumiram')
+    # o mapa de estádios: as entradas que o projeto-base tinha continuam lá
+    slms = [n for n in (D.SLM, D.SLM_L1) if B.record('ebx', n) is not None and n.lower() in L.dumps]
+    if slms:
+        jobs = []
+        for n in slms:
+            f = L.work / ('base_' + sha256(n.lower().encode())[:20] + '.ebx')
+            f.write_bytes(B.raw('ebx', n))
+            jobs.append({'kind': 'dump', 'input': str(f), 'output': str(f.with_suffix('.json'))})
+        L.amb.run_sdk(jobs, L.work, 'dump_base')
+        for n, j in zip(slms, jobs):
+            antes = json.loads(Path(j['output']).read_text(encoding='utf8'))['instances'][0]['fields']['SublevelItems']
+            depois = {(i['KeyId'], i['SubWorldName'].lower()) for i in L.dumps[n.lower()]['instances'][0]['fields']['SublevelItems']}
+            faltam = [i['KeyId'] for i in antes if (i['KeyId'], i['SubWorldName'].lower()) not in depois]
+            if faltam:
+                errors.append(f'projeto-base: estádios que sumiram do {n.split("/")[-1]}: ' + ', '.join(map(str, faltam[:10])))
+    banco = None
+    if ch_base is not None:
+        ch_novo = O.chunk_db()
+        if ch_novo is None:
+            errors.append('projeto-base: o banco do projeto sumiu')
+        else:
+            banco = _banco_preservado(L, B, ch_base, ch_novo, set(ids_novos), errors)
+    notes['projeto_base'] = dict(registros=conferidos, mudaram=len(mudados), banco=banco or 'o projeto-base não mexe no banco')
+
+
 def verificar_projeto(amb, saida, work, projeto_base=None, copias=None, extra=None):
     base.etapa('verificar', 'Verificando o projeto gravado')
     errors, notes = [], collections.Counter()
-    L = Leitura(amb, saida, work)
+    L = Leitura(amb, saida, work, projeto_base)
     pp = L.p.parsed
     for kind in ('ebx', 'resources', 'chunks'):
         for e in pp[kind]:
-            if hashlib.sha1(L.p.encoded(e)).hexdigest() != e['sha1']:
+            if 'data_offset' in e and hashlib.sha1(L.p.encoded(e)).hexdigest() != e['sha1']:
                 errors.append('sha1 do payload ' + str(e.get('name') or e.get('id')))
     base.progresso(30, 'ordem das instâncias dos EBX')
     ordem_ebx(L, errors, notes)
@@ -430,6 +557,9 @@ def verificar_projeto(amb, saida, work, projeto_base=None, copias=None, extra=No
     base.progresso(70, 'estádios novos')
     for cp in copias or []:
         verificar_copia(L, cp['token_novo'], cp['token_origem'], errors, notes, cp.get('chaves_nativas'), cp.get('hashes_variacao_antigos', ()))
+    if projeto_base:
+        base.progresso(90, 'projeto-base')
+        conferir_projeto_base(L, projeto_base, [int(cp['token_novo'].rsplit('_', 1)[1]) for cp in copias or []], errors, notes)
     if extra:
         extra(L, errors, notes)
     res = dict(ok=not errors, erros=errors[:200], total_erros=len(errors), notas=dict(notes),

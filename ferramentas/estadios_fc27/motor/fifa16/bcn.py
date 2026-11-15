@@ -140,5 +140,27 @@ def encode(img, fmt):
     return np.concatenate([_encode_alpha(px), _encode_colour(px)], 1).tobytes()
 
 
+def encode_bc5(x, y):
+    """BC5 (um bloco BC4 do vermelho e um do verde) de dois canais (h, w) 0..255: os mapas normal do FC 27."""
+    img = np.zeros(np.shape(x) + (4,), np.float32)
+    img[..., 3] = x
+    r = _encode_alpha(_to_blocks(img))
+    img[..., 3] = y
+    g = _encode_alpha(_to_blocks(img))
+    return np.concatenate([r, g], 1).tobytes()
+
+
+def decode_bc5(data, w, h):
+    """BC5 -> (h, w, 2) float32 0..255 (vermelho, verde)."""
+    n = max(1, (w + 3) // 4) * max(1, (h + 3) // 4)
+    if len(data) < n * 16:
+        raise ValueError(f'BC5 {w}x{h} needs {n * 16} bytes, got {len(data)}')
+    blk = np.frombuffer(data[:n * 16], np.uint8).reshape(n, 16)
+    px = np.zeros((n, 16, 4), np.float32)
+    px[:, :, 0] = decode_bc3_alpha(blk[:, :8])
+    px[:, :, 1] = decode_bc3_alpha(blk[:, 8:])
+    return _blocks_to_image(px, w, h)[..., :2]
+
+
 def mip_size(w, h, fmt):
     return max(1, (w + 3) // 4) * max(1, (h + 3) // 4) * (8 if fmt == 'BC1' else 16)

@@ -1,10 +1,12 @@
 # Estádios FC 27
 
-Duas ferramentas numa só, no lugar do antigo Conversor PES → FC:
+No lugar do antigo Conversor PES → FC:
 
 - **Duplicar estádio**: estádios do FC 27 com ID, nome e identidade próprios, quantos e quantas vezes quiser.
 - **Converter FIFA 16 / PES 2021 → FC 27**: um estádio do FIFA 16 ou do PES 2021 vira um estádio novo do FC 27, **sempre
   sobre o El Grandioso (181)**. A aba é a mesma; o jogo de origem é escolhido no alto dela.
+- **Converter em lote** (desde a 2.1): vários estádios do FIFA 16 e do PES 2021 de uma vez, achados nas subpastas de uma
+  pasta, num projeto só ou num para cada.
 
 O resultado é sempre um **projeto do FET** (`.fifaproject`) novo: a ferramenta nunca sobrescreve um projeto. Depois de
 gravado, o projeto é lido de volta e conferido.
@@ -36,7 +38,12 @@ que o cache mudou.
 1. Escolha onde as cópias vão:
    - **Projeto novo (do zero)**;
    - **Adicionar a um projeto existente**, um projeto seu do FET. Nesse caso, o banco, o mapa de estádios e os loaders
-     partem da versão que está no projeto, e um asset nativo que o projeto já editou fica com a sua edição.
+     partem da versão que está no projeto, e um asset nativo que o projeto já editou fica com a sua edição. Nada do seu
+     projeto se perde: no banco, só as tabelas `stadiums` e `audiostadium` mudam, e só ganham as linhas dos estádios
+     novos. Desde a 2.1, a verificação confere isso no projeto gravado: todo registro do projeto-base continua lá, igual
+     (a não ser o banco, o mapa de estádios e os loaders, que só ganham os estádios novos), todas as outras tabelas do
+     banco iguais byte a byte, todas as linhas de estádio que já existiam e todas as entradas do mapa de estádios. O
+     arquivo do seu projeto nunca é alterado: o resultado é sempre um arquivo novo.
 2. Na lista de estádios do jogo, clique em **Adicionar** nos que quiser e escolha **quantas cópias** de cada um.
 3. Cada cópia ganha um ID livre (a partir do primeiro ID que você escolher) e o nome `<nome> (Cópia)`. Os dois são
    editáveis; o nome vai para o banco, com até 63 bytes.
@@ -136,7 +143,7 @@ Blender nem outro programa:
 |---|---|
 | `Asset\model\bg\st<NNN>\#Win\st<NNN>.fpk` e `.fpkd` | os modelos do estádio (`.fmdl`) e o lugar de cada um na cena |
 | `…\tv\#Win\tv_st<NNN>.fpk` | as telas, que viram o telão ao vivo do FC 27 |
-| `…\sourceimages\tga\#windx11\*.ftex` | as texturas (BC1/BC3 com os mips do PES byte a byte) |
+| `…\sourceimages\tga\#windx11\*.ftex` | as texturas (BC1/BC3 com os mips do PES byte a byte) e os mapas normal, especular e de metal de cada material |
 | `…\audi\#Win\audiarea_st<NNN>.fpk` | as áreas da torcida |
 | `…\audi\sourceimages\au_seat.png` | a cor de cada cadeira da torcida |
 | `…\effect\#Win\effect_st<NNN>_df.fpk` e `_nf.fpk` | as lâmpadas dos glares, de dia e de noite |
@@ -182,7 +189,64 @@ O que é diferente do FIFA 16:
 - **Personagens laterais**: o PES não tem marcadores no modelo. Os outros partem das posições do El Grandioso e são
   conferidos contra a geometria do estádio novo (opção "Ajustar ao estádio").
 - **Texturas** em formato que não seja BC1, BC3 ou 32 bits sem compressão (BC7, por exemplo) entram como um painel cinza,
-  e o resultado avisa quais são.
+  e o resultado avisa quais são. O mesmo vale para as poucas texturas de mods com os mips num arquivo `.ftexs` à parte
+  (33 das 44.893 dos estádios testados). Muitos mods guardam os mips pequenos sem compressão e sem a marca disso; desde a
+  2.1 eles abrem (antes a conversão da Arena Barueri, por exemplo, parava com erro de descompressão).
+- **Relevo e acabamento dos materiais** (desde a 2.1): cada material do FC 27 usa três texturas, a de cor, a normal (o
+  relevo) e a de coeficientes (vermelho = reflexo, verde = lisura, azul = metal). Até a 2.0 só a de cor vinha do PES, e
+  os materiais ficavam com o normal plano e os coeficientes padrão do El Grandioso: o estádio parecia limpo demais no
+  jogo. Agora:
+  - o mapa normal do PES (`_nrm`) vira o normal do FC 27 (BC5, até 512 px). As do jogo guardam o X no alfa e o verde
+    para cima; muitas de mods guardam XYZ no RGB e o verde para baixo, como o FC 27. A ferramenta reconhece o tipo e
+    confere o sentido do verde de cada mapa pelo próprio relevo (teste de integrabilidade); mapas planos ficam com o
+    normal do El Grandioso;
+  - o especular (`_srm`/`_rgm`: rugosidade no verde) e o de metal (`_mtl`) viram os coeficientes do FC 27 (BC1, até
+    512 px; os sem variação viram texturas de 16 px): lisura = 255 − rugosidade, metal do mapa de metal;
+  - os quadros tangentes da geometria seguem o sentido dos meshes nativos do FC 27, que é o que os mapas normal pedem.
+
+  No Camp Nou, 31 dos 41 materiais ganham relevo e 39 ganham coeficientes do PES; o projeto passa de 170 para 183 MB.
+- **Banners dos times** (desde a 2.1): o PES não marca onde eles ficam; por padrão eles vão sozinhos para as frentes dos
+  anéis da torcida (veja "Banners dos times").
+
+## Converter em lote
+
+A aba **Converter em lote** (desde a 2.1) converte vários estádios de uma vez, um depois do outro, pelo mesmo caminho da
+conversão de um estádio só e com a receita sugerida pela análise de cada um (ou a guardada, como a do Morumbi do FIFA 16).
+
+1. Escolha uma pasta. A ferramenta procura nas subpastas os estádios do FIFA 16 (`data\sceneassets\stadium\
+   stadium_<id>.rx3`) e do PES 2021 (`Asset\model\bg\st<número>\#Win\st<número>.fpk`); um pacote como o Brasil MEGA
+   Stadium Pack (mais de 90 estádios) entra inteiro. O nome sugerido é o da pasta do estádio, sem o prefixo de país
+   ("BRA - "). Arquivos compactados (.rar, .zip, .7z) ficam de fora e são avisados: extraia antes. Um estádio dentro da
+   pasta de outro (como o complemento de exterior do Camp Nou) vem desmarcado.
+2. Marque os estádios e ajuste o ID novo e o nome de cada um. Os IDs livres vão em sequência a partir do primeiro ID (os
+   do jogo e os que a ferramenta já criou ficam de fora). O resumo avisa ID repetido ou que já existe no jogo e estima o
+   tempo (~7 min por estádio) e o tamanho do projeto (~180 MB por estádio).
+3. Escolha o projeto:
+   - **Todos num projeto só** (recomendado): cada estádio entra no projeto dos anteriores, como em "Adicionar a um
+     projeto existente"; o primeiro parte do zero ou do seu projeto do FET. É o jeito de jogar com vários estádios
+     convertidos, porque no FET só um projeto de estádio fica ativo por vez.
+   - **Um projeto para cada estádio**, numa pasta (`Estadio_<ID>_<nome>.fifaproject`).
+4. As opções valem para todos: rede do gol, banners dos times (PES), luzes da torcida, personagens laterais e reservas.
+   Para mexer nas peças de um estádio, converta-o sozinho na aba Converter.
+
+Um estádio que dá erro, ou cujo projeto não passa na verificação, fica de fora (a etapa dele fica marcada com erro), e
+os outros seguem; o resultado lista cada um, com o tempo e o erro. Cada estádio aparece também em Projetos gerados. Tudo
+o que a conversão cria leva o ID novo no nome (pastas, GUIDs, chaves de shader), então estádios com o mesmo número no PES
+(muitos do pacote são st009) não colidem no mesmo projeto. Cada estádio é verificado contra o projeto dos anteriores (ou
+contra o seu projeto, no primeiro): nada do que já estava some ou muda (veja "Adicionar a um projeto existente", em
+Duplicar estádio).
+
+Testado com o Allianz Parque do FIFA 16 e a Arena Barueri e o Anacleto Campanella do Brasil MEGA Stadium Pack (os dois
+st009) num projeto novo, e com a Arena Barueri e a Neo Química Arena do FIFA 16 sobre um projeto do BRFP 27 com o banco
+editado: 473 registros do projeto e 266 tabelas do banco iguais, `stadiums` de 181 para 183 linhas. Cerca de 6 a 7 min
+por estádio. **Precisa de teste em partida.**
+
+## Rede do gol
+
+O El Grandioso usa a rede funda (tipo 1, com 3,20 m de fundo: o "véu de noiva"), que no FC 27 só ele e mais quatro
+estádios têm; a maioria usa a quadrada (tipo 0, com 2,29 m). Até a 2.0, todo estádio convertido herdava a do El
+Grandioso. Desde a 2.1, a conversão grava a quadrada na linha do estádio novo no banco (`stadiums.stadiumgoalnettype` e
+`stadiumgloalnetdepth`, com a grafia do próprio jogo); a opção **Rede do gol** volta à do El Grandioso.
 
 ## Personagens laterais
 
@@ -231,8 +295,24 @@ delas entram banners do FC 27:
 - as variantes de cada formato se alternam; o limite é de 250 banners (o El Monumental tem 543).
 
 A análise já marca como Banner dos times as peças que o FIFA 16 deixava vazias para os banners dele. As faixas com
-textura própria precisam ser marcadas na lista de peças. Sem nenhuma peça marcada, o estádio fica sem banners dos times.
-**Precisa de teste em partida.**
+textura própria precisam ser marcadas na lista de peças. Sem nenhuma peça marcada, um estádio do FIFA 16 fica sem
+banners dos times.
+
+### Banners automáticos (PES 2021, desde a 2.1)
+
+O PES não marca onde ficam os banners dos times. Com a opção **Banners dos times: nas frentes dos anéis da torcida**
+(padrão) e nenhuma peça marcada, a ferramenta os põe como o El Grandioso põe os dele (na mureta da frente do anel de
+baixo, a uns 2 m do chão, e na frente dos anéis de cima):
+- procura faces quase verticais viradas para o campo, fora dele, com lugares da torcida logo atrás e acima e nenhum lugar
+  na frente (o que descarta os espelhos dos degraus, as costas de cadeiras e as paredes do fundo dos anéis);
+- a parte abaixo de 1,2 m não conta (as placas de publicidade do FC 27 ficam na frente), nem o meio do lado dos bancos
+  (túnel e bancos); muretas com menos de 1 m de altura ficam sem banners;
+- cada mureta recebe uma fileira de banners de ~2 m de altura (ou a da mureta, se for menor), com 3 m entre eles,
+  alternando os formatos; as mais baixas primeiro, até 160 banners.
+
+No Camp Nou, eles ficam na frente do anel do meio (o primeiro anel tem só 0,9 m de mureta); no Maracanã, na frente do anel
+de cima, nas laterais (atrás dos gols não há mureta vertical). Peças marcadas como Banner dos times têm prioridade: com
+elas, vale o caminho do FIFA 16. **Precisa de teste em partida.**
 
 ## Luz da torcida à noite
 
@@ -261,7 +341,8 @@ a esse pré-cálculo, por isso não é refeito. **Precisa de teste em partida.**
 A aba **Projetos gerados** lista os últimos trabalhos.
 
 - **Ative no FET um projeto de estádio por vez.** Todos mexem no mapa de estádios, nos loaders e no banco. Para usar
-  vários estádios juntos, gere as cópias num projeto só, ou acrescente cada uma ao mesmo projeto.
+  vários estádios juntos, gere as cópias num projeto só, acrescente cada uma ao mesmo projeto ou use a conversão em lote
+  com "Todos num projeto só".
 - Se o jogo fechar ao iniciar a partida, o FC 27 grava um dump em `%LOCALAPPDATA%\EA SPORTS FC 27\CrashDumps`.
 
 ## Pastas
@@ -269,15 +350,18 @@ A aba **Projetos gerados** lista os últimos trabalhos.
 ```
 estadios_fc27\
   servidor.py      servidor local da interface (porta 8782); o trabalho roda no motor, num processo à parte
-  web\             interface (Duplicar, Converter, Projetos gerados, Ambiente)
-  motor\           python -m motor ambiente | preparar | estadios | duplicar | converter | analisar16 | analisarpes | luz16
+  web\             interface (Duplicar, Converter, Converter em lote, Projetos gerados, Ambiente)
+  motor\           python -m motor ambiente | preparar | estadios | duplicar | converter | procurar | lote | analisar16 |
+                   analisarpes | luz16
     ambiente.py    FET, jogo, .NET 8, preparação do SDK e índice do cache
     duplicar.py    duplicação (uma ou várias cópias, do zero ou num projeto)
     verificar.py   verificação do projeto gravado
+    lote.py        conversão em lote (procura dos estádios numa pasta e conversão em sequência)
     projeto.py     plano e gravação do projeto (codec FETP v4 da skill fet-projects, em motor\fet)
     fifa16\        análise, preparação, conversão, banners, bancos, luzes da torcida, leitor RX3 e codificador BC1/BC3
     fifa16\receitas\  receitas guardadas (morumbi_183.json = a conversão testada em partida)
-    pes21\         PES 2021: leitores FPK, FMDL, FTEX e FOX2, áreas da torcida, lâmpadas, análise, preparação e conversão
+    pes21\         PES 2021: leitores FPK, FMDL, FTEX e FOX2, áreas da torcida, lâmpadas, mapas normal e de coeficientes,
+                   banners automáticos, análise, preparação e conversão
                    (a conversão herda a do FIFA 16)
     csharp\        fontes dos jobs do SDK (StadiumTool, ConvertTool), do PrepararSdk e do Compat
     bin\           os mesmos compilados (só código da ferramenta + Mono.Cecil, licença MIT)

@@ -11,7 +11,10 @@ onde vêm os dados (motor/pes21/preparar.py grava a mesma pasta de preparação)
 - as lâmpadas dos glares vêm dos brilhos do PES (effect_st<NNN>_df de dia, _nf de noite);
 - o PES não tem marcadores de personagens laterais: todos partem das posições do El Grandioso e são conferidos contra a
   geometria do estádio novo; os reservas, os técnicos, os auxiliares e as áreas técnicas do banco de dados vão para o banco
-  do estádio novo (motor/pes21/banco.py).
+  do estádio novo (motor/pes21/banco.py);
+- os materiais levam os mapas normal e de coeficientes tirados dos do PES (motor/pes21/mapas.py), em vez do normal plano
+  e dos coeficientes padrão dos modelos do El Grandioso;
+- os banners dos times vão para as frentes dos anéis da torcida achadas na geometria (motor/pes21/faixas.py).
 Os estádios do PES 2021 são mais pesados que os do FIFA 16: se os materiais não couberem nos meshes do El Grandioso com
 peças grandes, a preparação é refeita com peças menores (mais subsets, a mesma geometria).
 """
@@ -101,6 +104,19 @@ class ConversaoPes(C16.Conversao):
 
     def campos_do_banco(self):
         return dict(self._zonas)
+
+    def banners_automaticos(self):
+        """O PES não marca onde ficam os banners dos times: eles vão para as frentes dos anéis da torcida achadas na
+        geometria (motor/pes21/faixas.py), a não ser que a receita peça "banners": "nenhum". Peças marcadas com o papel
+        "banner" na lista de peças têm prioridade (o caminho do FIFA 16)."""
+        if (self.rc.get('banners') or 'automaticos') == 'nenhum':
+            return None
+        from . import faixas
+        arq = self.prep / 'torcida.bin'
+        lug = np.frombuffer(arq.read_bytes(), LUGAR) if arq.is_file() else np.zeros(0, LUGAR)
+        if not len(lug):
+            return [], 0, 'sem áreas de torcida'
+        return faixas.planejar(self.prep, lug['pos'].astype(np.float64))
 
     def stage_crowd(self):
         arq = self.prep / 'torcida.bin'

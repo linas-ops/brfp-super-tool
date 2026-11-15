@@ -10,9 +10,11 @@ funcionou em partida em 31/10/2026:
   (grades diffuseopaque, poste diffusealpha);
 - por material: um MeshMaterial (o preset nativo do modelo), uma MeshMaterialVariation no MeshVariationDb principal e
   uma entrada no depósito de shaders (bloco do modelo, textura de cor remapeada) registrada contra a chave do modelo;
-- texturas novas (EBX + RES + chunk) das cadeias de mips do FIFA 16;
+- texturas novas (EBX + RES + chunk) das cadeias de mips do FIFA 16; quando a preparação traz mapas normal e de
+  coeficientes por material (a do PES 2021), eles entram no lugar do normal plano e dos coeficientes padrão do modelo;
 - o telão com as telas do FIFA 16, o gramado do FC 27 recortado até o piso do estádio (sem a pista de atletismo do El
   Grandioso), a arquitetura do El Grandioso escondida, a torcida, os glares e os personagens laterais do estádio novo;
+- a rede do gol quadrada da maioria dos estádios do FC 27 no lugar da rede funda do El Grandioso (receita "rede_gol");
 - os banners dos times do FC 27 no lugar das faixas do FIFA 16 (peças com o papel "banner", motor/fifa16/banners.py), os
   reservas nas cadeiras do banco (motor/fifa16/bancos.py) e as luzes da torcida acompanhando a torcida nova
   (motor/fifa16/iluminacao.py).
@@ -46,6 +48,10 @@ HOST_MAX_SUBSETS = 40           # os meshes do FC 27 têm no máximo 70
 STRIDE = {'opaque': 36, 'alphatest': 40}
 CATEGORIES = {'opaque': [0, 3, 4], 'alphatest': [0, 3, 4], 'jumbotron': [0, 3, 4]}
 RECEITAS = Path(__file__).resolve().parent / 'receitas'
+# Rede do gol (tabela stadiums): o El Grandioso usa a rede funda, tipo 1 com 3,20 m (o "véu de noiva"), que só ele e mais
+# quatro estádios genéricos do FC 27 têm; os outros usam o tipo 0 com 2,29 m (a rede quadrada). O campo do banco se chama
+# mesmo "stadiumgloalnetdepth".
+REDE_QUADRADA = {'stadiumgoalnettype': 0, 'stadiumgloalnetdepth': 229}
 
 
 def receita_pronta(sid):
@@ -82,7 +88,10 @@ class Conversao:
         self.SCORE_MESH = self.G + 'scoreclock_mesh'
         self.MVDB = self.S + f'{self.tok}/meshvariationdb_win32'
         self.TEX_TEMPLATE = {'BC1': self.S + 'copias/worlds/textures/legacy/concrete/architecture/concrete_arch_bottomwalkway1_b_color',
-                             'BC3': self.S + 'copias/worlds/textures/legacy/misc/gird_b_color'}
+                             'BC3': self.S + 'copias/worlds/textures/legacy/misc/gird_b_color',
+                             # mapas normal (BC5) e de coeficientes (BC1 linear), quando a preparação traz (PES 2021)
+                             'normal': self.S + 'copias/worlds/textures/legacy/concrete/wall/concrete_wall_001_normal',
+                             'coeficientes': self.S + 'copias/worlds/textures/legacy/concrete/wall/concrete_wall_001_coeff'}
         self.TEMPLATE_SUBSET = {'opaque': (self.RAIL_MESH, 6), 'alphatest': (self.POLE_MESH, 0)}
         self.p = base_proj
         self.dup = dup
@@ -208,7 +217,8 @@ class Conversao:
                 falha('material do modelo não é MeshMaterial: ' + role)
             self.tmpl[role] = dict(mesh=mesh, subset=idx, key=key, native_key=alias_to_native[key], res=str(res_path),
                                    meta=p.record('res', mesh)['resmeta'], material=sub['material'], material_index=sub['material_index'],
-                                   variation_index=var_index, mvdb_material=mat, colour=tex.get('colorTexture'), meshmaterial=mm['fields'])
+                                   variation_index=var_index, mvdb_material=mat, colour=tex.get('colorTexture'), meshmaterial=mm['fields'],
+                                   normal=tex.get('normalTexture'), coeff=tex.get('coefficientTexture'))
             if tex.get('colorTexture') is None or not tex['colorTexture'].startswith('ptr:ext:'):
                 falha('modelo sem colorTexture externa: ' + role)
         self.report['modelos'] = {r: {k: v for k, v in t.items() if k in ('mesh', 'subset', 'key', 'native_key', 'material', 'colour')}
@@ -231,10 +241,11 @@ class Conversao:
         self.mats = []
         for name, pieces in by.items():
             role, tex = pieces[0]['role'], pieces[0]['texture']
-            if any(x['role'] != role or x['texture'] != tex for x in pieces):
+            mapas = (pieces[0].get('normal'), pieces[0].get('coeff'))
+            if any(x['role'] != role or x['texture'] != tex or (x.get('normal'), x.get('coeff')) != mapas for x in pieces):
                 falha('peças de um material com papéis/texturas diferentes: ' + name)
             size = sum(x['vertices'] * STRIDE[role] + x['triangles'] * 6 for x in pieces)
-            self.mats.append(dict(name=name, role=role, texture=tex, pieces=pieces, bytes=size))
+            self.mats.append(dict(name=name, role=role, texture=tex, pieces=pieces, bytes=size, normal=mapas[0], coeff=mapas[1]))
         self.assign_hosts()
         h = self.hashes(names)
         used_rids = {e['resrid'] for e in self.c['res']} | {e['resrid'] for e in self.p.parsed['resources'] if 'resrid' in e}
@@ -349,19 +360,30 @@ class Conversao:
         return [m for m in self.mats if m['host'] == host]
 
     # ------------------------------------------------------------ texturas
+    @staticmethod
+    def tex_kind(t):
+        """Modelo de uma textura preparada: 'BC1'/'BC3' (cor), 'normal' ou 'coeficientes'."""
+        return t['uso'] if t.get('uso') in ('normal', 'coeficientes') else t['format']
+
     def build_textures(self):
         jobs, ebx_jobs = [], []
-        tmpl_ebx = {f: self.base_raw('ebx', n)[0] for f, n in self.TEX_TEMPLATE.items()}
-        tmpl_res = {f: self.base_raw('res', n)[0] for f, n in self.TEX_TEMPLATE.items()}
-        self.tex_res_meta = {f: self.p.record('res', n)['resmeta'] for f, n in self.TEX_TEMPLATE.items()}
+        usados = {self.tex_kind(t) for t in self.tex.values()} | {'BC1', 'BC3'}
+        tmpl = {f: n for f, n in self.TEX_TEMPLATE.items() if f in usados}
+        tmpl_ebx = {f: self.base_raw('ebx', n)[0] for f, n in tmpl.items()}
+        tmpl_res = {f: self.base_raw('res', n)[0] for f, n in tmpl.items()}
+        self.tex_res_meta = {f: self.p.record('res', n)['resmeta'] for f, n in tmpl.items()}
         alpha_tex = {m['texture'] for m in self.mats if m['role'] == 'alphatest'}
         for key, t in self.tex.items():
             o = self.work / 'out' / ('tex_' + key)
-            jobs.append(dict(kind='texture_build', input=key, template=str(tmpl_res[t['format']]), data=str(self.prep / 'textures' / (key + '.bin')),
-                             sha256=t['sha256'], format=t['format'], width=t['width'], height=t['height'], mips=t['mips'],
-                             mip_sizes=t['mip_sizes'], name=t['name'], chunk=t['chunk'], alpha=key in alpha_tex,
-                             output_res=str(o) + '.res', output_chunk=str(o) + '.chunk'))
-            ebx_jobs.append(dict(kind='ebx_ops', input=str(tmpl_ebx[t['format']]), output=str(o) + '.ebx', expect_new_name=t['name'], ops=[
+            k = self.tex_kind(t)
+            job = dict(kind='texture_build', input=key, template=str(tmpl_res[k]), data=str(self.prep / 'textures' / (key + '.bin')),
+                       sha256=t['sha256'], format=t['format'], width=t['width'], height=t['height'], mips=t['mips'],
+                       mip_sizes=t['mip_sizes'], name=t['name'], chunk=t['chunk'], alpha=key in alpha_tex,
+                       output_res=str(o) + '.res', output_chunk=str(o) + '.chunk')
+            if t['format'] == 'BC5':
+                job.update(format='RAW', bits_per_pixel=8)  # o formato do modelo (BC5_UNORM), com os tamanhos de mip da cadeia
+            jobs.append(job)
+            ebx_jobs.append(dict(kind='ebx_ops', input=str(tmpl_ebx[k]), output=str(o) + '.ebx', expect_new_name=t['name'], ops=[
                 dict(op='partition', guid=t['partition']), dict(op='primary_guid', guid=t['primary']),
                 dict(op='set', target={'primary': True}, path='Name', value=t['name']),
                 dict(op='set', target={'primary': True}, path='Resource', value={'res': str(t['rid'])}),
@@ -371,7 +393,7 @@ class Conversao:
         rows = self.run(jobs, 'textures')['rows']
         for r in rows:
             t = self.tex[r['input']]
-            t['res'], t['res_meta'] = Path(r['output_res']).read_bytes(), self.tex_res_meta[t['format']]
+            t['res'], t['res_meta'] = Path(r['output_res']).read_bytes(), self.tex_res_meta[self.tex_kind(t)]
             t['cas'] = Path(r['output_chunk']).read_bytes()
             t['chunk_rec'] = dict(logical_offset=r['logical_offset'], logical_size=r['logical_size'], original_size=r['original_size'],
                                   pixel_format=r['pixel_format'], compressed_offsets=r['compressed_offsets'], mip_base=r['mip_base'])
@@ -441,6 +463,14 @@ class Conversao:
                 tex = self.tex[m['texture']]
                 ops.append(dict(op='clone', source={'index': t['variation_index']}, tag=f'v{k}', exported=False))
                 ops.append(dict(op='set', target={'tag': f'v{k}'}, path=f'Shader.TextureParameters[{ci}].Value', value={'ext': [tex['partition'], tex['primary']]}))
+                for campo, chave in (('normalTexture', 'normal'), ('coefficientTexture', 'coeff')):
+                    if m.get(chave):
+                        ni = [i for i, x in enumerate(var['Shader']['TextureParameters']) if x['ParameterName'] == campo]
+                        if len(ni) != 1:
+                            falha(f'modelo {m["role"]} sem {campo}')
+                        mt = self.tex[m[chave]]
+                        ops.append(dict(op='set', target={'tag': f'v{k}'}, path=f'Shader.TextureParameters[{ni[0]}].Value',
+                                        value={'ext': [mt['partition'], mt['primary']]}))
                 mm = t['mvdb_material']
                 items.append({'fields': {'Material': {'ext': [H['rec']['partition'], m['meshmaterial']]}, 'MaterialVariation': {'int': {'tag': f'v{k}'}},
                                          'SurfaceShaderGuid': mm['SurfaceShaderGuid'], 'SurfaceShaderId': str(int(mm['SurfaceShaderId']))}})
@@ -460,8 +490,15 @@ class Conversao:
             t = self.tmpl[m['role']]
             part, inst = t['colour'].split(':')[2].split('/')
             tex = self.tex[m['texture']]
-            entries.append(dict(template_key=str(t['key']), new_key=str(m['key']),
-                                remap=[dict(old_instance=inst, new_instance=tex['primary'], old_partition=part, new_partition=tex['partition'])]))
+            remap = [dict(old_instance=inst, new_instance=tex['primary'], old_partition=part, new_partition=tex['partition'])]
+            for chave in ('normal', 'coeff'):
+                if m.get(chave):
+                    if not (t.get(chave) or '').startswith('ptr:ext:'):
+                        falha(f'modelo {m["role"]} sem textura {chave} externa')
+                    op, oi = t[chave].split(':')[2].split('/')
+                    mt = self.tex[m[chave]]
+                    remap.append(dict(old_instance=oi, new_instance=mt['primary'], old_partition=op, new_partition=mt['partition']))
+            entries.append(dict(template_key=str(t['key']), new_key=str(m['key']), remap=remap))
         r = self.run([dict(kind='sbd_extend', input=str(f), meta=rec['resmeta'], output=str(self.work / 'out' / 'main_depot.res'),
                            entries=entries)], 'depot')['rows'][0]
         self.depot = dict(raw=Path(r['output']).read_bytes(), meta=r['meta'],
@@ -643,12 +680,19 @@ class Conversao:
         from . import banners as bn
         arq = self.prep / 'banners.json'
         pecas = json.loads(arq.read_text(encoding='utf8'))['pecas'] if arq.is_file() else []
+        auto = None
         if not pecas:
-            self.report['banners'] = 'nenhuma peça com o papel "banner": o estádio fica sem os banners dos times'
-            return [], []
-        tri = np.concatenate([np.array(p['triangulos'], np.float64).reshape(-1, 3, 3) for p in pecas])
-        sups = bn.superficies(tri)
-        col, fora = bn.colocacoes(sups)
+            auto = self.banners_automaticos()
+            if not auto or not auto[0]:
+                self.report['banners'] = 'nenhuma peça com o papel "banner": o estádio fica sem os banners dos times'
+                if auto:
+                    self.report['banners'] += f' (nenhuma mureta achada na frente da torcida: {auto[2]})'
+                return [], []
+            col, fora, info = auto
+        else:
+            tri = np.concatenate([np.array(p['triangulos'], np.float64).reshape(-1, 3, 3) for p in pecas])
+            sups = bn.superficies(tri)
+            col, fora = bn.colocacoes(sups)
         # um objeto do El Grandioso por blueprint, por formato (as variantes se alternam)
         modelos = collections.defaultdict(dict)
         for i in objs:
@@ -667,11 +711,20 @@ class Conversao:
             for eixo in ('right', 'up', 'forward', 'trans'):
                 ops.append(dict(op='set', target={'tag': tag}, path=f'BlueprintTransform.{eixo}', value={'vec3': [float(x) for x in c[eixo]]}))
             tags.append(tag)
+        if auto:
+            self.report['banners'] = dict(automaticos=True, banners=len(col), fora_do_limite=fora, formatos=dict(usados), **info)
+            base.aviso(f'banners dos times: {len(col)} nas frentes dos anéis da torcida (posições achadas na geometria do {self.JOGO})')
+            return ops, tags
         self.report['banners'] = dict(pecas=[p['prim'] for p in pecas], superficies=len(sups), banners=len(col), fora_do_limite=fora,
                                       formatos=dict(usados))
         base.aviso(f"banners dos times: {len(col)} nas faixas do {self.JOGO} (peças {', '.join(str(p['prim']) for p in pecas)})"
                    + (f'; {fora} superfícies menores ficaram de fora (limite de {bn.MAXIMO})' if fora else ''))
         return ops, tags
+
+    def banners_automaticos(self):
+        """Banners sem peças marcadas: (colocações, quantos ficaram de fora, resumo) ou None. O FIFA 16 marca as faixas no
+        modelo; a conversão do PES 2021 acha as muretas sozinha (motor/pes21/faixas.py)."""
+        return None
 
     def stage_host_blueprint(self):
         for h, H in self.hosts.items():
@@ -1195,8 +1248,16 @@ class Conversao:
         """Outros campos inteiros da linha do estádio no banco (stadiums) que a conversão muda: nenhum no FIFA 16."""
         return {}
 
+    def campos_do_gol(self):
+        """Rede do gol na linha do estádio: a quadrada (padrão) ou a funda do El Grandioso (receita "rede_gol": "veu")."""
+        modo = self.rc.get('rede_gol') or 'quadrada'
+        if modo not in ('quadrada', 'veu'):
+            falha('rede_gol desconhecida: ' + str(modo))
+        return dict(REDE_QUADRADA) if modo == 'quadrada' else {}
+
     def stage_db(self):
-        """O estádio novo recebe o nome no banco (stadiums.name, texto UTF-8 de tamanho fixo); mais nada muda."""
+        """O estádio novo recebe o nome no banco (stadiums.name, texto UTF-8 de tamanho fixo), a rede do gol e os campos de
+        campos_do_banco(); mais nada muda."""
         nome = self.cfg['nome']
         ch = self.p.chunk_db()
         db = self.p.raw('chunk', ch['id'])
@@ -1238,7 +1299,7 @@ class Conversao:
         k = ids.index(self.N)
         o, n = namef.bitoff // 8, namef.depth // 8
         old = rows[k][o:o + n].split(b'\0')[0].decode('utf8')
-        extras = self.campos_do_banco()
+        extras = dict(self.campos_do_gol(), **self.campos_do_banco())
         if old == nome and not extras:
             self.report['banco'] = dict(estadio=self.N, nome=nome)
             return
