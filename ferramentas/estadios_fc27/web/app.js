@@ -277,7 +277,8 @@ function carregarPecas() {
     placas: r.placas_madeira_bancos || 'manter', cadeiras: r.torcida?.cadeiras || 'fifa16', cor: '#c81e1e',
     lado_casa: r.torcida?.lado_casa || '-x', tier2: r.torcida?.tier2_acima_de ?? 14,
     ajuste: r.ajuste_automatico ?? true, personagens: r.personagens || 'ajustar',
-    reservas: r.reservas || 'cadeiras', luzes: r.luzes_torcida || 'acompanhar',
+    reservas: r.reservas || 'cadeiras', luzes: r.luzes_torcida || (ehPes() ? 'cobrir' : 'acompanhar'),
+    setor: r.torcida?.setor_pes || 'comum',
   };
   if (o.cadeiras !== 'fifa16') { o.cor = o.cadeiras; o.cadeiras = 'cor'; }
 }
@@ -301,6 +302,7 @@ function receitaDaTela() {
   r.recorte_bancos = o.recorte ? { z: Number(o.recorte_z), x: Number(o.recorte_x) } : null;
   r.placas_madeira_bancos = o.placas;
   r.torcida = { cadeiras: o.cadeiras === 'cor' ? o.cor : 'fifa16', lado_casa: o.lado_casa, tier2_acima_de: Number(o.tier2) };
+  if (ehPes()) r.torcida.setor_pes = o.setor;
   r.ajuste_automatico = !!o.ajuste;
   r.personagens = o.personagens;
   r.reservas = o.reservas;
@@ -464,10 +466,15 @@ function cartaoOpcoes() {
   const res = el('select', {}, [['cadeiras', 'Nas cadeiras do banco (recomendado)'], ['marcadores', 'Nos marcadores do FIFA 16'], ['esconder', 'Esconder']]
     .filter(([k]) => !pes || k !== 'marcadores').map(([k, t]) => el('option', { value: k, selected: o.reservas === k }, t)));
   res.onchange = () => { o.reservas = res.value; };
-  const luzes = el('select', {}, [['acompanhar', 'Acompanham a torcida (recomendado)'], ['manter', 'Ficam onde estão no El Grandioso']]
+  const luzes = el('select', {}, (pes
+    ? [['cobrir', 'Cobrem toda a torcida (recomendado)'], ['acompanhar', 'Acompanham a torcida'], ['manter', 'Ficam onde estão no El Grandioso']]
+    : [['acompanhar', 'Acompanham a torcida (recomendado)'], ['cobrir', 'Cobrem toda a torcida (estádios grandes)'], ['manter', 'Ficam onde estão no El Grandioso']])
     .map(([k, t]) => el('option', { value: k, selected: o.luzes === k }, t)));
   luzes.onchange = () => { o.luzes = luzes.value; };
   const an = S.conv.analise;
+  const setor = el('select', {}, [['comum', 'Torcida comum (recomendado)'], ['visitantes', 'Bloco de visitantes']]
+    .map(([k, t]) => el('option', { value: k, selected: o.setor === k }, t)));
+  setor.onchange = () => { o.setor = setor.value; };
   const giro = el('select', {}, [[0, 'Não girar (bancos em −Z no PES)'], [180, 'Girar meia volta (bancos em +Z no PES)']]
     .map(([k, t]) => el('option', { value: k, selected: Number(o.giro) === k }, t)));
   giro.onchange = () => { o.giro = Number(giro.value); };
@@ -486,11 +493,12 @@ function cartaoOpcoes() {
     campo2('Reservas no banco', res, pes
       ? 'Cadeiras: os reservas sentam nas cadeiras do banco achadas no modelo do PES, uma sim, uma não, a partir do meio. Esconder: saem de vista.'
       : 'Cadeiras: os reservas sentam nas cadeiras do banco achadas no modelo do FIFA 16, uma sim, uma não, a partir do meio. Marcadores: nos marcadores do FIFA 16, que muitas vezes não batem com as cadeiras. Esconder: saem de vista.'),
-    campo2('Luzes da torcida à noite', luzes, `As luzes da arquibancada do El Grandioso vão para o trecho equivalente da torcida do ${J()}, com a intensidade ajustada, para a torcida ficar iluminada como a do El Grandioso.`),
+    campo2('Luzes da torcida à noite', luzes, `Cobrem: as luzes da arquibancada do El Grandioso são redistribuídas por toda a torcida do ${J()} e apontadas para ela, para os anéis de cima não ficarem no escuro. Acompanham: cada luz vai para o trecho equivalente da torcida nova, sem girar (o que foi testado no FIFA 16); numa torcida maior ou mais alta que a do El Grandioso, os anéis de cima ficam escuros.`),
     campo2('Recuo do gramado no lado dos bancos', el('div', { class: 'linha-acoes' }, recorte, 'z ≥', rz, '|x| <', rx), 'Para bancos rebaixados (Morumbi: z −37,8 m, |x| < 30 m).'),
     campo2('Placas baixas de madeira do El Grandioso (lado dos bancos)', placas, 'Esconda se cruzarem os bancos do estádio novo.'),
     campo2('Cadeiras da torcida', el('div', { class: 'linha-acoes' }, cad, cor), ''),
-    campo2('Torcida da casa', lado, pes ? 'O El Grandioso põe a casa em −X. Os visitantes ficam no setor que o PES marca, e a organizada da casa atrás do gol da casa.' : 'O FIFA 16 e o El Grandioso põem a casa em −X.'),
+    pes ? campo2('Setor marcado no PES', setor, `O PES marca à parte um setor da torcida (${fmtInt(an?.torcida?.visitantes_areas ?? 0)} áreas neste estádio). Torcida comum: ele enche como o resto. Bloco de visitantes: vira o setor dos visitantes do FC 27, que pode ficar vazio na partida.`) : null,
+    campo2('Torcida da casa', lado, pes ? 'O El Grandioso põe a casa em −X. A organizada da casa fica no anel inferior atrás do gol da casa.' : 'O FIFA 16 e o El Grandioso põem a casa em −X.'),
     campo2('Anel superior da torcida acima de (m)', tier, 'Lugares mais altos que isso contam como anel superior.')));
   return co;
 }

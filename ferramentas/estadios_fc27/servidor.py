@@ -22,7 +22,7 @@ sys.path.insert(0, os.path.join(SUPERTOOL, "comum"))
 import base  # noqa: E402
 import componentes  # noqa: E402
 
-VERSAO = "1.1"
+VERSAO = "2.0"
 GRUPO = "estadios_fc27"
 RAIZ = base.raiz_trabalho()
 CACHE = os.path.join(AQUI, "cache")

@@ -4,7 +4,7 @@ O PES não guarda lugar por lugar: guarda áreas (quadriláteros inclinados sobr
 audiarea.bin (conferido no Camp Nou):
   0x00  u32 1, u32 1, depois 4 lados x 3 deslocamentos de bloco (0 = não tem)
   bloco  u8 lado, u8 tipo, u16 1, u32 deslocamento da caixa, caixa (6 floats), u32 áreas, e por área (96 bytes):
-         u32 número, f32 escala (comprimento da rampa / 10), f32 e f32 marca (1 = comum, 5 = setor à parte: visitantes),
+         u32 número, f32 escala (comprimento da rampa / 10), f32 e f32 marca (1 = comum, 5 = um setor à parte),
          4 cantos (x, y, z) e 4 UV no mapa de cores das cadeiras (audi\\sourceimages\\au_seat.png)
 Cada área é preenchida por fileiras (da borda de baixo para a de cima) e lugares ao longo da fileira. As fileiras ficam no
 meio dos degraus do estádio embaixo da área (achados na geometria preparada, pela linha do meio da área); sem degraus

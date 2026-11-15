@@ -124,9 +124,10 @@ O que entra no FC 27:
 
 ## Converter PES 2021 → FC 27
 
-Desde a versão 1.1. Na aba **Converter**, escolha **PES 2021** no alto. O caminho é o mesmo do FIFA 16: uma duplicata
+Desde a versão 2.0. Na aba **Converter**, escolha **PES 2021** no alto. O caminho é o mesmo do FIFA 16: uma duplicata
 completa do El Grandioso no ID novo, e o estádio do PES no lugar da arquitetura dele. Só muda de onde vêm os dados.
-**Precisa de teste em partida**: a conversão foi feita e conferida com o Spotify Camp Nou (st002), mas ainda não foi jogada.
+A primeira conversão do Spotify Camp Nou (st002) foi jogada em partida e o estádio abriu; os acertos que vieram desse
+teste (banco de reservas, técnicos, setor sem torcida e luz dos anéis de cima) ainda **precisam de teste em partida**.
 
 Os estádios do PES 2021 têm todos o mesmo formato (Fox Engine), e a ferramenta lê os arquivos do jogo diretamente, sem
 Blender nem outro programa:
@@ -161,10 +162,23 @@ O que é diferente do FIFA 16:
   que não aparecem.
 - **Torcida**: o PES não guarda lugar por lugar, guarda áreas inclinadas sobre a arquibancada. A ferramenta as preenche:
   uma fileira no meio de cada degrau do estádio embaixo da área (sem degraus regulares, de 80 em 80 cm), um lugar a cada
-  50 cm, cada um na altura do degrau. A cor da cadeira vem do `au_seat.png`. O setor que o PES marca à parte entra como
-  visitantes. A organizada da casa, que o PES não marca, fica no anel inferior atrás do gol da casa.
-- **Personagens laterais**: o PES não tem marcadores no modelo. Todos partem das posições do El Grandioso e são conferidos
-  contra a geometria do estádio novo (opção "Ajustar ao estádio").
+  50 cm, cada um na altura do degrau. A cor da cadeira vem do `au_seat.png`. A organizada da casa, que o PES não marca,
+  fica no anel inferior atrás do gol da casa.
+- **Setor marcado no PES**: o PES marca à parte um setor da torcida. Por padrão ele entra como torcida comum e enche como
+  o resto. Como bloco de visitantes do FC 27 (opção), ele pode ficar vazio na partida: no Camp Nou é todo o anel inferior
+  atrás de um gol, e foi o que ficou sem torcida no primeiro teste.
+- **Luzes da torcida à noite**: o padrão é **Cobrem toda a torcida** (veja "Luz da torcida à noite"). A torcida do PES
+  costuma ser maior e mais alta que a do El Grandioso; só acompanhando, o terceiro anel do Camp Nou ficava com 7% da luz.
+- **Banco de reservas, técnicos e áreas técnicas**: no El Grandioso tudo isso fica em volta do banco dele (|x| de 3,4 a
+  11 m). A conversão acha o banco do estádio novo e leva para ele:
+  - os reservas, nas cadeiras. Uma mureta ou um degrau com parede atrás não conta como fileira de cadeiras: à frente de
+    um assento o piso tem de ser mais baixo, e o banco é o grupo de fileiras mais perto do meio-campo;
+  - os marcadores dos técnicos e dos auxiliares, à mesma distância da ponta do banco que têm no El Grandioso;
+  - as áreas técnicas da linha do estádio no banco de dados (`stadiums.stadhometechzone…` e `stadawaytechzone…`), que
+    são onde o técnico anda durante a partida. Na duplicata elas eram as do El Grandioso, e os técnicos ficavam ao lado
+    do abrigo do Camp Nou, fora dele.
+- **Personagens laterais**: o PES não tem marcadores no modelo. Os outros partem das posições do El Grandioso e são
+  conferidos contra a geometria do estádio novo (opção "Ajustar ao estádio").
 - **Texturas** em formato que não seja BC1, BC3 ou 32 bits sem compressão (BC7, por exemplo) entram como um painel cinza,
   e o resultado avisa quais são.
 
@@ -232,7 +246,8 @@ escuro.
 
 | Opção | O que faz |
 |---|---|
-| **Acompanham a torcida** (padrão) | Cada luz vai para o trecho equivalente da torcida nova: o mesmo ângulo em volta do campo e a mesma fração da profundidade da arquibancada, da primeira fila à última. Ela anda junto, sem girar. No fim, a intensidade das que andaram é ajustada para a luz mediana na torcida nova ser a do El Grandioso. As que não alcançam a torcida do El Grandioso ficam onde estão. |
+| **Cobrem toda a torcida** (padrão no PES 2021, desde a 2.0) | A torcida nova é dividida em tantos trechos quantas são as luzes que iluminam a torcida do El Grandioso (129). Cada luz vai para a frente e para cima do seu trecho, a 22 m, do lado do campo, apontada para ele, com alcance de pelo menos 45 m e a intensidade ajustada para o trecho receber 1,25 vez a luz mediana do El Grandioso. Serve às torcidas maiores ou mais altas que a dele. No Camp Nou, pela conta da ferramenta, o terceiro anel passa de 7% para 126% da luz do El Grandioso, e nenhum lugar fica sem luz (antes, 14%). |
+| **Acompanham a torcida** (padrão no FIFA 16) | Cada luz vai para o trecho equivalente da torcida nova: o mesmo ângulo em volta do campo e a mesma fração da profundidade da arquibancada, da primeira fila à última. Ela anda junto, sem girar. No fim, a intensidade das que andaram é ajustada para a luz mediana na torcida nova ser a do El Grandioso. As que não alcançam a torcida do El Grandioso ficam onde estão. |
 | **Ficam onde estão** | Como no Morumbi v3. |
 
 O resultado da conversão compara a luz na torcida nova com a do El Grandioso, antes e depois. O que ainda pode diferir é

@@ -62,6 +62,7 @@ def receita_pronta(sid):
 
 class Conversao:
     JOGO = 'FIFA 16'  # jogo de origem, nos avisos (motor/pes21/converter.py herda desta classe para o PES 2021)
+    LUZES_PADRAO = 'acompanhar'  # receita "luzes_torcida" quando ela não diz
 
     def __init__(self, amb, cfg, base_proj, dup, prep, work):
         self.amb, self.cfg = amb, cfg
@@ -864,9 +865,11 @@ class Conversao:
 
     def stage_luzes(self):
         """Luzes da torcida (spots de lighting_stands_main e das torres em lighting_flood_main) acompanhando a torcida do
-        FIFA 16 (motor/fifa16/iluminacao.py). Receita "luzes_torcida": "acompanhar" (padrão) ou "manter" (Morumbi v3)."""
-        modo = self.rc.get('luzes_torcida') or 'acompanhar'
-        if modo not in ('acompanhar', 'manter'):
+        FIFA 16 (motor/fifa16/iluminacao.py). Receita "luzes_torcida": "acompanhar" (padrão no FIFA 16), "manter" (Morumbi
+        v3) ou "cobrir" (as luzes redistribuídas por toda a torcida nova e apontadas para ela: para torcidas maiores ou
+        mais altas que a do El Grandioso, em que só acompanhar deixa os anéis de cima no escuro)."""
+        modo = self.rc.get('luzes_torcida') or self.LUZES_PADRAO
+        if modo not in ('acompanhar', 'manter', 'cobrir'):
             falha('luzes_torcida desconhecido: ' + str(modo))
         if modo == 'manter':
             self.report['luzes_da_torcida'] = 'nas posições do El Grandioso (receita)'
@@ -894,17 +897,32 @@ class Conversao:
                 onde.append((name, i))
         if not luzes:
             falha('luzes da torcida do El Grandioso não encontradas')
-        novas, rel = iluminacao.acompanhar(luzes, antigos, self.lugares)
+        novas, rel = (iluminacao.cobrir if modo == 'cobrir' else iluminacao.acompanhar)(luzes, antigos, self.lugares)
         ops = collections.defaultdict(list)
         for (name, i), a, b in zip(onde, luzes, novas):
             if np.array_equal(a['pos'], b['pos']):
                 continue
             ops[name].append(dict(op='set', target={'index': i}, path='Transform.trans', value={'vec3': [float(c) for c in b['pos']]}))
             ops[name].append(dict(op='set', target={'index': i}, path='Intensity', value=float(b['intensidade'])))
+            if not np.array_equal(a['dir'], b['dir']):  # só no modo "cobrir": a luz ilumina ao longo de -forward
+                fw = -np.asarray(b['dir'], np.float64)
+                right = np.cross([0.0, 1.0, 0.0], fw)
+                if np.linalg.norm(right) < 1e-6:
+                    right = np.array([1.0, 0.0, 0.0])
+                right /= np.linalg.norm(right)
+                for axis, vec in (('right', right), ('up', np.cross(fw, right)), ('forward', fw)):
+                    ops[name].append(dict(op='set', target={'index': i}, path=f'Transform.{axis}', value={'vec3': [float(c) for c in vec]}))
+            if b['raio'] != a['raio']:
+                ops[name].append(dict(op='set', target={'index': i}, path='AttenuationRadius', value=float(b['raio'])))
         for name, o in ops.items():
             self.ebx_edit(name, o, 'luzes')
-        self.report['luzes_da_torcida'] = rel
-        lt = rel['luz_na_torcida_vs_el_grandioso']
+        self.report['luzes_da_torcida'] = dict(rel, modo=modo) if modo == 'cobrir' else rel
+        lt = rel.get('luz_na_torcida_vs_el_grandioso')
+        if modo == 'cobrir':
+            if rel.get('redistribuidas'):
+                base.aviso(f"luzes da torcida: {rel['redistribuidas']} de {rel['luzes']} redistribuídas por toda a torcida nova (sem luz: "
+                           f"{rel['sem_luz']['antes']:.0%} dos lugares antes, {rel['sem_luz']['depois']:.0%} depois; mediana {lt['depois'][1]}x a do El Grandioso)")
+            return
         base.aviso(f"luzes da torcida: {rel['acompanharam']} de {rel['luzes']} acompanharam a torcida nova (mediana da luz na torcida: "
                    f"{lt['antes'][1]}x a do El Grandioso antes, {lt['depois'][1]}x depois)")
 
@@ -1110,6 +1128,11 @@ class Conversao:
                                                  ('movido', 'ajustados'), ('escondidos', 'fora de vista')) if totais[k]]
         base.aviso('personagens laterais: ' + ', '.join(partes))
 
+    def cadeiras_do_banco(self):
+        """Cadeiras do banco de reservas achadas na geometria do estádio novo (motor/fifa16/bancos.py)."""
+        from . import bancos
+        return bancos.cadeiras(self.triangulos16())
+
     def slc_bancos(self, groups, report):
         """Reservas (choreo_seats, 7 de cada lado). Receita "reservas":
         - "cadeiras" (padrão): nas cadeiras do banco do FIFA 16 achadas na geometria (motor/fifa16/bancos.py);
@@ -1137,7 +1160,7 @@ class Conversao:
                         ops.append(dict(op='set', target={'index': i}, path=f'BlueprintTransform.{axis}', value={'vec3': [float(c) for c in vec]}))
                 report['reservas_' + ('casa' if side < 0 else 'visitante')] = dict(fc27=len(mine), fifa16=len(pts), movidos=min(len(mine), len(pts)))
         else:
-            cad = bancos.cadeiras(self.triangulos16()) if modo == 'cadeiras' else None
+            cad = self.cadeiras_do_banco() if modo == 'cadeiras' else None
             for side, key in ((-1, 'slc_benchplayerhome'), (1, 'slc_benchplayeraway')):
                 mine = sorted([i for i in objs if np.sign(trans[i]['x']) == side], key=lambda i: abs(trans[i]['x']))
                 if modo == 'cadeiras':
@@ -1167,6 +1190,10 @@ class Conversao:
         if ops:
             self.ebx_edit(name, ops, 'seats')
         self.report['personagens'] = report
+
+    def campos_do_banco(self):
+        """Outros campos inteiros da linha do estádio no banco (stadiums) que a conversão muda: nenhum no FIFA 16."""
+        return {}
 
     def stage_db(self):
         """O estádio novo recebe o nome no banco (stadiums.name, texto UTF-8 de tamanho fixo); mais nada muda."""
@@ -1211,13 +1238,32 @@ class Conversao:
         k = ids.index(self.N)
         o, n = namef.bitoff // 8, namef.depth // 8
         old = rows[k][o:o + n].split(b'\0')[0].decode('utf8')
-        if old == nome:
+        extras = self.campos_do_banco()
+        if old == nome and not extras:
             self.report['banco'] = dict(estadio=self.N, nome=nome)
             return
-        nb = nome.encode('utf8')
-        if namef.ftype != 0 or len(nb) >= n:
-            falha(f'o nome "{nome}" passa do limite do banco ({n - 1} bytes)')
-        rows[k] = rows[k][:o] + nb + b'\0' * (n - len(nb)) + rows[k][o + n:]
+        mudados = set()
+        if old != nome:
+            nb = nome.encode('utf8')
+            if namef.ftype != 0 or len(nb) >= n:
+                falha(f'o nome "{nome}" passa do limite do banco ({n - 1} bytes)')
+            rows[k] = rows[k][:o] + nb + b'\0' * (n - len(nb)) + rows[k][o + n:]
+            mudados.add('name')
+        for campo, valor in extras.items():
+            f = next((x for x in t.fields if x.name == campo), None)
+            if f is None or f.ftype != 3:
+                falha(f'stadiums.{campo} não é um campo inteiro do banco')
+            bruto = int(valor) - f.low
+            if not 0 <= bruto < (1 << f.depth):
+                falha(f'stadiums.{campo} = {valor} fora da faixa do banco')
+            v = int.from_bytes(rows[k], 'little')
+            if (v >> f.bitoff) & ((1 << f.depth) - 1) != bruto:
+                v = (v & ~(((1 << f.depth) - 1) << f.bitoff)) | (bruto << f.bitoff)
+                rows[k] = v.to_bytes(len(rows[k]), 'little')
+                mudados.add(campo)
+        if not mudados:
+            self.report['banco'] = dict(estadio=self.N, nome=nome)
+            return
         dest = self.work / 'out' / 'fifa_ng_db.db'
         if dest.exists():
             dest.unlink()
@@ -1233,10 +1279,12 @@ class Conversao:
         before = next(r for r in t.rows if r[fn.index('stadiumid')] == str(self.N))
         after = next(r for r in s2.rows if r[fn.index('stadiumid')] == str(self.N))
         diff = {fn[i]: (before[i], after[i]) for i in range(len(fn)) if before[i] != after[i]}
-        if set(diff) != {'name'} or len(s2.rows) != len(t.rows):
+        if set(diff) != mudados or len(s2.rows) != len(t.rows):
             falha('banco: mudança diferente da esperada ' + json.dumps(diff, ensure_ascii=False))
         self.chunk_edits[ch['id']] = out
         self.report['banco'] = dict(estadio=self.N, nome_antes=old, nome=nome)
+        if extras:
+            self.report['banco']['campos'] = {c: diff[c] for c in sorted(mudados - {'name'})}
 
     # ------------------------------------------------------------ montagem
     def assemble(self):

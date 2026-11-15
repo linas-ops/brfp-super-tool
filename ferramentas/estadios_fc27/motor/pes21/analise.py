@@ -20,7 +20,7 @@ import numpy as np
 
 from ..fifa16 import bancos, bcn
 from ..fifa16.analise import _area_xz, _celulas, png
-from . import brilhos, estadio as E, torcida as T
+from . import banco, brilhos, estadio as E, torcida as T
 
 PAPEIS = ('opaco', 'alpha', 'telao', 'grama', 'banner', 'descartar')
 FIGURANTES = re.compile(r'(/staff/|/scarecrow/|/static_obj/|benchm|steward|scarecrow|tvcam|cameraman|_sc20\d\d)', re.I)
@@ -60,8 +60,8 @@ def lado_dos_bancos(tris):
     perto = (np.abs(c[:, 0]) < bancos.REGIAO_X + 1) & (np.abs(c[:, 2]) > -bancos.REGIAO_Z[1] - 1) & (np.abs(c[:, 2]) < -bancos.REGIAO_Z[0] + 2) \
         & (c[:, 1] > bancos.REGIAO_Y[0]) & (c[:, 1] < bancos.REGIAO_Y[1])
     t = tris[perto]
-    menos = len(bancos.cadeiras(t)) if len(t) else 0
-    mais = len(bancos.cadeiras(t * np.array([-1.0, 1.0, -1.0]))) if len(t) else 0
+    menos = len(banco.cadeiras(t)) if len(t) else 0
+    mais = len(banco.cadeiras(t * np.array([-1.0, 1.0, -1.0]))) if len(t) else 0
     return (180 if mais > menos else 0), menos, mais
 
 

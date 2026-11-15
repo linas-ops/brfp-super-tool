@@ -85,7 +85,7 @@ sob demanda e guardadas em cache em `dados\cache`; o registro fica em `dados\fon
 
 | Ferramenta | Versão | O que faz |
 |---|---|---|
-| BRFP Super Tool | 3.7 | Janela única, trilho, início com versões e guias; Dados do jogo compartilhados (banco de qualquer versão, FIFA 16 … FC 27, idioma, internationals); Python embutido, Componentes (com o servidor local da Transfermarkt) e pacote para outro computador. |
+| BRFP Super Tool | 3.8 | Janela única, trilho, início com versões e guias; Dados do jogo compartilhados (banco de qualquer versão, FIFA 16 … FC 27, idioma, internationals); Python embutido, Componentes (com o servidor local da Transfermarkt) e pacote para outro computador. |
 | Editor de Estádios | 3.4 | Exports do FET em 3D: ocultar/mover peças, texturas do jogo, luzes, torcida, banco e áreas técnicas, stadiums.txt; partições novas do FBX com material no MeshVariationDb. |
 | Editor de Placares | 2.2 | Overlays APT do jogo, de mods .fifamod e de arquivos .big soltos: textos, cores, imagens, posições, animações e fontes; grava para o Live Editor. |
 | Editor de Compdata | 2.1 | Competições → estágios → grupos com renumeração automática; nomes vindos do banco e do idioma importados. |
@@ -98,7 +98,7 @@ sob demanda e guardadas em cache em `dados\cache`; o registro fica em `dados\fon
 | Criador de Ligas e Times | 2.5 | Ligas, times, seleções e jogadores da API-Football ou da Transfermarkt (notas calibradas no banco — pelo valor de mercado na Transfermarkt —, fichas do sofifa e do PES com ID da EA e atributos, feminino, aparência pelas fotos, tática, técnico, estádio) e atualização do banco: elencos, empréstimos, saídas e participantes das ligas. |
 | Atualizador de Squads | 1.1 | Squad do mod + squad mais recente da EA → squad atualizado: times brasileiros inteiros do mod (sem os genéricos da EA), times, ligas e competições novos, jogadores criados pelo mod; duplicados unidos, IDs reusados trocados, escalações refeitas. |
 | Conversor de Tabelas | 1.1 | Tabelas do banco entre qualquer par de versões (FIFA 16 … FC 27): colunas novas, renomeadas e calculadas, escalas, faixas; destino pelo esquema guardado; grava .txt ou um .db novo. |
-| Estádios FC 27 | 1.0 | Substitui o Conversor PES → FC. **Duplicar estádio**: estádios do FC 27 com quantas cópias quiser, cada uma com ID, nome e identidade próprios, num projeto novo ou no seu projeto do FET. **Converter FIFA 16 → FC 27**: sempre sobre o El Grandioso (181), com modelo, texturas, telão, gramado, torcida, glares e personagens do FIFA 16; pré-cálculo de luz de outro estádio (experimental). Precisa do FIFA Editor Tool e do .NET 8. |
+| Estádios FC 27 | 2.0 | Substitui o Conversor PES → FC. **Novo na 2.0: Converter PES 2021 → FC 27**, na mesma aba do FIFA 16 e sem Blender: a pasta do estádio do PES 2021 vira um estádio do FC 27 sobre o El Grandioso, com a torcida nos degraus, as cores das cadeiras, o banco de reservas, os técnicos e as luzes da torcida no lugar. **Duplicar estádio**: estádios do FC 27 com quantas cópias quiser, cada uma com ID, nome e identidade próprios, num projeto novo ou no seu projeto do FET. **Converter FIFA 16 → FC 27**: sempre sobre o El Grandioso (181), com modelo, texturas, telão, gramado, torcida, glares e personagens do FIFA 16; pré-cálculo de luz de outro estádio (experimental). Precisa do FIFA Editor Tool e do .NET 8. |
 | Conversor de Kits PES → FC | 1.1 | Kits do PES 2021 (camisa, mangas, gola, calção e meião numa textura só) → kits do FC 27 na pasta do kit do FET, refeitos pelo uniforme em 3D dos dois jogos, com o tecido de um kit base; prévia plana e em 3D. |
 | Conversor de Placares PES → FC | 1.0 | Placar de um pacote do PES 2021 (game2dPes.bin e companhia) → placar do FC usado como molde (Generic ou os do pack do LTA), com nomes, placar, relógio e a fonte dos números do PES; grava como projeto do Editor de Placares. |
 | RDBM 26 · Add-on FC 27 | 1.0.0 | Programa à parte: abre squads do FC 27 no RDBM 26. O Super Tool abre o add-on e passa os comandos. |
@@ -136,7 +136,7 @@ stadium conversor\
       banco\                Editor de Banco (LEIAME.md; a edição em andamento fica em banco\cache)
       criador\              Criador de Ligas e Times (LEIAME.md; chave e cache da API ficam em dados\)
       squads\               Atualizador de Squads (LEIAME.md; relatórios em squads\saida)
-      estadios_fc27\        Estádios FC 27 (LEIAME.md; motor\ = duplicação, conversão do FIFA 16 e os jobs C# do SDK;
+      estadios_fc27\        Estádios FC 27 (LEIAME.md; motor\ = duplicação, conversão do FIFA 16 e do PES 2021 e os jobs C# do SDK;
                             cache\ = SDK do FET preparado, índice do jogo e trabalhos, fica fora do pacote)
       rdbm\                 (só no pacote) RDBM 26 · Add-on FC 27
   RDBM26 Add-on FC27\       add-on do RDBM (atalho "RDBM26 FC27" na Área de Trabalho)

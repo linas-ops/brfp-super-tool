@@ -5,10 +5,13 @@ duplicata completa do El Grandioso no ID novo, e sobre ela os materiais do está
 hospedeiros, as texturas novas, o telão, o gramado recortado, a torcida, os glares e os personagens laterais. Só muda de
 onde vêm os dados (motor/pes21/preparar.py grava a mesma pasta de preparação):
 - a torcida vem das áreas do PES (audiarea.bin), já como lugares na altura dos degraus, com as cores das cadeiras do
-  au_seat.png e o setor de visitantes marcado no PES; a organizada da casa, que o PES não marca, fica atrás do gol da casa;
+  au_seat.png; o setor que o PES marca à parte entra como torcida comum (ou como bloco de visitantes, se a receita pedir);
+  a organizada da casa, que o PES não marca, fica atrás do gol da casa;
+- as luzes da torcida são redistribuídas por toda a torcida nova (motor/fifa16/iluminacao.py, modo "cobrir");
 - as lâmpadas dos glares vêm dos brilhos do PES (effect_st<NNN>_df de dia, _nf de noite);
 - o PES não tem marcadores de personagens laterais: todos partem das posições do El Grandioso e são conferidos contra a
-  geometria do estádio novo.
+  geometria do estádio novo; os reservas, os técnicos, os auxiliares e as áreas técnicas do banco de dados vão para o banco
+  do estádio novo (motor/pes21/banco.py).
 Os estádios do PES 2021 são mais pesados que os do FIFA 16: se os materiais não couberem nos meshes do El Grandioso com
 peças grandes, a preparação é refeita com peças menores (mais subsets, a mesma geometria).
 """
@@ -22,7 +25,7 @@ import numpy as np
 from .. import base, projeto as P
 from ..base import falha
 from ..fifa16 import converter as C16
-from . import analise, preparar
+from . import analise, banco, preparar
 
 LUGAR = np.dtype([('pos', '<f4', 3), ('orient', '<f4'), ('cor', 'u1', 3), ('visitante', 'u1'), ('area', '<u4')])
 COR_SEM_MAPA = 0x6E7078          # cadeiras quando o estádio não traz o au_seat.png
@@ -32,10 +35,72 @@ PECAS_MENORES = (60000, 30000, 16000, 9000)
 class ConversaoPes(C16.Conversao):
     JOGO = 'PES 2021'
     ONDE_LAMPADAS = 'nos brilhos do PES 2021'
+    LUZES_PADRAO = 'cobrir'  # os estádios do PES costumam ter a torcida maior e mais alta que a do El Grandioso
+    TECNICOS = (('slc_managerhome', False), ('slc_manageraway', False), ('slc_assistantmanagerhome', True), ('slc_assistantmanageraway', True))
 
     def __init__(self, amb, cfg, base_proj, dup, prep, work):
         super().__init__(amb, cfg, base_proj, dup, prep, work)
         self.report = collections.OrderedDict(base_id=C16.BASE_ID, novo_id=self.N, origem='pes21', fonte_id=self.rc['fonte_id'], prep=str(self.prep))
+        self._cad = None
+        self._zonas = {}
+
+    # ------------------------------------------------------------ banco de reservas, técnicos e áreas técnicas
+    def cadeiras_do_banco(self):
+        if self._cad is None:
+            self._cad = banco.cadeiras(self.triangulos16())
+        return self._cad
+
+    def stage_slc(self):
+        super().stage_slc()
+        self.tecnicos_no_banco()
+
+    def tecnicos_no_banco(self):
+        """Técnicos, auxiliares e áreas técnicas acompanham o banco do estádio novo (motor/pes21/banco.py): no El Grandioso
+        eles ficam em volta do banco dele, que não é onde fica o do PES."""
+        from ..fifa16 import bancos, personagens as pe
+        cad = self.cadeiras_do_banco()
+        d = self.ebx_dump(self.S + 'choreo_seats')
+        orig = [d['instances'][int(x.split(':')[2])]['fields']['BlueprintTransform']['trans'] for x in d['instances'][0]['fields']['Objects']]
+        eg, novo = {}, {}
+        for lado in (-1, 1):
+            meus = [[t['x'], t['y'], t['z']] for t in orig if np.sign(t['x']) == lado]
+            pts = bancos.lugares_dos_reservas(cad, len(meus), lado) if len(cad) and meus else []
+            if meus and pts:
+                eg[lado], novo[lado] = banco.referencia(meus), banco.referencia(pts)
+        rel = {}
+        if not novo:
+            self.report['personagens']['tecnicos'] = 'sem cadeiras de banco no modelo: técnicos e áreas técnicas ficam como no El Grandioso'
+            return
+        grade = pe.Grade()
+        grade.triangulos(self.triangulos16())
+        aj = pe.Ajuste(grade)
+        for camada, auxiliar in self.TECNICOS:
+            name = self.S + camada
+            if self.p.record('ebx', name) is None:
+                continue
+            dd = self.ebx_dump(name)
+            ops = []
+            for i in [int(x.split(':')[2]) for x in dd['instances'][0]['fields']['Objects']]:
+                t = dd['instances'][i]['fields']['BlueprintTransform']['trans']
+                lado = int(np.sign(t['x']))
+                if lado not in novo:
+                    continue
+                x, z = banco.tecnico([t['x'], t['y'], t['z']], lado, eg[lado], novo[lado], auxiliar)
+                estado, p = aj.ajustar([x, t['y'], z])
+                p = [float(c) for c in (p if estado != 'sem_lugar' else [x, t['y'], z])]
+                ops.append(dict(op='set', target={'index': i}, path='BlueprintTransform.trans', value={'vec3': p}))
+                rel[camada] = [round(c, 2) for c in p]
+            if ops:
+                self.ebx_edit_mais(name, ops, 'tecnicos')
+        self._zonas = banco.zonas(novo.get(-1), novo.get(1))
+        rel['bancos'] = {('casa' if k < 0 else 'visitante'): dict(de_x=round(v[0], 2), ate_x=round(v[1], 2), z=round(v[2], 2)) for k, v in novo.items()}
+        rel['areas_tecnicas_cm'] = self._zonas
+        self.report['personagens']['tecnicos'] = rel
+        base.aviso('banco de reservas: ' + '; '.join(f"{n} em |x| de {v['de_x']:.1f} a {v['ate_x']:.1f} m" for n, v in rel['bancos'].items())
+                   + '; técnicos, auxiliares e áreas técnicas acompanham o banco novo')
+
+    def campos_do_banco(self):
+        return dict(self._zonas)
 
     def stage_crowd(self):
         arq = self.prep / 'torcida.bin'
@@ -46,8 +111,11 @@ class ConversaoPes(C16.Conversao):
         info = json.loads((self.prep / 'torcida.json').read_text(encoding='utf8'))
         Pp = lug['pos'].astype(np.float64)
         orient = lug['orient'].astype(np.float64)
-        away = lug['visitante'] > 0
         cfg = self.rc.get('torcida') or {}
+        # O setor que o PES marca à parte só vira o bloco de visitantes se a receita pedir ("setor_pes": "visitantes"):
+        # no FC 27 esse bloco pode ficar vazio na partida (no Camp Nou, todo o anel inferior atrás de um gol).
+        marcado = lug['visitante'] > 0
+        away = marcado if cfg.get('setor_pes') == 'visitantes' else np.zeros(len(lug), bool)
         # organizada da casa: o PES não a marca. Fica no anel inferior atrás do gol do lado da casa.
         sx = -1.0 if cfg.get('lado_casa', '-x') == '+x' else 1.0
         organised = ~away & (Pp[:, 0] * sx < -55.0) & (np.abs(Pp[:, 2]) < 30.0) & (Pp[:, 1] < float(cfg.get('tier2_acima_de', 14.0)))
@@ -56,7 +124,8 @@ class ConversaoPes(C16.Conversao):
         else:
             rgb = np.tile(np.array([(COR_SEM_MAPA >> 16) & 255, (COR_SEM_MAPA >> 8) & 255, COR_SEM_MAPA & 255], np.uint32), (len(lug), 1))
         self.torcida_fc27(Pp, orient, away, organised, np.ones(len(lug)), rgb,
-                          dict(areas_pes=int(info['areas'])), dict(sem_degrau=int(info.get('sem_degrau', 0)), cores_das_cadeiras=bool(info.get('cores'))))
+                          dict(areas_pes=int(info['areas'])), dict(sem_degrau=int(info.get('sem_degrau', 0)), cores_das_cadeiras=bool(info.get('cores')),
+                                                                   setor_marcado_no_pes=int(marcado.sum())))
 
     def anel_da_pista(self):
         """Raio interno, por ângulo, do piso em volta do campo (as peças "piso" da receita). No PES o pé da arquibancada tem
