@@ -36,6 +36,10 @@ MultiText que o código cria e formata, e o código põe quase tudo no lugar dur
   profundidade dele) e estica a máscara do logo para cobrir o placar inteiro — ele entra subindo, como o logo;
 - esconde as caixas, o título, os escudos, o logo da liga e os ícones do Generic (os que o código volta a mostrar vão
   também para fora da tela ou da máscara deles);
+- desliga, só no logo do FC e nos textos, a pintura com cor chapada que o código faz ao abrir
+  (`ColorUtil.ChangeColorFlat` com as cores da competição): sem isso a arte vira uma silhueta preta ou branca e os
+  textos ficam com a cor do tema. O nome do método é trocado naquelas chamadas por um que não existe, e elas não fazem
+  nada; as outras (faixas das cores dos times, por exemplo) continuam;
 - leva nomes, gols e os dígitos do relógio para as caixas do PES: a largura de cada MultiText é 240 × a escala dele e
   o `_y` é o meio da linha; altura, tamanho da letra, fonte e cor vão pelas constantes do código; os nomes ficam
   centralizados (`H_ALIGN_CENTER`);

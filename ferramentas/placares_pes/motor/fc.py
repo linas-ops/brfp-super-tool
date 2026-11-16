@@ -167,6 +167,70 @@ def constantes_do_codigo(ov, bibliotecas=(), tema=None):
     return simular(ov, bibliotecas, tema)["constantes"]
 
 
+def chamadas_pintura(ov, metodo="ChangeColorFlat"):
+    """Onde o código do overlay chama ColorUtil.<metodo>(clipe, cor): [(caminho do clipe a partir do this, slot do
+    nome do método)]. O slot ("c:N" ou "pk:pos:pool") troca o nome só naquela chamada (operação const_txt)."""
+    import struct
+    from nucleo import as2
+    a = ov.apt
+    d = bytes(a.d)
+    c = as2.Constantes(ov.entrada("1"))
+    out = []
+    for _tipo, _spr, codigo in as2._itens_quadro0(a):
+        p, pool, pool_pos, fins, toks, n = codigo, [], None, [], [], 0
+        while n < 2_000_000:
+            n += 1
+            try:
+                op, arg, q = as2.decodificar(d, p)
+            except (struct.error, IndexError, as2.ErroAS):
+                break
+            fins = [f for f in fins if f > p]
+            if op == 0x88:
+                ptr, cnt = arg
+                pool = [c.valor(i, []) for i in struct.unpack_from("<%dQ" % cnt, d, ptr)] if cnt else []
+                pool_pos = p
+                toks.append(op)
+            elif op == 0x96:
+                ptr, cnt = arg
+                toks.append([(c.valor(i, pool), "c:%d" % i) for i in (struct.unpack_from("<%dQ" % cnt, d, ptr) if cnt else ())])
+            elif op in (0xA2, 0xA3):
+                toks.append([(pool[arg] if arg < len(pool) else None,
+                              "%s:%d:%s" % ("pk" if op == 0xA2 else "pkw", p + 1, pool_pos))])
+            elif op == 0xA1:
+                toks.append([(as2._txt(d, arg), None)])
+            else:
+                toks.append(op)
+            if op == 0x8E:
+                fins.append(q + arg[4])
+            elif op == 0x9B:
+                fins.append(q + arg[2])
+            elif op == 0x00 and not fins:
+                break
+            p = q
+        for t, tok in enumerate(toks):
+            if not isinstance(tok, list) or not any(v == metodo for v, _s in tok):
+                continue
+            slot = next(s for v, s in tok if v == metodo)
+            # para trás: push argc, 'cafe' (o ColorUtil) e, antes dele, o clipe: this.a.b… (o push com o registrador
+            # do this começa o caminho)
+            k = next((j for j in range(t - 1, max(-1, t - 10), -1)
+                      if isinstance(toks[j], list) and any(v == "cafe" for v, _s in toks[j])), None)
+            if k is None:
+                continue
+            cam = []
+            for j in range(k - 1, max(-1, k - 24), -1):
+                tj = toks[j]
+                if not isinstance(tj, list):
+                    continue
+                regs = [i for i, (v, _s) in enumerate(tj) if isinstance(v, tuple) and v[:1] == ("reg",)]
+                if regs:
+                    cam = [v for v, _s in tj[regs[-1] + 1:] if isinstance(v, str)] + cam
+                    break
+                cam = [v for v, _s in tj if isinstance(v, str)] + cam
+            out.append((".".join(cam), slot))
+    return out
+
+
 def abrir(ov):
     """O overlay como molde: o modelo do LTA (fundo numa imagem e textos soltos) ou o Generic do jogo."""
     try:
@@ -195,6 +259,12 @@ G_ESCONDER = (G + ".mcClockBg", G + ".mcTeamHolder.mcBg", G + ".mcTeamHolder.mcL
 G_AFASTAR = ((G + ".mcOnFireHome", "y"), (G + ".mcOnFireAway", "y"), (G + ".mcRedLineHome", "y"),
              (G + ".mcRedLineAway", "y"), (G + ".mcLogoHolder.mcLogoBgMask", "x"), (G + ".mcLogoHolder.mcLogoFcMask", "x"),
              (G + ".mcHeaderMask", "y"), (G + ".mcTeamHolder.mcLineMask", "x"))
+# o Init do Generic pinta clipes com ColorUtil.ChangeColorFlat (cor chapada, com as cores da competição): o logo do FC
+# (onde fica a arte do PES) vira uma silhueta preta ou branca e os textos ganham a cor do tema por cima da do
+# TextFormat. Nessas chamadas o nome do método é trocado por um que não existe, e a chamada não faz nada.
+G_SEM_PINTURA = ("m_mcLogoFc", "mcTeamHolder.mcHomeTeamName", "mcTeamHolder.mcAwayTeamName", "mcScoreHolder.mcScoreHome",
+                 "mcScoreHolder.mcScoreAway", "mcClockText", "mcExtraTime")
+PINTURA, PINTURA_DESLIGADA = "ChangeColorFlat", "ChangeColorFlat_PES"
 MULTITEXT_LARGURA = 240        # MultiText.PROXY_BASE_WIDTH: a caixa do texto tem 240 × _xscale de largura
 COR_CLARA, COR_ESCURA = "COLOR_PURE_WHITE", "COLOR_SAFE_BLACK"     # cores do tema (FIFA.xml) para os textos
 
@@ -243,6 +313,17 @@ class MoldeGeneric:
         self.arte = {"lugar": lg, "item": it, "char": img, "w": inf["w"], "h": inf["h"], "caixa": bv}
         # mesmo formato do "fundo" do outro modelo (para a lista de moldes)
         self.fundo = {"w": inf["w"], "h": inf["h"], "tela": _transformar_caixa(lg["mundo"], bv) if bv else (0, 0, 0, 0)}
+        self._pinturas = None
+
+    @property
+    def pinturas(self):
+        """[(clipe, slot)] das chamadas de ChangeColorFlat do código (lido na primeira vez)."""
+        if self._pinturas is None:
+            try:
+                self._pinturas = chamadas_pintura(self.ov, PINTURA)
+            except Exception:  # noqa: BLE001  (código diferente do esperado: a conversão só avisa)
+                self._pinturas = []
+        return self._pinturas
 
     def descricao(self):
         f = self.fundo
@@ -736,6 +817,17 @@ def converter_generic(pl, molde, S, constantes=None, numeros=None, textos=None):
         if cam in P:
             afastar(P[cam], eixo)
     resumo.append("Caixas, título, escudos e ícones do Generic escondidos.")
+    # o código pinta o logo do FC (a arte) e os textos com cor chapada: essas chamadas deixam de fazer efeito
+    desligadas = set()
+    for alvo, slot in molde.pinturas:
+        if alvo in G_SEM_PINTURA and alvo != "mcExtraTime" and slot:      # os acréscimos: no passo 7
+            op_txt(slot, PINTURA_DESLIGADA, PINTURA)
+            desligadas.add(alvo)
+    if "m_mcLogoFc" in desligadas:
+        resumo.append("O código do Generic não pinta mais a arte nem os textos com a cor da competição: ficam com as "
+                      "cores do PES.")
+    else:
+        avisos.append("Não achei no código do Generic a pintura do logo do FC: no jogo a arte pode ficar com uma cor só.")
 
     # 3. nomes: o x e a largura pelo lugar; a altura pelas constantes do código; centralizados
     cfg_nome = formato(G + ".mcTeamHolder.mcHomeTeamName")
@@ -869,6 +961,12 @@ def converter_generic(pl, molde, S, constantes=None, numeros=None, textos=None):
                 op_const("EXTRA_TIME_INIT_X_POS", xe + (e0 - e1))
             mascara(G + ".mcExtraTimeMask", Ra)
             avisos.append("A placa dos acréscimos do PES não aparece no Generic: só o \"+3\", no lugar dela.")
+            # em cima da arte do PES, o "+3" fica com a cor do relógio (a do PES); fora dela, sobre o gramado, com a cor
+            # que o código do Generic dá (a do tema da competição)
+            if Rf[0] <= Ra[0] and Ra[2] <= Rf[2] and Rf[1] <= Ra[1] and Ra[3] <= Rf[3]:
+                for alvo, slot in molde.pinturas:
+                    if alvo == "mcExtraTime" and slot:
+                        op_txt(slot, PINTURA_DESLIGADA, PINTURA)
 
     # 8. cartões: como no Generic, uma faixa de 10 px para cada time — a da casa logo acima do placar, a de fora logo
     #    abaixo —, com os vermelhos e os dos expulsos a partir do começo do nome. O código põe os da casa em -30 e -33
