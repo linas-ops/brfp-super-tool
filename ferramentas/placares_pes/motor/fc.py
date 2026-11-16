@@ -150,14 +150,121 @@ class Molde:
                 "campos": [n for _, n in TEXTOS if n in self.por_nome] + [n for n in RELOGIO if n in self.por_nome]}
 
 
-def constantes_do_codigo(ov, bibliotecas=(), tema=None):
-    """{nome: {slot, valor}} das constantes da classe do placar (pelo simulador de ActionScript do editor)."""
+def simular(ov, bibliotecas=(), tema=None):
+    """O que o código do placar faz ao entrar (pelo simulador de ActionScript do editor): {"constantes": {nome: {slot,
+    valor}}, "textos": {caminho do clipe: {config do MultiText}}, "tweens": [...]}. Vazio se a simulação falhar."""
     from nucleo import as2
     try:
         r = as2.simular(ov, ("AnimateIn",), bibliotecas=bibliotecas, tema=tema)
     except Exception:  # o simulador é aproximado: sem ele, a conversão só não mexe nas constantes
-        return {}
-    return {c["nome"]: c for c in r.get("constantes") or [] if c.get("nome") and c.get("slot")}
+        return {"constantes": {}, "textos": {}, "tweens": []}
+    return {"constantes": {c["nome"]: c for c in r.get("constantes") or [] if c.get("nome") and c.get("slot")},
+            "textos": r.get("textos") or {}, "tweens": r.get("tweens") or []}
+
+
+def constantes_do_codigo(ov, bibliotecas=(), tema=None):
+    """{nome: {slot, valor}} das constantes da classe do placar (pelo simulador de ActionScript do editor)."""
+    return simular(ov, bibliotecas, tema)["constantes"]
+
+
+def abrir(ov):
+    """O overlay como molde: o modelo do LTA (fundo numa imagem e textos soltos) ou o Generic do jogo."""
+    try:
+        return Molde(ov)
+    except ErroMolde as e1:
+        try:
+            return MoldeGeneric(ov)
+        except ErroMolde:
+            raise e1
+
+
+# ------------------------------------------------------------------ o molde Generic do jogo (overlay_9002)
+
+G = "mcClassOverlay"
+G_PRECISA = (G + ".mcTeamHolder.mcHomeTeamName", G + ".mcTeamHolder.mcAwayTeamName", G + ".mcScoreHolder.mcScoreHome",
+             G + ".mcScoreHolder.mcScoreAway", G + ".mcClockText", G + ".mcLogoHolder.mcLogoFc",
+             G + ".mcLogoHolder.mcLogoMask")
+G_DIGITOS = ("txtTenMin", "txtMin", "txtColon", "txtTenSec", "txtSec")
+# decorações do Generic que somem (as caixas de cor, a faixa do título, os escudos, os ícones de "on fire"…)
+G_ESCONDER = (G + ".mcClockBg", G + ".mcTeamHolder.mcBg", G + ".mcTeamHolder.mcLines", G + ".mcHeader",
+              G + ".mcRedLineHome", G + ".mcRedLineAway", G + ".mcOnFireHome", G + ".mcOnFireAway",
+              G + ".mcTeamHolder.mcLogoHome", G + ".mcTeamHolder.mcLogoAway", G + ".mcLogoHolder.mcLogoBg",
+              G + ".mcLogoHolder.mcLine", G + ".mcLogoHolder.mcLogo", G + ".mcLogoHolder.mcUTProLogo")
+# os que o código volta a mostrar (_alpha, cor) mas nunca move num eixo: vão para longe nesse eixo. As máscaras levam
+# junto o que cobrem (o fundo e o fio do logo, o logo da liga, o título, os fios entre nomes e gols).
+G_AFASTAR = ((G + ".mcOnFireHome", "y"), (G + ".mcOnFireAway", "y"), (G + ".mcRedLineHome", "y"),
+             (G + ".mcRedLineAway", "y"), (G + ".mcLogoHolder.mcLogoBgMask", "x"), (G + ".mcLogoHolder.mcLogoFcMask", "x"),
+             (G + ".mcHeaderMask", "y"), (G + ".mcTeamHolder.mcLineMask", "x"))
+MULTITEXT_LARGURA = 240        # MultiText.PROXY_BASE_WIDTH: a caixa do texto tem 240 × _xscale de largura
+COR_CLARA, COR_ESCURA = "COLOR_PURE_WHITE", "COLOR_SAFE_BLACK"     # cores do tema (FIFA.xml) para os textos
+
+
+class MoldeGeneric:
+    """O placar Generic do jogo (data/ui/game/overlays/Generic/overlay_9002.big) visto como molde.
+
+    É bem diferente do modelo do LTA: o desenho são caixas de cor sem imagem, e os textos são componentes MultiText
+    (do overlayComponents_9) que o código posiciona e formata. O MultiText desfaz a escala que recebe: a caixa do texto
+    tem 240 × _xscale de largura, a letra tem o tamanho do TextFormat do código e o _y do clipe é o meio da linha.
+
+    A conversão põe a arte do PES na imagem do logo do FC (o clipe do logo vai para trás de tudo e a máscara dele cobre
+    o placar inteiro), esconde as caixas e leva nomes, gols, relógio, cores e cartões para os lugares do PES — pelos
+    lugares (x e largura) e pelas constantes do código (alturas, x do relógio e dos gols, fonte, tamanho e cor)."""
+    tipo = "generic"
+
+    def __init__(self, ov):
+        self.ov = ov
+        self.a = ov.apt
+        self.lugares = lugares(self.a)
+        self.por_caminho = {}
+        for lg in self.lugares:
+            self.por_caminho.setdefault(".".join(lg["caminho"]), lg)
+        falta = [c.split(".")[-1] for c in G_PRECISA if c not in self.por_caminho]
+        if falta:
+            raise ErroMolde("Esse placar do FC não serve de molde: faltam " + ", ".join(falta) + ".")
+        self.geo = {}
+        for i, c in enumerate(self.a.chars):
+            if c and c["t"] == "forma":
+                g = ov.ent.get(str(c["geo"] + 1))
+                self.geo[i] = apt.ler_geometria(g) if g else []
+        # a imagem do logo do FC, dentro do mcLogoFc: é onde a arte do PES vai
+        lf = self.por_caminho[G + ".mcLogoHolder.mcLogoFc"]
+        usos = []
+        for lg in self.lugares:
+            c = self.a.chars[lg["char"]] if 0 <= lg["char"] < len(self.a.chars) else None
+            if c and c["t"] == "forma" and lg["caminho"][:len(lf["caminho"])] == lf["caminho"] and lg is not lf:
+                for it in self.geo.get(lg["char"], []):
+                    if it["k"] in (0, 1) and it.get("img") is not None:
+                        usos.append((lg, it, it["img"]))
+        if not usos:
+            raise ErroMolde("Esse Generic não tem a imagem do logo do FC (onde vai a arte do PES).")
+        lg, it, img = usos[0]
+        inf = apt.dds_info(ov.ent.get(str(self.a.chars[img]["tex"] + 1), b"")) or {"w": 0, "h": 0}
+        bv = _caixa_vertices(self.geo[lg["char"]])
+        self.arte = {"lugar": lg, "item": it, "char": img, "w": inf["w"], "h": inf["h"], "caixa": bv}
+        # mesmo formato do "fundo" do outro modelo (para a lista de moldes)
+        self.fundo = {"w": inf["w"], "h": inf["h"], "tela": _transformar_caixa(lg["mundo"], bv) if bv else (0, 0, 0, 0)}
+
+    def descricao(self):
+        f = self.fundo
+        return {"fundo": {"w": f["w"], "h": f["h"], "tela": [round(v) for v in f["tela"]]}, "tipo": self.tipo,
+                "campos": ["mcHomeTeamName", "mcAwayTeamName", "mcScoreHome", "mcScoreAway", "mcClockText"]}
+
+    # ---------------------------------------------------------- geometria
+    def caixa_conteudo(self, lg):
+        """Retângulo do que um clipe desenha (formas dentro dele), nas coordenadas do próprio clipe."""
+        n = len(lg["caminho"])
+        cxs = []
+        for d in self.lugares:
+            if d is lg or d["caminho"][:n] != lg["caminho"]:
+                continue
+            c = self.a.chars[d["char"]] if 0 <= d["char"] < len(self.a.chars) else None
+            if c and c["t"] == "forma":
+                bv = _caixa_vertices(self.geo.get(d["char"], []))
+                if bv:
+                    cxs.append(_transformar_caixa(mul(d["mundo"], inv(lg["mundo"])), bv))
+        if not cxs:
+            return None
+        return (min(c[0] for c in cxs), min(c[1] for c in cxs), max(c[2] for c in cxs), max(c[3] for c in cxs))
 
 
 # ------------------------------------------------------------------ a conversão
@@ -182,14 +289,17 @@ def _cor_texto(pl, caixa):
     return ESCURO if lum is not None and lum > 0.55 else CLARO
 
 
-def converter(pl, molde, S, constantes=None, numeros=None):
+def converter(pl, molde, S, constantes=None, numeros=None, textos=None):
     """Operações do Editor de Placares ({chave: op}) e um resumo do que foi feito.
 
     'constantes' são as constantes do código do molde ({nome: {slot, valor}}, do simulador do editor): algumas posições
     (o _x dos gols e do relógio, o _y dos cartões dos expulsos) são postas pelo código e só mudam por elas.
-    'numeros' ({face, avancos}): a fonte dos números do PES, já gravada como data/ui/fonts/<face>.ttf, para os gols e o
-    relógio.
+    'numeros' ({face, chave, avancos}): a fonte dos números do PES, já gravada como data/ui/fonts/<face>.ttf (família
+    'chave' no FIFA.xml), para os gols e o relógio.
+    'textos' (só o Generic): os formatos dos MultiText que o código cria, da simulação.
     """
+    if isinstance(molde, MoldeGeneric):
+        return converter_generic(pl, molde, S, constantes, numeros, textos)
     constantes = constantes or {}
     ops = {}
     resumo = []
@@ -451,6 +561,352 @@ def converter(pl, molde, S, constantes=None, numeros=None):
             op_place(lg, tx=[q[0], q[1]])
             if n.startswith("mcEject"):
                 op_const("Y_EJECTED_PLAYERS_DEFAULT", q[1], 0, 255)
+    return ops, resumo
+
+
+# ------------------------------------------------------------------ a conversão no Generic
+
+def converter_generic(pl, molde, S, constantes=None, numeros=None, textos=None):
+    """Operações do Editor de Placares para o molde Generic (ver MoldeGeneric) e um resumo do que foi feito."""
+    constantes = constantes or {}
+    textos = textos or {}
+    P = molde.por_caminho
+    ops = {}
+    resumo = []
+    avisos = []
+    locais = {}                       # off do PlaceObject -> matriz local já com as mudanças (para as contas)
+
+    def local_de(lg):
+        return locais.get(lg["item"]["off"]) or _local(lg["item"])
+
+    def mundo_cam(cam):
+        M = afp.IDENT
+        for i in range(1, len(cam) + 1):
+            M = mul(local_de(P[".".join(cam[:i])]), M)
+        return M
+
+    def mundo(lg):
+        return mundo_cam(lg["caminho"])
+
+    def op_place(lg, **campos):
+        it = lg["item"]
+        chave = "place:%d" % it["off"]
+        atual = ops.get(chave) or {"op": "place", "off": it["off"]}
+        atual.update(campos)
+        ops[chave] = atual
+        if "m" in campos or "tx" in campos:
+            l = list(local_de(lg))
+            if "m" in campos:
+                l[0:4] = campos["m"]
+            if "tx" in campos:
+                l[4:6] = campos["tx"]
+            locais[it["off"]] = tuple(l)
+
+    def op_textura(char, img):
+        ident, w, h = _salvar(img)
+        ops["textura:%d" % char] = {"op": "textura", "char": char, "img": ident, "w": w, "h": h}
+
+    def op_num(slot, valor, orig, nome=""):
+        if not slot or not isinstance(orig, (int, float)) or str(slot).startswith("m:"):
+            return False
+        v = round(float(valor), 2)
+        if abs(v - orig) > 1e-6:
+            ops["const:" + slot] = {"op": "const", "slot": slot, "valor": v, "orig": orig, "nome": nome}
+        return True
+
+    def op_const(nome, valor):
+        c = constantes.get(nome)
+        if not c or not isinstance(c.get("valor"), (int, float)):
+            avisos.append(nome)
+            return False
+        return op_num(c["slot"], valor, c["valor"], nome)
+
+    def op_txt(slot, texto, orig):
+        """Troca um texto usado pelo código (nome de fonte, cor do tema, alinhamento). 'slot' pode vir como
+        "m:c:5046|COLOR_SAFE_BLACK" (membro de uma classe do jogo): o texto fica no c:5046."""
+        if not slot:
+            return False
+        if str(slot).startswith("m:"):
+            slot = slot[2:].split("|")[0]
+        if texto != orig:
+            ops["const_txt:" + slot] = {"op": "const_txt", "slot": slot, "texto": texto, "orig": orig}
+        return True
+
+    def esconder(lg):
+        it = lg["item"]
+        tint = list(it["tint"]) if it["fl"] & apt.F_COR else [255, 255, 255, 255]
+        op_place(lg, tint=tint[:3] + [0])
+
+    def afastar(lg, eixo):
+        """Leva o clipe para longe da tela num eixo que o código nunca mexe (para os que o código volta a mostrar)."""
+        l = local_de(lg)
+        op_place(lg, tx=[l[4] - 4000, l[5]] if eixo == "x" else [l[4], l[5] + 4000])
+
+    def mapear(lg, B, R):
+        """Lugar do clipe para o retângulo B (dele) cair no retângulo R da tela."""
+        pai = mundo_cam(lg["caminho"][:-1])
+        p0, p1 = ponto(inv(pai), R[0], R[1]), ponto(inv(pai), R[2], R[3])
+        sa = (p1[0] - p0[0]) / max(1e-6, B[2] - B[0])
+        sd = (p1[1] - p0[1]) / max(1e-6, B[3] - B[1])
+        op_place(lg, m=[sa, 0.0, 0.0, sd], tx=[p0[0] - sa * B[0], p0[1] - sd * B[1]])
+
+    def mascara(nome, R, folga=(3, 2)):
+        lg = P.get(nome)
+        B = molde.caixa_conteudo(lg) if lg else None
+        if lg and B:
+            mapear(lg, B, (R[0] - folga[0], R[1] - folga[1], R[2] + folga[0], R[3] + folga[1]))
+
+    def tela(cx):
+        return _transformar_caixa(S, cx)
+
+    def formato(caminho):
+        return ((textos.get(caminho) or {}).get("config") or {})
+
+    def cor_tema(cfg, caixa_pes):
+        f = cfg.get("formato") or {}
+        orig = (f.get("cor_slot") or "").split("|")[-1] if str(f.get("cor_slot") or "").startswith("m:") else None
+        if orig:
+            op_txt(f["cor_slot"], COR_CLARA if _cor_texto(pl, caixa_pes) == CLARO else COR_ESCURA, orig)
+
+    def fonte_num(cfg):
+        f = cfg.get("formato") or {}
+        if numeros and numeros.get("chave") and f.get("fonte_slot"):
+            op_txt(f["fonte_slot"], numeros["chave"], f.get("fonte_chave"))
+            return True
+        return False
+
+    def tamanho(cfg, valor):
+        f = cfg.get("formato") or {}
+        return op_num(f.get("tamanho_slot"), round(valor), f.get("tamanho"), "tamanho da letra")
+
+    def multitext(lg, R, yc):
+        """Põe um MultiText na caixa R da tela: a largura vem do _xscale (240 × escala), o _y é o meio da linha."""
+        pai = mundo_cam(lg["caminho"][:-1])
+        p0, p1 = ponto(inv(pai), R[0], R[1]), ponto(inv(pai), R[2], R[3])
+        yl = ponto(inv(pai), 0, yc)[1]
+        op_place(lg, m=[round((p1[0] - p0[0]) / MULTITEXT_LARGURA, 5), 0.0, 0.0, lg["item"]["m"][3]], tx=[p0[0], yl])
+        return p0[0], yl
+
+    fundo_pes = pl.caixa_visivel(("fundo",))
+    placa_pes = pl.caixa_visivel(("fundo", "cor_casa", "cor_fora")) or fundo_pes
+    if not fundo_pes:
+        raise ErroMolde("O placar do PES não tem desenho de fundo.")
+    Rf, Rb = tela(fundo_pes), tela(placa_pes)
+
+    # 0. o conteúdo (mcClassOverlay) desce até a altura em que os cartões da casa (que o código põe 30 px acima
+    #    dele) ficam logo acima do placar
+    lr = P[G]
+    op_place(lr, tx=[local_de(lr)[4], round(Rb[1] + 22)])
+    WR = mundo(lr)
+
+    # 1. a arte do PES na imagem do logo do FC; o clipe do logo vai para trás das caixas e a máscara dele cobre a arte
+    lh = P[G + ".mcLogoHolder"]
+    irmaos = [l for l in molde.lugares if len(l["caminho"]) == 2 and l["caminho"][0] == G]
+    frente = [l["item"]["prof"] for l in irmaos if l is not lh and l["nome"] not in ("mcAggScore", "mcClockBg")]
+    usadas = {l["item"]["prof"] for l in irmaos}
+    faixas = [(l["item"]["prof"], l["item"]["clip"]) for l in irmaos if l["item"]["fl"] & apt.F_RECORTE]
+    prof = next((d for d in range(min(frente) - 1, 0, -1)
+                 if d not in usadas and not any(p < d <= c for p, c in faixas)), None) if frente else None
+    if prof is None:
+        raise ErroMolde("Não achei uma profundidade livre para pôr a arte do PES atrás do Generic.")
+    op_place(lh, prof=prof)
+    lf = P[G + ".mcLogoHolder.mcLogoFc"]
+    yfc = (constantes.get("ANIM_IN_LOGO_FC_Y_POS") or {}).get("valor")
+    if isinstance(yfc, (int, float)):          # onde o código deixa o logo no fim da entrada
+        l = list(local_de(lf))
+        l[5] = yfc
+        locais[lf["item"]["off"]] = tuple(l)
+    arte = molde.arte
+    mapear(arte["lugar"], arte["caixa"], Rf)
+    Wforma = mundo(arte["lugar"])
+    k = min(2.0, 2048.0 / max(Rf[2] - Rf[0], Rf[3] - Rf[1]))
+    wi, hi = max(8, int(round((Rf[2] - Rf[0]) * k))), max(8, int(round((Rf[3] - Rf[1]) * k)))
+    Tn = mul(tuple(arte["item"]["m"]), (wi / arte["w"], 0.0, 0.0, hi / arte["h"], 0.0, 0.0)) if arte["w"] else \
+        tuple(arte["item"]["m"])
+    op_textura(arte["char"], pl.desenhar(("fundo",), mul(mul(S, inv(Wforma)), Tn), wi, hi))
+    mascara(G + ".mcLogoHolder.mcLogoMask", Rf, (1, 1))
+    resumo.append("Arte do PES na imagem do logo do FC (%d×%d), atrás dos textos." % (wi, hi))
+
+    # 2. as caixas e decorações do Generic somem: transparentes e, as que o código volta a mostrar (o _alpha do "on
+    #    fire", as cores dos fios), também longe da tela ou fora da máscara delas
+    for cam in G_ESCONDER:
+        if cam in P:
+            esconder(P[cam])
+    for cam, eixo in G_AFASTAR:
+        if cam in P:
+            afastar(P[cam], eixo)
+    resumo.append("Caixas, título, escudos e ícones do Generic escondidos.")
+
+    # 3. nomes: o x e a largura pelo lugar; a altura pelas constantes do código; centralizados
+    cfg_nome = formato(G + ".mcTeamHolder.mcHomeTeamName")
+    alt_nomes = [tela(c)[3] - tela(c)[1] for c in (pl.caixa_campo("nome_casa"), pl.caixa_campo("nome_fora")) if c]
+    tam_nome = round(min(alt_nomes) * 0.72) if alt_nomes else None
+    y_nome = {}
+    for campo, nome, cte, msc in (("nome_casa", "mcHomeTeamName", "ANIMATE_IN_TEAM_NAME_HOME_Y", "mcTeamHomeMask"),
+                                  ("nome_fora", "mcAwayTeamName", "ANIMATE_IN_TEAM_NAME_AWAY_Y", "mcTeamAwayMask")):
+        lg = P[G + ".mcTeamHolder." + nome]
+        cx = pl.caixa_campo(campo)
+        if not cx:
+            esconder(lg)
+            continue
+        R = tela(cx)
+        x0, yl = multitext(lg, R, (R[1] + R[3]) / 2 + 0.06 * (tam_nome or 0))
+        op_const(cte, yl)
+        y_nome[campo] = (yl, x0)
+        mascara(G + ".mcTeamHolder." + msc, R)
+    if "nome_casa" in y_nome:                  # nomes de 15 letras: o código põe os dois nesse x
+        op_const("ANIM_IN_TEAM_NAME_X_POS", y_nome["nome_casa"][1])
+    if tam_nome:
+        tamanho(cfg_nome, tam_nome)
+    partes = cfg_nome.get("partes") or []
+    if "H_ALIGN_LEFT" in partes and cfg_nome.get("partes_slots"):
+        op_txt(cfg_nome["partes_slots"][partes.index("H_ALIGN_LEFT")], "H_ALIGN_CENTER", "H_ALIGN_LEFT")
+    if pl.caixa_campo("nome_casa"):
+        cor_tema(cfg_nome, pl.caixa_campo("nome_casa"))
+    resumo.append("Nomes dos times nas caixas do PES (letra %s px, centralizados)." % tam_nome)
+
+    # 4. gols: o mcScoreHolder fica no x do código (INIT_SCORE_NORMAL_X_POS) e na altura que faz o _y do gol de fora —
+    #    a mesma constante do nome de fora — cair no meio da caixa do gol de fora
+    ls = P[G + ".mcScoreHolder"]
+    cfg_gol = formato(G + ".mcScoreHolder.mcScoreHome")
+    cgc, cgf = pl.caixa_campo("gols_casa"), pl.caixa_campo("gols_fora")
+    if cgc and cgf:
+        Rgc, Rgf = tela(cgc), tela(cgf)
+        hg = min(Rgc[3] - Rgc[1], Rgf[3] - Rgf[1])
+        tam_gol = round(hg if numeros else hg * 0.86)
+        desce = 0.06 * tam_gol
+        xs = round(min(Rgc[0], Rgf[0]) - WR[4])
+        c_fora = y_nome.get("nome_fora", (None,))[0]
+        if c_fora is None:
+            c_fora = (constantes.get("ANIMATE_IN_TEAM_NAME_AWAY_Y") or {}).get("valor", 0)
+        ys = (Rgf[1] + Rgf[3]) / 2 + desce - c_fora - WR[5]
+        op_place(ls, tx=[xs, ys])
+        op_const("INIT_SCORE_NORMAL_X_POS", xs)
+        _x, y_casa = multitext(P[G + ".mcScoreHolder.mcScoreHome"], Rgc, (Rgc[1] + Rgc[3]) / 2 + desce)
+        multitext(P[G + ".mcScoreHolder.mcScoreAway"], Rgf, (Rgf[1] + Rgf[3]) / 2 + desce)
+        op_const("ANIMATE_IN_SCORE_HOME_Y", y_casa)
+        mascara(G + ".mcScoreHolder.mcScoreMask", Rgc)
+        mascara(G + ".mcScoreHolder.mcScoreMaskAway", Rgf)
+        tamanho(cfg_gol, tam_gol)
+        cor_tema(cfg_gol, cgc)
+        if fonte_num(cfg_gol):
+            resumo.append("Gols com a fonte dos números do PES (%s)." % numeros["face"])
+        resumo.append("Gols nas caixas do PES (letra %d px)." % tam_gol)
+
+    # 5. cores dos times: as faixas do Generic (dentro do mcScoreHolder) nas placas de cor do PES
+    for papel, nome in (("cor_casa", "mcColorHome"), ("cor_fora", "mcColorAway")):
+        lg = P.get(G + ".mcScoreHolder." + nome)
+        vis = pl.caixa_visivel((papel,))
+        if not lg:
+            continue
+        B = molde.caixa_conteudo(lg)
+        if not vis or not B:
+            esconder(lg)
+            continue
+        mapear(lg, B, tela(vis))
+    resumo.append("Faixas das cores dos times nas placas de cor do PES.")
+
+    # 6. relógio: o mcClockText vai para a caixa do relógio do PES (o x é TIMER_X_POS, o y ANIMATE_IN_CLOCK_TEXT_Y) e
+    #    cada dígito para a caixa do dígito do PES
+    lk = P[G + ".mcClockText"]
+    cfg_rel = formato(G + ".mcClockText.txtTenMin")
+    cxr = pl.caixa_campo("relogio")
+    if cxr:
+        Rk = tela(cxr)
+        dig = [tela(c) for _n, c in pl.caixas_relogio()]
+        if numeros and len(dig) == 5:
+            tam_rel = round(sorted(d[3] - d[1] for d in dig)[2] / 0.72)
+        else:
+            w5 = (Rk[2] - Rk[0]) / 5
+            dig = [(Rk[0] + i * w5, Rk[1], Rk[0] + (i + 1) * w5, Rk[3]) for i in range(5)]
+            tam_rel = round((Rk[3] - Rk[1]) * 0.72)
+        desce = 0.06 * tam_rel
+        xk, yk = round(Rk[0] - WR[4]), round((Rk[1] + Rk[3]) / 2 - WR[5])
+        x4 = (constantes.get("TIMER_X_POS") or {}).get("valor")
+        x5 = (constantes.get("TIMER_X_POS_FIVE_NUMBER") or {}).get("valor")
+        op_place(lk, m=[1.0, 0.0, 0.0, 1.0], tx=[xk, yk])
+        op_const("TIMER_X_POS", xk)
+        op_const("ANIMATE_IN_CLOCK_TEXT_Y", yk)
+        for nome, R in zip(G_DIGITOS, dig):
+            if G + ".mcClockText." + nome in P:
+                multitext(P[G + ".mcClockText." + nome], R, (R[1] + R[3]) / 2 + desce)
+        passo = dig[1][0] - dig[0][0]
+        lc = P.get(G + ".mcClockText.txtHundredMin")
+        if lc:
+            d0 = dig[0]
+            multitext(lc, (d0[0] - passo, d0[1], d0[2] - passo, d0[3]), (d0[1] + d0[3]) / 2 + desce)
+        if isinstance(x4, (int, float)) and isinstance(x5, (int, float)):
+            # 5 dígitos (100 minutos ou mais): o relógio anda para a esquerda na mesma proporção do Generic
+            op_const("TIMER_X_POS_FIVE_NUMBER", xk + (x5 - x4) * passo / 15.0)
+        mascara(G + ".mcClockMask", (Rk[0] - passo, Rk[1], Rk[2], Rk[3]))
+        tamanho(cfg_rel, tam_rel)
+        cor_tema(cfg_rel, cxr)
+        if fonte_num(cfg_rel):
+            resumo.append("Relógio com a fonte dos números do PES.")
+        resumo.append("Relógio na caixa do relógio do PES (letra %d px)." % tam_rel)
+
+        # 7. acréscimos: o "+3" (mesmo formato do relógio) na caixa de acréscimos do PES; a placa dos acréscimos do PES
+        #    não entra (o Generic não tem onde mostrar uma imagem só nos acréscimos)
+        le = P.get(G + ".mcExtraTime")
+        cxa = pl.caixa_campo("acrescimos")
+        if le and cxa:
+            Ra = tela(cxa)
+            sob = max(0, min(Ra[2], Rk[2]) - max(Ra[0], Rk[0])) * max(0, min(Ra[3], Rk[3]) - max(Ra[1], Rk[1]))
+            if sob > 0.3 * (Ra[2] - Ra[0]) * (Ra[3] - Ra[1]):
+                # no PES a placa dos acréscimos cobre o relógio; sem a placa, o "+3" iria em cima dos números: vai
+                # logo abaixo do relógio
+                Ra = (Rk[0], Rk[3] + 2, Rk[0] + (Ra[2] - Ra[0]), Rk[3] + 2 + (Rk[3] - Rk[1]))
+                avisos.append("Os acréscimos do PES ficam em cima do relógio: o \"+3\" foi para logo abaixo dele.")
+            av = (numeros or {}).get("avancos") or {}
+            larg = (av.get("+", 0.6) + av.get("0", 0.6)) * tam_rel
+            x_ini = (Ra[0] + Ra[2]) / 2 - larg / 2
+            xe, ye = multitext(le, (x_ini, Ra[1], x_ini + max(larg + 8, Ra[2] - x_ini), Ra[3]),
+                               (Ra[1] + Ra[3]) / 2 + desce)
+            e0 = (constantes.get("EXTRA_TIME_INIT_X_POS") or {}).get("valor")
+            e1 = (constantes.get("EXTRA_TIME_X_POS") or {}).get("valor")
+            op_const("EXTRA_TIME_X_POS", xe)
+            if isinstance(e0, (int, float)) and isinstance(e1, (int, float)):
+                op_const("EXTRA_TIME_INIT_X_POS", xe + (e0 - e1))
+            mascara(G + ".mcExtraTimeMask", Ra)
+            avisos.append("A placa dos acréscimos do PES não aparece no Generic: só o \"+3\", no lugar dela.")
+
+    # 8. cartões: como no Generic, uma faixa de 10 px para cada time — a da casa logo acima do placar, a de fora logo
+    #    abaixo —, com os vermelhos e os dos expulsos a partir do começo do nome. O código põe os da casa em -30 e -33
+    #    (ANIM_INIT_SCORE_X_POS e ANIM_INIT_CARD_AWAY_Y_POS, que ficam) e os de fora em ANIM_IN_CARD_Y_POS e
+    #    ANIM_INIT_CARD_Y_POS (que vão para baixo do placar)
+    a_cartao = (constantes.get("ANIM_INIT_SCORE_X_POS") or {}).get("valor", 30)
+    a_expulso = (constantes.get("ANIM_INIT_CARD_AWAY_Y_POS") or {}).get("valor", 33)
+    y_exp_fora = Rb[3] + 2 - WR[5]
+    op_const("ANIM_INIT_CARD_Y_POS", y_exp_fora)
+    op_const("ANIM_IN_CARD_Y_POS", y_exp_fora + (a_expulso - a_cartao))
+    for campo, cartoes, expulsos, msc, y_exp in (
+            ("nome_casa", "mcHomeCard", "mcEjectHome", "mcHomeCardMask", WR[5] - a_expulso),
+            ("nome_fora", "mcAwayCard", "mcEjectAway", "mcAwayCardMask", WR[5] + y_exp_fora)):
+        cn = pl.caixa_campo(campo)
+        if not cn:
+            continue
+        xn = tela(cn)[0]
+        for n in (cartoes, expulsos):
+            lg = P.get(G + "." + n)
+            if lg:
+                op_place(lg, tx=[xn - WR[4] - (1 if n == cartoes else 0), local_de(lg)[5]])
+        mascara(G + "." + msc, (xn - 6, y_exp - 1, xn + 63, y_exp + 9), (0, 0))
+    resumo.append("Cartões dos expulsos e vermelhos: os da casa logo acima do placar, os de fora logo abaixo.")
+
+    # 9. placar agregado (jogos de ida e volta): à direita do placar, da mesma altura
+    la = P.get(G + ".mcAggScore")
+    if la:
+        Bm = molde.caixa_conteudo(P[G + ".mcAggScore.mcAggMask"]) if G + ".mcAggScore.mcAggMask" in P else None
+        alt = (Bm[3] - Bm[1]) * P[G + ".mcAggScore.mcAggMask"]["item"]["m"][3] if Bm else 56.0
+        ka = (Rb[3] - Rb[1]) / max(1.0, alt)
+        xa = round(Rb[2] + 4 - WR[4])
+        op_place(la, m=[ka, 0.0, 0.0, ka], tx=[xa, Rb[1] - WR[5]])
+        op_const("INIT_AGG_SCORE_NORMAL_X_POS", xa)
+
+    falta = [n for n in dict.fromkeys(avisos) if n.isupper()]
+    if falta:
+        resumo.append("Constantes que o código do molde não tem (ficaram como estavam): " + ", ".join(falta) + ".")
+    resumo += [n for n in dict.fromkeys(avisos) if not n.isupper()]
     return ops, resumo
 
 

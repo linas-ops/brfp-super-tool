@@ -23,6 +23,31 @@ acréscimos), as faixas das cores dos times e os cartões vão para os lugares d
 
 ## O molde
 
+Há dois tipos de molde, e a lista mostra os dois.
+
+### Generic (do jogo)
+
+O placar padrão do próprio FC (`data/ui/game/overlays/Generic/overlay_9002.big`), o primeiro da lista: não depende de
+nenhum mod. É bem diferente do modelo do LTA: o desenho são caixas de cor sem imagem, os textos são componentes
+MultiText que o código cria e formata, e o código põe quase tudo no lugar durante a entrada (constantes como
+`ANIMATE_IN_TEAM_NAME_HOME_Y`, `INIT_SCORE_NORMAL_X_POS`, `TIMER_X_POS`, `ANIM_IN_CARD_Y_POS`). A conversão:
+
+- desenha o placar do PES na imagem do logo do FC (`mcLogoHolder.mcLogoFc`), põe esse clipe atrás dos textos (muda a
+  profundidade dele) e estica a máscara do logo para cobrir o placar inteiro — ele entra subindo, como o logo;
+- esconde as caixas, o título, os escudos, o logo da liga e os ícones do Generic (os que o código volta a mostrar vão
+  também para fora da tela ou da máscara deles);
+- leva nomes, gols e os dígitos do relógio para as caixas do PES: a largura de cada MultiText é 240 × a escala dele e
+  o `_y` é o meio da linha; altura, tamanho da letra, fonte e cor vão pelas constantes do código; os nomes ficam
+  centralizados (`H_ALIGN_CENTER`);
+- põe as faixas das cores dos times nas placas de cor do PES, os cartões numa faixa logo acima (casa) e logo abaixo
+  (fora) do placar, e o placar agregado à direita, da mesma altura.
+
+Limites do Generic: a placa dos acréscimos do PES não aparece (só o "+3", no lugar dela, ou logo abaixo do relógio
+quando no PES a placa cobre o relógio); com os nomes longos (15 letras) o código alarga o placar e desalinha, então use
+os nomes abreviados; no modo Ultimate Team Pro o código troca o logo do FC por outro e o desenho some.
+
+### Modelo do LTA
+
 O molde é um placar do FC (`…002.big`) com o fundo numa imagem grande e os textos como campos soltos:
 `txtTeamNameHome`/`Away`, `txtTeamScoreHome`/`Away`, `mcClock` (com `txtTenMin`, `txtMin`, `txtColon`, `txtTenSec`,
 `txtSec`), `mcExtraTime`, `mcTeamHomeColor`/`AwayColor` e os cartões. É o modelo dos placares do **pack do LTA**
@@ -33,7 +58,7 @@ do Editor de Placares: **adicione o pack do LTA como fonte no Editor de Placares
 Os moldes com fundo de 1920×1080 (35002, 31002, 32002, 37002…) aceitam o placar em qualquer lugar da tela; nos de fundo
 menor (524×128, 1024×1024) o que ficar fora da imagem não aparece.
 
-## O que a conversão faz
+## O que a conversão faz (modelo do LTA)
 
 - **Fundo**: o desenho do PES (placas fixas, sem os textos) é desenhado na imagem de fundo do molde, na posição da tela
   escolhida. As outras imagens e decorações do molde (vidro, brilhos, faixas) ficam transparentes.
@@ -73,6 +98,10 @@ menor (524×128, 1024×1024) o que ficar fora da imagem não aparece.
   (`game2dPes-score-plateMain`… em coordenadas dobradas), formas vetoriais **GE2D** e as animações **AFP** (o "Flash"
   da Konami, com sprites, objetos colocados com matriz e cor, quadros e rótulos). O AFP vem com uma tabela de inversão
   de bytes (BSI) que o deixa em little-endian.
+- Alguns pacotes vêm com o `.bin` comprimido: um cabeçalho de 16 bytes com `WESYS` (tamanho comprimido e tamanho cheio)
+  e um fluxo zlib. O conversor abre esses também.
+- Alguns placares trazem peças soltas longe do placar (o logo da TV num canto, faixas na tela inteira). O conversor
+  pega só o grupo de peças em volta dos nomes, gols e relógio; o resto fica de fora.
 - O placar é o filme `game2d_score` (480×129): `window › mainGroup` com as placas, `time_texts` (relógio),
   `losstime` (acréscimos), `teamColor`, `cardNum` e as caixas vazias com nome onde o jogo escreve.
 - O formato AFP/TXP2 foi descrito pelo projeto **bemaniutils** (DragonMinded, domínio público); `motor\afp.py` faz só a

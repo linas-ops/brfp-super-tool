@@ -397,6 +397,7 @@ class Simulador:
                "constante_tamanho": self.constantes.get(tam[1], {}).get("nome") if tam[1] is not None else None}
         cor = args[2] if len(args) > 2 else (UNDEF, None)
         reg["cor"] = _int(cor[0]) if isinstance(cor[0], (int, float)) and not isinstance(cor[0], bool) else None
+        reg["cor_slot"] = cor[1] if reg["cor"] is not None else None
         o.set("__registro", (reg, None))
         if not getattr(self, "externo_nivel", 0):
             self.formatos.append(reg)
@@ -663,7 +664,10 @@ class Simulador:
     def _config_texto(self, cfg):
         # MultiTextConfig.Base(escala, alinhamento v, alinhamento h, TextFormat...) é dublê: procura o TextFormat
         if isinstance(cfg, Duble) and cfg.args:
-            out = {"partes": [a[0].caminho.split(".")[-1] if isinstance(a[0], Duble) else a[0] for a in cfg.args if not isinstance(a[0], Obj) or isinstance(a[0], Duble)]}
+            partes = [a for a in cfg.args if not isinstance(a[0], Obj) or isinstance(a[0], Duble)]
+            out = {"partes": [a[0].caminho.split(".")[-1] if isinstance(a[0], Duble) else a[0] for a in partes],
+                   # de onde vem cada parte no código (H_ALIGN_LEFT → slot do texto), para trocar o alinhamento
+                   "partes_slots": [a[0].slot if isinstance(a[0], Duble) else a[1] for a in partes]}
             for a in cfg.args:
                 if isinstance(a[0], Obj) and a[0].get("__registro"):
                     out["formato"] = a[0].get("__registro")[0]

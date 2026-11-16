@@ -128,10 +128,34 @@ class Apt:
                 self.chars[k] = {"t": "import", "filme": imp["filme"], "nome": imp["nome"]}
 
     # ---------------------------------------------------------- edição (no lugar: nada muda de tamanho)
-    def editar_place(self, off, m=None, tx=None, tint=None, soma=None):
+    def editar_place(self, off, m=None, tx=None, tint=None, soma=None, prof=None):
         if self.u64(off) != 3:
             raise ErroApt("Posição de PlaceObject inválida")
         fl = self.u32(off + 8)
+        if prof is not None:
+            # profundidade (ordem de desenho entre os irmãos): não pode repetir a de outro objeto do mesmo clipe
+            prof = int(prof)
+            if not 1 <= prof < 0x10000:
+                raise ErroApt("Profundidade inválida")
+            atual = self.i32(off + 12)
+            if prof != atual:
+                meus = []
+                for c in self.chars:
+                    quadros = (c or {}).get("quadros") or []
+                    for q in quadros:
+                        places = [it for it in q if it.get("t") == "place"]
+                        if any(it["off"] == off for it in places):
+                            if any(it["prof"] == prof and it["off"] != off for it in places):
+                                raise ErroApt(f"A profundidade {prof} já é de outro objeto do mesmo clipe")
+                            # objeto mexido em outros quadros da linha do tempo: esses quadros usam a profundidade antiga
+                            if any(it.get("prof") == atual and it.get("off") != off for q2 in quadros for it in q2
+                                   if it.get("t") in ("place", "remove")):
+                                raise ErroApt("Esse objeto muda em outros quadros da linha do tempo: a profundidade não "
+                                              "pode ser trocada")
+                            meus += [it for it in places if it["off"] == off]
+                struct.pack_into("<i", self.d, off + 12, prof)
+                for it in meus:
+                    it["prof"] = prof
         if m is not None:
             struct.pack_into("<4f", self.d, off + 20, *m)
             fl |= F_MATRIZ
@@ -302,7 +326,7 @@ class Overlay:
         for op in ops:
             tipo = op.get("op")
             if tipo == "place":
-                a.editar_place(int(op["off"]), op.get("m"), op.get("tx"), op.get("tint"), op.get("soma"))
+                a.editar_place(int(op["off"]), op.get("m"), op.get("tx"), op.get("tint"), op.get("soma"), op.get("prof"))
             elif tipo == "texto":
                 a.editar_texto(int(op["char"]), op.get("limites"), op.get("fonte"), op.get("alinh"), op.get("cor"), op.get("altura"))
             elif tipo == "cor_forma":

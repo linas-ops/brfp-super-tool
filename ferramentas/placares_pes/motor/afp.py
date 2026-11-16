@@ -11,6 +11,7 @@ import io
 import os
 import struct
 import sys
+import zlib
 
 import numpy as np
 from PIL import Image, ImageDraw
@@ -116,6 +117,22 @@ class Forma:
 
 # ------------------------------------------------------------------ o pacote TXP2
 
+def desembrulhar(raw):
+    """Tira a compressão "WESYS" que muitos pacotes do PES usam (o mesmo .bin, só que em zlib).
+
+    Cabeçalho de 16 bytes: 3 bytes (00/FF 10 01), "WESYS", tamanho comprimido e tamanho cheio (little-endian)."""
+    if len(raw) >= 16 and raw[3:8] == b"WESYS":
+        comp, cheio = struct.unpack("<II", raw[8:16])
+        try:
+            d = zlib.decompress(raw[16:16 + comp] if comp else raw[16:])
+        except zlib.error as e:
+            raise ErroAfp(f"Pacote comprimido (WESYS) que não consegui abrir: {e}")
+        if cheio and len(d) != cheio:
+            raise ErroAfp("Pacote comprimido (WESYS) incompleto")
+        return desembrulhar(d)
+    return raw
+
+
 def _namp(d, o):
     if not o or d[o:o + 4] != b"NAMP":
         return {}
@@ -193,6 +210,7 @@ class Pacote:
 
     @staticmethod
     def _achar_txp2(raw):
+        raw = desembrulhar(raw)
         if raw[:4] == b"TXP2":
             return raw
         # pacote do PES: contagem, e para cada arquivo (tamanho do cabeçalho, deslocamento, tamanho, nome)

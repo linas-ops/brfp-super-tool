@@ -61,6 +61,48 @@ TELAS = {"game2d_score": "Placar", "game2d_scoreDemo": "Placar grande (intervalo
          "resultTeamRecordPes": "Retrospecto dos times"}
 
 
+def _dilatar(m, r):
+    """Máscara booleana engordada r pixels (para juntar pedaços próximos de uma mesma placa)."""
+    try:
+        import cv2
+        return cv2.dilate(m.astype(np.uint8), np.ones((2 * r + 1, 2 * r + 1), np.uint8)) > 0
+    except ImportError:
+        out = m.copy()
+        for _ in range(r):
+            v = out.copy()
+            v[1:] |= out[:-1]
+            v[:-1] |= out[1:]
+            v[:, 1:] |= out[:, :-1]
+            v[:, :-1] |= out[:, 1:]
+            out = v
+        return out
+
+
+def _manchas(m):
+    """(rótulos, quantidade) das regiões ligadas de uma máscara booleana."""
+    try:
+        import cv2
+        n, rot = cv2.connectedComponents(m.astype(np.uint8), connectivity=8)
+        return rot, n - 1
+    except ImportError:
+        rot = np.zeros(m.shape, np.int32)
+        n = 0
+        h, w = m.shape
+        for y0, x0 in zip(*np.nonzero(m)):
+            if rot[y0, x0]:
+                continue
+            n += 1
+            pilha = [(y0, x0)]
+            rot[y0, x0] = n
+            while pilha:
+                y, x = pilha.pop()
+                for yy, xx in ((y - 1, x), (y + 1, x), (y, x - 1), (y, x + 1)):
+                    if 0 <= yy < h and 0 <= xx < w and m[yy, xx] and not rot[yy, xx]:
+                        rot[yy, xx] = n
+                        pilha.append((yy, xx))
+        return rot, n
+
+
 def desenhar_tela(bib, nome, margem=8, fundo=None):
     """Uma tela do pacote como o PES mostra (só as imagens: as formas são recortes), enquadrada pelas peças."""
     fm = bib.filme(nome)
@@ -139,7 +181,11 @@ class PlacarPes:
         self.pecas = self._preparar(cena.pecas(SEM_ACRESCIMOS))
         # com acréscimos: só a placa e a caixa dos acréscimos vêm daqui
         com = self._preparar(cena.pecas())
-        self.pecas = [p for p in self.pecas if p["papel"] not in ("acrescimos", "texto:acrescimos")] +             [p for p in com if p["papel"] in ("acrescimos", "texto:acrescimos")]
+        self.pecas = [p for p in self.pecas if p["papel"] not in ("acrescimos", "texto:acrescimos")] + \
+            [p for p in com if p["papel"] in ("acrescimos", "texto:acrescimos")]
+        # a área do placar no filme; o que fica longe dele (o logo do canal num canto da tela, por exemplo) fica de fora
+        self.janela = None
+        self.janela, self.soltas = self._achar_janela()
 
     def _preparar(self, pecas):
         for p in pecas:
@@ -163,7 +209,7 @@ class PlacarPes:
     def caixa_visivel(self, papeis=("fundo",), limite=None):
         """Retângulo dos pixels visíveis das peças (as placas do PES têm muita margem transparente).
 
-        'limite' restringe a busca a uma área (x0, y0, x1, y1) do filme.
+        'limite' restringe a busca a uma área (x0, y0, x1, y1) do filme; sem ele, vale a área do placar (janela).
         """
         pecas = [p for p in self.pecas if p["papel"] in papeis and p["caixa"]]
         if not pecas:
@@ -173,7 +219,7 @@ class PlacarPes:
         x1 = max(p["caixa"][2] for p in pecas)
         y1 = max(p["caixa"][3] for p in pecas)
         # recortes gigantes (uma ponta da placa a 2.000 px) não entram na conta: limita a uma área razoável
-        lx0, ly0, lx1, ly1 = limite or (-1000, -600, 2000, 800)
+        lx0, ly0, lx1, ly1 = limite or self.janela or (-1000, -600, 2000, 800)
         x0, y0, x1, y1 = max(x0, lx0), max(y0, ly0), min(x1, lx1), min(y1, ly1)
         if x1 <= x0 or y1 <= y0:
             return None
@@ -185,9 +231,75 @@ class PlacarPes:
             return None
         return (x0 + xs.min(), y0 + ys.min(), x0 + xs.max() + 1, y0 + ys.max() + 1)
 
-    def desenhar(self, papeis, ajuste, w, h, fundo=None):
+    def _achar_janela(self, papeis=("fundo", "cor_casa", "cor_fora", "acrescimos")):
+        """(área do placar, [áreas soltas]) no filme do PES.
+
+        Alguns pacotes trazem, no mesmo filme e até na mesma imagem do placar, peças longe dele: o logo do canal no
+        canto de baixo da tela, uma marca d'água… Desenha tudo em escala pequena, junta as manchas próximas e fica com
+        as que encostam nas caixas de texto (nomes, gols, relógio); as outras ficam de fora do placar.
+        """
+        pecas = [p for p in self.pecas if p["papel"] in papeis and p["caixa"]]
+        if not pecas:
+            return None, []
+        k = 0.25
+        x0 = max(min(p["caixa"][0] for p in pecas), -2400.0)
+        y0 = max(min(p["caixa"][1] for p in pecas), -1400.0)
+        x1 = min(max(p["caixa"][2] for p in pecas), x0 + 5600)
+        y1 = min(max(p["caixa"][3] for p in pecas), y0 + 3400)
+        w, h = int(np.ceil((x1 - x0) * k)) + 2, int(np.ceil((y1 - y0) * k)) + 2
+        img = afp.desenhar(self.bib, pecas, w, h, ajuste=(k, 0, 0, k, -x0 * k, -y0 * k), formas=False)
+        visivel = np.asarray(img)[..., 3] > 8
+        if not visivel.any():
+            return None, []
+        rotulos, n = _manchas(_dilatar(visivel, 10))       # 10 px aqui = 40 px no filme
+        if n <= 1:
+            return None, []
+        ancoras = [c for c in (self.caixa_campo(cp) for cp in ("nome_casa", "nome_fora", "gols_casa", "gols_fora",
+                                                                "relogio")) if c]
+        manter = set()
+        for c in ancoras:
+            ax0, ay0 = max(0, int((c[0] - x0) * k) - 2), max(0, int((c[1] - y0) * k) - 2)
+            ax1, ay1 = min(w, int(np.ceil((c[2] - x0) * k)) + 3), min(h, int(np.ceil((c[3] - y0) * k)) + 3)
+            if ax1 > ax0 and ay1 > ay0:
+                manter.update(int(v) for v in np.unique(rotulos[ay0:ay1, ax0:ax1]) if v)
+        if not manter:                                      # sem caixas de texto: a maior mancha
+            manter = {int(np.argmax(np.bincount(rotulos[visivel].ravel())[1:]) + 1)}
+
+        def caixa_de(sel):
+            ys, xs = np.nonzero(sel & visivel)
+            if not len(xs):
+                return None
+            return (x0 + xs.min() / k - 6, y0 + ys.min() / k - 6, x0 + (xs.max() + 1) / k + 6,
+                    y0 + (ys.max() + 1) / k + 6)
+        janela = caixa_de(np.isin(rotulos, list(manter)))
+        soltas = [c for c in (caixa_de(rotulos == r) for r in range(1, n + 1) if r not in manter) if c]
+        return janela, soltas
+
+    def desenhar(self, papeis, ajuste, w, h, fundo=None, janela=True):
+        """Desenha as peças com a matriz 'ajuste' (filme -> imagem). Com 'janela', só a área do placar aparece."""
         pecas = [p for p in self.pecas if p["papel"] in papeis]
-        return afp.desenhar(self.bib, pecas, w, h, ajuste=ajuste, fundo=fundo, formas=False)
+        img = afp.desenhar(self.bib, pecas, w, h, ajuste=ajuste, fundo=None if janela and self.janela else fundo,
+                           formas=False)
+        if not (janela and self.janela):
+            return img
+        # o que fica fora da área do placar some (os pixels são levados de volta para o filme pela inversa)
+        a, b, c, d, e, f = afp.inversa(ajuste)
+        xs = np.arange(w, dtype=np.float32) + 0.5
+        ys = np.arange(h, dtype=np.float32)[:, None] + 0.5
+        fx = a * xs + c * ys + e
+        fy = b * xs + d * ys + f
+        jx0, jy0, jx1, jy1 = self.janela
+        fora = (fx < jx0) | (fx > jx1) | (fy < jy0) | (fy > jy1)
+        if fora.any():
+            arr = np.asarray(img).copy()
+            arr[fora] = 0
+            img = afp.Image.fromarray(arr, "RGBA")
+        if fundo is not None:
+            from PIL import Image
+            bg = Image.new("RGBA", img.size, tuple(fundo))
+            bg.alpha_composite(img)
+            img = bg
+        return img
 
     def previa(self, margem=12, fundo=(26, 92, 48, 255), caixas_texto=True):
         """Imagem do placar como no PES (fundo + cores + acréscimos), com as caixas de texto marcadas."""

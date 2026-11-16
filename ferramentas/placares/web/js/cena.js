@@ -76,6 +76,7 @@ export class Filme {
         if (op.tx) { it.tx = op.tx.slice(); it.fl |= 4; }
         if (op.tint) { it.tint = op.tint.slice(); it.fl |= 8; }
         if (op.soma) { it.soma = op.soma.slice(); it.fl |= 8; }
+        if (op.prof !== undefined) it.prof = op.prof;   // ordem de desenho entre os irmãos
       } else if (op.op === 'texto') {
         const c = this.modelo.chars[op.char];
         if (!c) continue;

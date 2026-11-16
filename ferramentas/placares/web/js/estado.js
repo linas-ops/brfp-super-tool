@@ -50,7 +50,7 @@ export function opPlace(place, base, mudancas) {
     if (v === null || igual(v, base[k])) delete atual[k];
     else atual[k] = v;
   }
-  const temAlgo = ['m', 'tx', 'tint', 'soma'].some((k) => atual[k] !== undefined);
+  const temAlgo = ['m', 'tx', 'tint', 'soma', 'prof'].some((k) => atual[k] !== undefined);
   return { chave, op: temAlgo ? atual : null };
 }
 

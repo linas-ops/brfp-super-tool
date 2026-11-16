@@ -122,7 +122,9 @@ async function atualizarPrevia() {
   S.previa = r;
   $('#img-fc').src = r.recorte;
   $('#img-tela').src = r.tela;
-  $('#dica-fc').textContent = `fundo do PES no molde ${nomeArq(S.molde.arquivo)} (imagem ${r.fundo.w}×${r.fundo.h}), com textos de exemplo`;
+  $('#dica-fc').textContent = S.molde.tipo === 'generic'
+    ? `fundo do PES no Generic (${nomeArq(S.molde.arquivo)}), com textos de exemplo`
+    : `fundo do PES no molde ${nomeArq(S.molde.arquivo)} (imagem ${r.fundo.w}×${r.fundo.h}), com textos de exemplo`;
 }
 
 // ---------------------------------------------------------------- converter
@@ -211,17 +213,21 @@ function desenharPropriedades() {
   const corpoMolde = [];
   if (S.moldes === null) corpoMolde.push(el('div', { class: 'mudo' }, 'Procurando…'));
   else if (!S.moldes.length) {
-    corpoMolde.push(nota('Nenhum placar do FC serve de molde. O molde precisa ter o fundo numa imagem grande e os textos soltos (txtTeamNameHome, txtTeamScoreHome, mcClock…), como os placares do <b>pack do LTA</b>. Adicione o <span class="mono">Pack de TV Total y Switcher.fifamod</span> como fonte no Editor de Placares (Arquivo › Fontes) e clique em Atualizar.', 'alerta'));
+    corpoMolde.push(nota('Nenhum placar do FC serve de molde. O <b>Generic</b> (overlay_9002) vem do jogo: confira a pasta do jogo no Editor de Placares. Também servem os placares do <b>pack do LTA</b> (fundo numa imagem grande e textos soltos): adicione o <span class="mono">Pack de TV Total y Switcher.fifamod</span> como fonte no Editor de Placares (Arquivo › Fontes) e clique em Atualizar.', 'alerta'));
   } else {
     const sel = el('select', { class: 'seletor largo' });
     for (const m of S.moldes) {
-      const o = el('option', { value: chaveMolde(m) }, `${nomeArq(m.arquivo)} · ${m.nome || m.conjunto || ''} (${m.fundo.w}×${m.fundo.h})`);
+      const o = el('option', { value: chaveMolde(m) }, m.tipo === 'generic'
+        ? `${nomeArq(m.arquivo)} · Generic (${m.fonte === 'jogo' ? 'do jogo' : m.fonte_nome})`
+        : `${nomeArq(m.arquivo)} · ${m.nome || m.conjunto || ''} (${m.fundo.w}×${m.fundo.h})`);
       if (chaveMolde(m) === chaveMolde(S.molde)) o.selected = true;
       sel.append(o);
     }
     sel.onchange = () => { S.molde = S.moldes.find((m) => chaveMolde(m) === sel.value); pedirPrevia(); desenharPropriedades(); };
     corpoMolde.push(campo('Placar do FC usado como molde', sel, S.molde ? `${esc(S.molde.fonte_nome)} · <span class="mono">${esc(S.molde.arquivo)}</span>` : ''));
-    if (S.molde && S.molde.fundo.w * S.molde.fundo.h < 1920 * 1080) {
+    if (S.molde && S.molde.tipo === 'generic') {
+      corpoMolde.push(nota('O placar padrão do jogo, sem depender de mod. O desenho do PES vai para a imagem do logo do FC (atrás dos textos), as caixas do Generic somem, e nomes, gols, relógio, faixas de cor, acréscimos e cartões vão para os lugares do PES — pelos lugares e pelas constantes do código, que posiciona tudo na animação. Use os nomes abreviados (3 letras): com os nomes longos o código alarga o placar. A placa dos acréscimos do PES não aparece, só o "+3".'));
+    } else if (S.molde && S.molde.fundo.w * S.molde.fundo.h < 1920 * 1080) {
       corpoMolde.push(nota('A imagem de fundo deste molde não cobre a tela toda: partes do placar do PES fora dela não aparecem. Os moldes de fundo 1920×1080 (como o overlay_35002) aceitam o placar em qualquer lugar.', 'alerta'));
     }
   }
@@ -325,9 +331,9 @@ function menus() {
 function ajuda() {
   modal({ titulo: 'Como funciona', largo: true, corpo: el('div', { style: { lineHeight: '1.6', color: 'var(--texto-2)' }, html: `
     <p><b>1. Abra o placar do PES.</b> A pasta com <span class="mono">common\\menu\\licence\\game2dPes.bin</span> (e os outros .bin do placar) ou a pasta de um pacote com vários placares: cada um aparece na lista.</p>
-    <p><b>2. Escolha o molde.</b> Um placar do FC que já tenha o fundo numa imagem grande e os textos soltos — os placares do pack do LTA (overlay_35002 Brasileirão e os outros iguais). O conversor desenha o placar do PES na imagem de fundo, apaga as decorações do molde e leva os nomes, o placar, o relógio, a caixa de acréscimos, as faixas das cores dos times e os cartões para os lugares do PES (inclusive as constantes do código que posicionam os gols e o relógio).</p>
+    <p><b>2. Escolha o molde.</b> O <b>Generic</b> do próprio jogo (overlay_9002, o primeiro da lista) ou um placar do pack do LTA (overlay_35002 Brasileirão e os outros iguais, com o fundo numa imagem grande e os textos soltos). O conversor desenha o placar do PES no molde (no Generic, na imagem do logo do FC, atrás dos textos), apaga as decorações do molde e leva os nomes, o placar, o relógio, os acréscimos, as faixas das cores dos times e os cartões para os lugares do PES — inclusive as constantes do código que posicionam essas peças na animação.</p>
     <p><b>3. Grave.</b> O placar vai para a pasta de saída do Editor de Placares, como um projeto dele: abra o Editor de Placares, o placar está em <b>Editados</b>. Lá dá para ajustar tudo e ver a animação.</p>
-    <p><b>Limites:</b> os textos são escritos pelo FC com as fontes dele (não com os números desenhados do PES); só o placar da partida é convertido (escalação, substituição, gol e pênaltis ainda não); e o resultado não foi conferido dentro do jogo em todos os moldes.</p>` }),
+    <p><b>Limites:</b> os nomes são escritos pelo FC com a fonte dele (gols e relógio podem usar os números desenhados do PES); só o placar da partida é convertido (escalação, substituição, gol e pênaltis ainda não); no Generic, a placa dos acréscimos do PES não aparece e os nomes longos alargam o placar; e o resultado não foi conferido dentro do jogo em todos os moldes.</p>` }),
     botoes: [{ rotulo: 'Fechar', classe: 'btn-primario', padrao: true }] });
 }
 

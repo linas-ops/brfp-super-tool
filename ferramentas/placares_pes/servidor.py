@@ -32,7 +32,7 @@ sys.path.insert(0, EDITOR)
 
 import base  # noqa: E402
 
-VERSAO = "1.0"
+VERSAO = "1.1"
 GRUPO = "placares_pes"                 # numpy e Pillow
 PREFS = base.Prefs(os.path.join(AQUI, "preferencias.json"), {
     "pasta": "", "molde": None, "x": 64, "y": 48, "escala": 1.0, "alvo": "molde", "alvo_outro": "", "fonte_pes": True})
@@ -99,6 +99,8 @@ def listar_moldes(forcar=False):
         for k in ED._ordem_fontes():
             f = ED.E.fontes[k]
             try:
+                if f.tipo == "jogo" and getattr(f, "j", None) is not None:
+                    f.j.esperar()          # o índice do jogo carrega em segundo plano; sem esperar, a lista vem vazia
                 grupos = fontes.conjuntos(f)
             except Exception:  # noqa: BLE001
                 continue
@@ -108,14 +110,17 @@ def listar_moldes(forcar=False):
                     if not re.search(r"002\.big$", arq, re.I):
                         continue
                     try:
-                        m = fc.Molde(ED._abrir_overlay(f, arq))
+                        m = fc.abrir(ED._abrir_overlay(f, arq))
                     except Exception:  # noqa: BLE001  (não é molde, ou não abriu)
                         continue
                     nome = o.get("nome") or g.get("nome") or ""
                     achados.append({"fonte": f.id, "fonte_nome": ED._nome_fonte(f), "arquivo": arq,
-                                    "nome": nome, "conjunto": g.get("nome") or "", "fundo": m.descricao()["fundo"]})
-        # o Brasileirão do LTA (o mais testado) primeiro, depois os de fundo em tela cheia
-        achados.sort(key=lambda m: (not m["arquivo"].lower().endswith("overlay_35002.big"),
+                                    "nome": nome, "conjunto": g.get("nome") or "", "fundo": m.descricao()["fundo"],
+                                    "tipo": getattr(m, "tipo", "lta")})
+        # o Generic do jogo primeiro (não depende de mod), depois o Brasileirão do LTA (o mais testado do modelo do
+        # LTA) e os de fundo em tela cheia
+        achados.sort(key=lambda m: (m["tipo"] != "generic", m["fonte"] != "jogo",
+                                    not m["arquivo"].lower().endswith("overlay_35002.big"),
                                     m["fundo"]["w"] * m["fundo"]["h"] < 1920 * 1080, m["arquivo"]))
         MOLDES.update(lista=achados, quando=time.time())
         return achados
@@ -128,12 +133,15 @@ def abrir_molde(d):
     if not m:
         lst = listar_moldes()
         if not lst:
-            raise base.ErroUsuario("Não achei nenhum placar do FC que sirva de molde. Adicione o pack do LTA como fonte no "
-                                   "Editor de Placares (Arquivo › Fontes).")
+            raise base.ErroUsuario("Não achei nenhum placar do FC que sirva de molde. Confira a pasta do jogo no Editor "
+                                   "de Placares (o Generic vem do jogo) ou adicione o pack do LTA como fonte "
+                                   "(Arquivo › Fontes).")
         m = lst[0]
     f = ED.fonte(m["fonte"])
+    if f.tipo == "jogo" and getattr(f, "j", None) is not None:
+        f.j.esperar()
     ov = ED._abrir_overlay(f, m["arquivo"])
-    return f, m, ov, fc.Molde(ov)
+    return f, m, ov, fc.abrir(ov)
 
 
 def placar(pasta):
@@ -320,7 +328,7 @@ def api_converter(d):
     if not re.match(r"^data/ui/.+\.big$", alvo, re.I):
         raise base.ErroUsuario("O destino precisa ser um caminho data/ui/…/….big (por exemplo "
                                "data/ui/game/overlays/overlay_35002.big).")
-    consts = fc.constantes_do_codigo(ov, ED.bibliotecas_anim(), ED.valores_tema())
+    sim = fc.simular(ov, ED.bibliotecas_anim(), ED.valores_tema())
     num = _usar_fonte(d, pl)
     numeros = None
     if num:
@@ -329,8 +337,8 @@ def api_converter(d):
         face, chave = face_numeros(pl)
         tema.definir(sai, ED.ler_efetivo, chave, face, ttf=num[0], nome_ttf=face + ".ttf")
         ED._depois_tema()
-        numeros = {"face": face, "avancos": num[1]}
-    ops, resumo = fc.converter(pl, molde, S, consts, numeros)
+        numeros = {"face": face, "chave": tema.limpar_chave(chave), "avancos": num[1]}
+    ops, resumo = fc.converter(pl, molde, S, sim["constantes"], numeros, sim["textos"])
     novo = ED._abrir_overlay(f, m["arquivo"])
     lst = list(ops.values())
     novo.aplicar(lst, ED._imagens_das_ops(lst))
