@@ -373,7 +373,10 @@ export function estiloTexto(no) {
   if (!t || !t.config || !t.config.formato) return null;
   const f = t.config.formato;
   const cor = typeof f.cor === 'number' ? [(f.cor >> 16) & 255, (f.cor >> 8) & 255, f.cor & 255] : null;
-  return { face: faceDaChave(chaveEfetiva(f)), alinh: alinhamentoDe(t.config), cor };
+  const p = t.config.partes || [];
+  const valign = p.includes('V_ALIGN_TOP') ? 'top' : p.includes('V_ALIGN_BOTTOM') ? 'bottom' : p.includes('V_ALIGN_MIDDLE') ? 'middle' : null;
+  return { face: faceDaChave(chaveEfetiva(f)), alinh: alinhamentoDe(t.config), cor,
+    tam: typeof f.tamanho === 'number' ? f.tamanho : null, valign };
 }
 
 function usosDoFormato(fmt) {

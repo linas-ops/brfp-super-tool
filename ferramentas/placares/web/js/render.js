@@ -343,16 +343,33 @@ export class Render {
     const gl = this.gl;
     const texto = no.marcador === 'texto';
     if (texto && !this.mostrarTextos) return;
-    const w = texto ? 200 : 100, h = texto ? 50 : 100;
-    const sx = Math.hypot(no.mundo[0], no.mundo[1]) * w, sy = Math.hypot(no.mundo[2], no.mundo[3]) * h;
-    const q = Math.min(4, Math.max(1, this.vista.s * 2));
-    let conteudo = texto ? textoExemplo(nomesAcima(no)) : '';
-    if (sx < 80) conteudo = { MANDANTE: 'CAS', VISITANTE: 'VIS', JOGADOR: 'NOME', 'TÍTULO': 'TÍT.' }[conteudo] || conteudo;
     // fonte, alinhamento e cor que o código do placar passa ao componente (quando a simulação achou)
     const est = texto && this.estiloTexto ? this.estiloTexto(no) : null;
+    let w = texto ? 200 : 100, h = texto ? 50 : 100;
+    let mundoQuad = M.mul(no.mundo, [w, 0, 0, h, 0, 0]);
+    let ret = [0, 0, w, h];
+    let tamTela = null;
+    if (est && est.tam) {
+      // MultiText (overlayComponents_9): a caixa tem 240 × _xscale de largura; o componente volta a escala para 100,
+      // então a letra tem o tamanho do TextFormat no espaço do pai, e o _y é o meio da linha (V_ALIGN_MIDDLE), o topo
+      // (TOP) ou a base (BOTTOM)
+      const P = no.pai ? no.pai.mundo : M.id();
+      const L = no.local;
+      const W = 240 * Math.hypot(L[0], L[1]), H = est.tam * 1.25;
+      const y0 = est.valign === 'top' ? 0 : est.valign === 'bottom' ? -H : -H / 2;
+      mundoQuad = [P[0] * W, P[1] * W, P[2] * H, P[3] * H, no.mundo[4] + P[2] * y0, no.mundo[5] + P[3] * y0];
+      const ly = Math.hypot(L[2], L[3]) || 1;
+      ret = [0, y0 / ly, 240, (y0 + H) / ly];
+      w = 1; h = 1;
+      tamTela = est.tam * Math.hypot(P[2], P[3]);
+    }
+    const sx = Math.hypot(mundoQuad[0], mundoQuad[1]), sy = Math.hypot(mundoQuad[2], mundoQuad[3]);
+    const q = Math.min(4, Math.max(1, this.vista.s * 2));
+    let conteudo = texto ? textoExemplo(nomesAcima(no)) : '';
+    if (sx < 80 || (tamTela && sx < tamTela * 6)) conteudo ={ MANDANTE: 'CAS', VISITANTE: 'VIS', JOGADOR: 'NOME', 'TÍTULO': 'TÍT.' }[conteudo] || conteudo;
     const face = est && est.face;
     if (face && !carregadas.has(face)) carregarFonte(face).then((ok) => { if (ok && this.aoPrecisarDesenhar) this.aoPrecisarDesenhar(); });
-    const chave = ['marcador', no.marcador, conteudo, Math.round(sx), Math.round(sy), q, face, carregadas.has(face), est && est.alinh, est && est.cor].join('|');
+    const chave = ['marcador', no.marcador, conteudo, Math.round(sx), Math.round(sy), q, face, carregadas.has(face), est && est.alinh, est && est.cor, tamTela && Math.round(tamTela * 4)].join('|');
     let cv = this.textos.get(chave);
     if (!cv) {
       cv = document.createElement('canvas');
@@ -360,23 +377,32 @@ export class Render {
       const g = cv.getContext('2d');
       g.scale(q, q);
       if (texto) {
-        let alt = Math.max(6, Math.min(sy * 0.8, sx * 1.6));
+        let alt = tamTela || Math.max(6, Math.min(sy * 0.8, sx * 1.6));
         const fonte = (a) => (face && carregadas.has(face) ? `${a}px "apt_${face}", sans-serif` : `600 ${a}px "Segoe UI", system-ui, sans-serif`);
         g.font = fonte(alt);
         g.fillStyle = est && est.cor ? `rgba(${est.cor[0]},${est.cor[1]},${est.cor[2]},.95)` : 'rgba(255,255,255,.92)';
-        // centraliza pela tinta real das letras (as fontes do jogo e as importadas têm métricas fora do padrão)
         g.textBaseline = 'alphabetic';
-        let med = g.measureText(conteudo);
-        let asc = med.actualBoundingBoxAscent || alt * 0.7, desc = med.actualBoundingBoxDescent || 0;
-        if (asc + desc > sy * 0.85) {
-          alt *= sy * 0.85 / (asc + desc);
-          g.font = fonte(alt);
-          med = g.measureText(conteudo);
-          asc = med.actualBoundingBoxAscent || alt * 0.7; desc = med.actualBoundingBoxDescent || 0;
-        }
         const al = est && est.alinh ? est.alinh : 'center';
         g.textAlign = al;
-        g.fillText(conteudo, al === 'left' ? 0 : al === 'right' ? sx : sx / 2, sy / 2 + (asc - desc) / 2, sx);
+        const xTxt = al === 'left' ? 0 : al === 'right' ? sx : sx / 2;
+        if (tamTela) {
+          // MultiText: a letra tem o tamanho do código e o meio da linha (ascendente + descendente da fonte) fica no
+          // meio da caixa; texto largo demais encolhe (SCALE_MODE_PROPORTIONAL)
+          const med = g.measureText(conteudo);
+          const fa = med.fontBoundingBoxAscent || alt * 0.9, fd = med.fontBoundingBoxDescent || alt * 0.2;
+          g.fillText(conteudo, xTxt, sy / 2 + (fa - fd) / 2, sx);
+        } else {
+          // centraliza pela tinta real das letras (as fontes do jogo e as importadas têm métricas fora do padrão)
+          let med = g.measureText(conteudo);
+          let asc = med.actualBoundingBoxAscent || alt * 0.7, desc = med.actualBoundingBoxDescent || 0;
+          if (asc + desc > sy * 0.85) {
+            alt *= sy * 0.85 / (asc + desc);
+            g.font = fonte(alt);
+            med = g.measureText(conteudo);
+            asc = med.actualBoundingBoxAscent || alt * 0.7; desc = med.actualBoundingBoxDescent || 0;
+          }
+          g.fillText(conteudo, xTxt, sy / 2 + (asc - desc) / 2, sx);
+        }
       } else {
         const r = Math.min(sx, sy) / 2 * 0.86, cx = sx / 2, cy = sy / 2;
         g.fillStyle = 'rgba(255,255,255,.16)';
@@ -389,17 +415,16 @@ export class Render {
       }
       this.textos.set(chave, cv);
     }
-    const mundo = M.mul(no.mundo, [w, 0, 0, h, 0, 0]);
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, this._texturaDeCanvas(cv));
-    gl.uniformMatrix3fv(this.loc.uMvp, false, this._mvp(mundo));
+    gl.uniformMatrix3fv(this.loc.uMvp, false, this._mvp(mundoQuad));
     gl.uniformMatrix3fv(this.loc.uUV, false, new Float32Array([1, 0, 0, 0, 1, 0, 0, 0, 1]));
     gl.uniform1i(this.loc.uModo, 1);
     gl.uniform4fv(this.loc.uCor, [1, 1, 1, 1]);
     gl.uniform4fv(this.loc.uMult, no.mult);
     gl.uniform4fv(this.loc.uSoma, no.soma);
     this._vertices(this.quad);
-    this.alvos.push({ no, mundo: no.mundo, ret: [0, 0, w, h], bbox: [0, 0, w, h] });
+    this.alvos.push({ no, mundo: no.mundo, ret, bbox: ret });
   }
 
   // ------------------------------------------------------------ seleção
