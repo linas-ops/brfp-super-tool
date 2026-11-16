@@ -85,7 +85,7 @@ sob demanda e guardadas em cache em `dados\cache`; o registro fica em `dados\fon
 
 | Ferramenta | Versão | O que faz |
 |---|---|---|
-| BRFP Super Tool | 3.8 | Janela única, trilho, início com versões e guias; Dados do jogo compartilhados (banco de qualquer versão, FIFA 16 … FC 27, idioma, internationals); Python embutido, Componentes (com o servidor local da Transfermarkt) e pacote para outro computador. |
+| BRFP Super Tool | 3.9 | Janela única, trilho, início com versões e guias; Dados do jogo compartilhados (banco de qualquer versão, FIFA 16 … FC 27, idioma, internationals); Python embutido, Componentes (com o servidor local da Transfermarkt) e pacote para outro computador. |
 | Editor de Estádios | 3.4 | Exports do FET em 3D: ocultar/mover peças, texturas do jogo, luzes, torcida, banco e áreas técnicas, stadiums.txt; partições novas do FBX com material no MeshVariationDb. |
 | Editor de Placares | 2.2 | Overlays APT do jogo, de mods .fifamod e de arquivos .big soltos: textos, cores, imagens, posições, animações e fontes; grava para o Live Editor. |
 | Editor de Compdata | 2.1 | Competições → estágios → grupos com renumeração automática; nomes vindos do banco e do idioma importados. |
