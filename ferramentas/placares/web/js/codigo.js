@@ -35,9 +35,9 @@ const editavel = (slot) => !!slot && !doTema(slot);
 
 function limitesSlot(slot) {
   const t = String(slot).split(':')[0];
-  if (t === 'pb') return { min: 0, max: 255, inteiro: true, dica: 'Este número fica num byte do código: inteiro de 0 a 255.' };
-  if (t === 'ps') return { min: 0, max: 65535, inteiro: true, dica: 'Inteiro de 0 a 65535.' };
-  if (t === 'pl') return { min: 0, max: 4294967295, inteiro: true, dica: 'Inteiro positivo.' };
+  if (t === 'pb') return { min: -128, max: 127, inteiro: true, dica: 'Este número fica num byte do código: inteiro de -128 a 127.' };
+  if (t === 'ps') return { min: -32768, max: 32767, inteiro: true, dica: 'Inteiro de -32768 a 32767.' };
+  if (t === 'pl') return { min: -2147483648, max: 2147483647, inteiro: true, dica: 'Inteiro.' };
   return { min: -1e7, max: 1e7, inteiro: false, dica: '' };
 }
 

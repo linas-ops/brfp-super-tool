@@ -3,8 +3,10 @@
     python servidor.py [--porta 8781] [--sem-janela] [pasta do placar do PES]
 
 Lê um placar do PES 2021 (os .bin de common/menu/licence: game2dPes.bin e companhia) e monta um placar do FC num molde
-do Editor de Placares (um placar do FC com o fundo numa imagem grande e os textos soltos, como os do pack do LTA). O
-resultado é gravado como um projeto do Editor de Placares, na pasta de saída dele: abre lá e continua editando.
+do Editor de Placares (o Generic do jogo, ou um placar com o fundo numa imagem grande e os textos soltos, como os do
+pack do LTA). A tela da substituição do pacote vai junto, na substituição do mesmo conjunto (o Generic/overlay_9021 do
+jogo é o molde). O resultado é gravado como projetos do Editor de Placares, na pasta de saída dele: abre lá e continua
+editando.
 
 O leitor do PES (motor/afp.py e motor/pes.py) usa numpy e Pillow; a parte do FC usa os módulos do próprio Editor de
 Placares (ferramentas/placares/nucleo), em Python padrão.
@@ -32,15 +34,18 @@ sys.path.insert(0, EDITOR)
 
 import base  # noqa: E402
 
-VERSAO = "1.1"
+VERSAO = "1.2"
 GRUPO = "placares_pes"                 # numpy e Pillow
 PREFS = base.Prefs(os.path.join(AQUI, "preferencias.json"), {
-    "pasta": "", "molde": None, "x": 64, "y": 48, "escala": 1.0, "alvo": "molde", "alvo_outro": "", "fonte_pes": True})
+    "pasta": "", "molde": None, "x": 64, "y": 48, "escala": 1.0, "alvo": "molde", "alvo_outro": "", "fonte_pes": True,
+    "subst": True})
 LOCK = threading.RLock()
 MOTOR_OK = {"ok": False, "msg": "verificando…"}
 PLACARES = {}                          # pasta -> PlacarPes
 MOLDES = {"lista": None, "quando": 0, "erro": None}
 GENERIC = "data/ui/game/overlays/Generic/overlay_9002.big"
+GENERIC_SUBST = "data/ui/game/overlays/Generic/overlay_9021.big"     # a substituição do Generic: molde da do PES
+SUBST = {}                             # id da fonte do jogo -> (MoldeSubst, simulação)
 
 
 def verificar_motor():
@@ -94,6 +99,7 @@ def listar_moldes(forcar=False):
         ED = editor()
         if forcar:
             ED.montar_fontes()
+            SUBST.clear()
         from nucleo import fontes
         achados = []
         for k in ED._ordem_fontes():
@@ -142,6 +148,38 @@ def abrir_molde(d):
         f.j.esperar()
     ov = ED._abrir_overlay(f, m["arquivo"])
     return f, m, ov, fc.abrir(ov)
+
+
+def alvo_subst(alvo):
+    """A substituição do mesmo conjunto de overlays do placar (…N002.big -> …N021.big), ou None."""
+    m = re.match(r"^(.*overlay_\d+)002\.big$", alvo or "", re.I)
+    return m.group(1) + "021.big" if m else None
+
+
+def nome_classe(alvo):
+    """Nome próprio para a classe de um overlay do Generic gravado em outro arquivo (ex.: overlay_35021_PES)."""
+    return re.sub(r"\W+", "_", os.path.splitext(os.path.basename(alvo))[0]).strip("_") + "_PES"
+
+
+def fonte_jogo(ED):
+    f = ED.E.fontes.get("jogo")
+    if f is None:
+        raise base.ErroUsuario("A substituição usa a do Generic do jogo como molde: confira a pasta do jogo no Editor "
+                               "de Placares.")
+    if getattr(f, "j", None) is not None:
+        f.j.esperar()
+    return f
+
+
+def molde_subst(ED, fc):
+    """(fonte do jogo, MoldeSubst do Generic/overlay_9021, simulação dele); a simulação fica guardada."""
+    f = fonte_jogo(ED)
+    with LOCK:
+        if f.id not in SUBST:
+            ov = ED._abrir_overlay(f, GENERIC_SUBST)
+            SUBST[f.id] = (fc.MoldeSubst(ov), fc.simular(ov, ED.bibliotecas_anim(), ED.valores_tema()))
+        molde, sim = SUBST[f.id]
+    return f, molde, sim
 
 
 def placar(pasta):
@@ -195,9 +233,16 @@ def api_placar(d):
     img = pl.previa(margem=10)
     campos = {c: [round(v, 1) for v in pl.caixa_campo(c)] for c in
               ("nome_casa", "nome_fora", "gols_casa", "gols_fora", "relogio", "acrescimos") if pl.caixa_campo(c)}
+    sp = pl.substituicao()
+    sub = None
+    if sp:
+        im = sp.previa(margem=10)
+        sub = {"previa": png_dados(im) if im else None, "w": im.width if im else 0, "h": im.height if im else 0,
+               "escudo": bool(sp.caixa_escudo()), "titulo": bool(sp.campo_na_placa("titulo"))}
     return {"pasta": pl.pasta, "nome": pl.nome, "arquivos": [os.path.basename(b) for b in pl.bins],
             "filmes": [n for _, n in pl.bib.filmes()], "campos": campos,
-            "previa": png_dados(img) if img else None, "w": img.width if img else 0, "h": img.height if img else 0}
+            "previa": png_dados(img) if img else None, "w": img.width if img else 0, "h": img.height if img else 0,
+            "subst": sub}
 
 
 def api_moldes(d):
@@ -238,8 +283,9 @@ def api_previa(d):
     ttf = num[0] if num else None
     img = fc.previa(pl, molde, S, recorte=False, ttf_numeros=ttf)
     tela = img.resize((960, 540))
+    sp = pl.substituicao()
     return {"tela": png_dados(tela), "recorte": png_dados(fc.previa(pl, molde, S, ttf_numeros=ttf)), "molde": m,
-            "pos": pos, "fundo": molde.descricao()["fundo"]}
+            "pos": pos, "fundo": molde.descricao()["fundo"], "subst": png_dados(fc.previa_subst(sp)) if sp else None}
 
 
 def api_telas(d):
@@ -339,15 +385,57 @@ def api_converter(d):
         ED._depois_tema()
         numeros = {"face": face, "chave": tema.limpar_chave(chave), "avancos": num[1]}
     ops, resumo = fc.converter(pl, molde, S, sim["constantes"], numeros, sim["textos"])
+    if getattr(molde, "tipo", "") == "generic" and alvo.lower() != m["arquivo"].lower():
+        # o código do Generic mudou: em outro arquivo, a classe precisa de nome próprio (ver fc.ops_renomear_classe)
+        ren = fc.ops_renomear_classe(ov, nome_classe(alvo))
+        if ren:
+            ops.update(ren)
+            resumo.append("A classe do código ganhou nome próprio (%s), para não se misturar com a do Generic, que "
+                          "as outras competições usam." % nome_classe(alvo))
     novo = ED._abrir_overlay(f, m["arquivo"])
     lst = list(ops.values())
     novo.aplicar(lst, ED._imagens_das_ops(lst))
     destino = projetos.gravar_saida(sai, alvo, novo.bytes(), ED.desc_fonte(f), m["arquivo"], ops)
+    sub = None
+    if d.get("subst", True) is not False and pl.substituicao():
+        sub = converter_subst(pl, alvo, ED, sai)
     if "saida" in ED.E.fontes:
         ED.E.fontes["saida"].atualizar()
     PREFS.atualizar(molde=m, alvo=modo, alvo_outro=d.get("alvo_outro") or "",
-                    fonte_pes=d.get("fonte_pes", True) is not False, **pos)
+                    fonte_pes=d.get("fonte_pes", True) is not False, subst=d.get("subst", True) is not False, **pos)
     return {"destino": destino, "alvo": alvo, "resumo": resumo, "operacoes": len(ops), "molde": m,
+            "bytes": os.path.getsize(destino), "subst": sub}
+
+
+def converter_subst(pl, alvo_placar, ED, sai):
+    """Grava a substituição do pacote na substituição do mesmo conjunto do placar, com a do Generic do jogo como
+    molde. Devolve {destino, alvo, resumo, operacoes, bytes} ou {erro} (o placar já foi gravado: um erro aqui não
+    desfaz o placar)."""
+    _afp, _pes, fc = motor()
+    from nucleo import projetos
+    alvo = alvo_subst(alvo_placar)
+    if not alvo:
+        return {"erro": "Não sei qual é a substituição do destino %s (o conversor acha a do mesmo conjunto trocando "
+                        "…002.big por …021.big). Use o destino do molde ou o Generic." % alvo_placar}
+    try:
+        f, molde, sim = molde_subst(ED, fc)
+        ops, resumo = fc.converter_subst(pl.substituicao(), molde, None, sim["constantes"], sim["formatos"])
+        if alvo.lower() != GENERIC_SUBST.lower():
+            ren = fc.ops_renomear_classe(molde.ov, nome_classe(alvo))
+            if ren:
+                ops.update(ren)
+                resumo.append("A classe do código ganhou nome próprio (%s), para não se misturar com a do Generic, "
+                              "que as outras competições usam." % nome_classe(alvo))
+        novo = ED._abrir_overlay(f, GENERIC_SUBST)
+        lst = list(ops.values())
+        novo.aplicar(lst, ED._imagens_das_ops(lst))
+        destino = projetos.gravar_saida(sai, alvo, novo.bytes(), ED.desc_fonte(f), GENERIC_SUBST, ops)
+    except base.ErroUsuario as ex:
+        return {"erro": str(ex), "alvo": alvo}
+    except Exception as ex:  # noqa: BLE001  (o placar já está gravado: a substituição só avisa)
+        traceback.print_exc()
+        return {"erro": f"Não consegui converter a substituição: {ex}", "alvo": alvo}
+    return {"destino": destino, "alvo": alvo, "resumo": resumo, "operacoes": len(ops),
             "bytes": os.path.getsize(destino)}
 
 

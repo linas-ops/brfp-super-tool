@@ -170,14 +170,19 @@ def decodificar(d, p):
         return op, struct.unpack_from("<Q", d, p)[0], p + 8
     if op in (0x87, 0x81, 0x9F):
         return op, struct.unpack_from("<i", d, p)[0], p + 4
-    if op in (0xA2, 0xAE, 0xAF, 0xB0, 0xB1, 0xB2, 0xB3, 0xB5, 0xB9):
+    if op in (0xA2, 0xAE, 0xAF, 0xB0, 0xB1, 0xB2, 0xB3, 0xB9):
         return op, d[p], p + 1
-    if op in (0xA3, 0xB6):
+    # os números do código vêm com sinal: o compilador põe 128 a 255 em 2 bytes e usa o byte 255 como -1
+    if op == 0xB5:
+        return op, struct.unpack_from("<b", d, p)[0], p + 1
+    if op == 0xA3:
         return op, struct.unpack_from("<H", d, p)[0], p + 2
+    if op == 0xB6:
+        return op, struct.unpack_from("<h", d, p)[0], p + 2
     if op == 0xB4:
         return op, struct.unpack_from("<f", d, p)[0], p + 4
     if op == 0xB7:
-        return op, struct.unpack_from("<I", d, p)[0], p + 4
+        return op, struct.unpack_from("<i", d, p)[0], p + 4
     if op == 0x8E:
         nome, npar = struct.unpack_from("<QI", d, p)
         nreg = d[p + 12]
@@ -1704,18 +1709,20 @@ def editar_numero(apt_d, consts, slot, valor):
         return
     pos = int(resto.split(":")[0])
     v = float(valor)
+    # byte, 2 e 4 bytes com sinal (-128 a 127…); acima do limite com sinal vale o mesmo byte de antes (projetos antigos
+    # gravavam 0 a 255)
     if tipo == "pb":
-        if not (0 <= v <= 255 and v.is_integer()):
-            raise ErroAS("Este número fica num byte do código: use um inteiro de 0 a 255.")
-        apt_d[pos] = int(v)
+        if not (-128 <= v <= 255 and v.is_integer()):
+            raise ErroAS("Este número fica num byte do código: use um inteiro de -128 a 127.")
+        apt_d[pos] = int(v) & 0xFF
     elif tipo == "ps":
-        if not (0 <= v <= 65535 and v.is_integer()):
-            raise ErroAS("Este número fica em 2 bytes do código: use um inteiro de 0 a 65535.")
-        struct.pack_into("<H", apt_d, pos, int(v))
+        if not (-32768 <= v <= 65535 and v.is_integer()):
+            raise ErroAS("Este número fica em 2 bytes do código: use um inteiro de -32768 a 32767.")
+        struct.pack_into("<H", apt_d, pos, int(v) & 0xFFFF)
     elif tipo == "pl":
-        if not (0 <= v <= 0xFFFFFFFF and v.is_integer()):
-            raise ErroAS("Use um inteiro positivo.")
-        struct.pack_into("<I", apt_d, pos, int(v))
+        if not (-0x80000000 <= v <= 0xFFFFFFFF and v.is_integer()):
+            raise ErroAS("Use um inteiro.")
+        struct.pack_into("<I", apt_d, pos, int(v) & 0xFFFFFFFF)
     elif tipo == "pf":
         struct.pack_into("<f", apt_d, pos, v)
     else:

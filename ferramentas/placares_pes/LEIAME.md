@@ -5,7 +5,8 @@
 Converte o placar da partida de um pacote de placares do **PES 2021** para o **EA SPORTS FC**. O desenho do placar do PES
 vai para um placar do FC usado como **molde**, e os textos que o jogo escreve (nomes dos times, placar, relógio,
 acréscimos), as faixas das cores dos times e os cartões vão para os lugares do PES. O resultado é gravado como um
-**projeto do Editor de Placares**: abre lá, em **Editados**, para ajustar e ver a animação.
+**projeto do Editor de Placares**: abre lá, em **Editados**, para ajustar e ver a animação. A **tela de substituição**
+do pacote vai junto, para a substituição do mesmo conjunto de overlays (ver *A substituição*, mais abaixo).
 
 ## Como usar
 
@@ -19,7 +20,9 @@ acréscimos), as faixas das cores dos times e os cartões vão para os lugares d
 4. **Escolha onde gravar**: no lugar do próprio molde (a competição que usa aquele placar passa a mostrar o do PES), no
    placar *Generic* (`Generic/overlay_9002.big`) ou outro caminho `data/ui/…/….big`.
 5. **Converter e gravar** (Ctrl+Enter). O arquivo vai para a **pasta de saída do Editor de Placares** (por padrão a
-   `mods\legacy` do Live Editor). Abra o Editor de Placares: o placar está em *Editados*.
+   `mods\legacy` do Live Editor). Abra o Editor de Placares: o placar está em *Editados*. Com *Converter também a
+   substituição* ligado (o padrão, quando o pacote tem essa tela), a substituição é gravada junto: o destino dela aparece
+   embaixo das opções de *Gravar*.
 
 ## O molde
 
@@ -84,10 +87,43 @@ menor (524×128, 1024×1024) o que ficar fora da imagem não aparece.
   essa fonte, com cada dígito na caixa do dígito do PES. Os nomes continuam com a fonte do molde. O botão *Salvar o
   .ttf…* guarda a fonte onde você quiser.
 
+## A substituição
+
+A tela de substituição do PES (`game2d_memberChange`: a placa com as setas, a caixa do escudo e as caixas de quem entra e
+de quem sai, já em coordenadas da tela de 1920×1080) vai para a substituição do **mesmo conjunto do placar**: o destino
+do placar com `…002.big` trocado por `…021.big` (no Generic, `Generic/overlay_9021.big`; no `overlay_35002.big`, o
+`overlay_35021.big`). O molde é sempre a substituição do Generic do jogo (`Generic/overlay_9021.big`). A conversão:
+
+- desenha a placa do PES (com as setas) na imagem do painel (`mcMoreSubsLT.mcMiddleVector`) e estica a máscara dela
+  (`mcVectorsMask`) para a placa: na entrada a placa aparece de cima para baixo, como o painel do FC;
+- esconde os fundos chapados, o fio, a textura do Ultimate Team e as setas do FC, e desliga a pintura chapada do código
+  na arte e nesses fundos (como no placar Generic);
+- põe o escudo do time na caixa do escudo do PES (`CREST_SIZE` e o lugar do `mcTeamCrest`, com a máscara do escudo);
+- leva quem entra e quem sai (número e nome, em MultiText) para as caixas do PES, pelas constantes
+  `INIT_TEXTS_IN_POS`/`INIT_TEXTS_OUT_POS` (e as de duas trocas, iguais), com a cor que contrasta com cada caixa (clara
+  ou escura, pela cor do clipe de cada grupo) e o tamanho da letra pela altura da caixa;
+- faz o painel aparecer **também com uma troca só**: no FC, com uma troca o código esconde o painel e mostra duas
+  tarjas do componente `LowerThird`, que outras telas também usam. O `nSubsCount > 1` do `SetData` vira `> 0` (troca de
+  um byte do código, conferida pelo Editor de Placares), e as chamadas que rolam as linhas quando a quantidade não é 2
+  nem 3 deixam de fazer efeito (o nome do método, `Animate`, vira um que não existe).
+
+Gravada **fora do Generic** (no `overlay_35021.big`, por exemplo), a classe do código ganha nome próprio
+(`game.overlays.Generic.overlay_35021_PES`): o jogo define cada classe uma vez só, e a cópia modificada do Generic
+brigaria com a original, que as outras competições usam. Mudam o nome curto da classe no código, o nome completo do
+`registerClass` e o nome exportado do clipe da classe; o nome que o construtor passa para a classe base fica igual. O
+mesmo vale para o placar no molde Generic gravado fora do `Generic/overlay_9002.big`.
+
+Limites da substituição: com 2 ou 3 trocas ao mesmo tempo aparecem só a primeira que entra e a primeira que sai (a placa
+do PES tem lugar para uma; as outras linhas ficam fora da máscara); quando o PES escreve o título na placa (o J1, por
+exemplo), a faixa do título fica vazia, porque o FC não escreve título nessa tela; e, com o pack do LTA instalado no jogo,
+os overlays dele que reaproveitam a classe do Generic (`overlay_5021`, `overlay_8021`, `overlay_8002`…) podem se misturar
+com o Generic convertido — nesse caso, grave no arquivo da competição em vez do Generic.
+
 ## Limites
 
-- Só o **placar da partida** (`game2d_score`) é convertido. O pacote do PES também tem escalação, substituição, gol,
-  estatísticas e pênaltis (outros filmes do `game2dPes.bin`, `game2dPesEnter.bin`, `game2dPesPk.bin`).
+- São convertidos o **placar da partida** (`game2d_score`) e a **substituição** (`game2d_memberChange`). O pacote do PES
+  também tem escalação, gol, estatísticas e pênaltis (outros filmes do `game2dPes.bin`, `game2dPesEnter.bin`,
+  `game2dPesPk.bin`).
 - Os nomes são escritos pelo FC com a fonte do molde: a fonte dos nomes do PES é do próprio jogo e não vem no pacote.
   Para trocar, use a aba Fontes do Editor de Placares com um .ttf parecido.
 - O logo/escudo da competição do PES (que o jogo põe por licença) não entra.
@@ -117,7 +153,7 @@ menor (524×128, 1024×1024) o que ficar fora da imagem não aparece.
 placares_pes\
   servidor.py        servidor local (127.0.0.1:8781) e rotas
   motor\afp.py       leitor do TXP2/AFP do PES: texturas, recortes, formas, filmes e a montagem da cena
-  motor\pes.py       o placar do PES entendido: papel de cada peça (fundo, cores, acréscimos, caixas de texto)
+  motor\pes.py       o placar e a substituição do PES entendidos: papel de cada peça (fundo, cores, caixas de texto)
   motor\fc.py        a conversão para o molde do FC (operações do Editor de Placares)
   motor\fonte_ttf.py fonte TrueType a partir das imagens dos números (contorno com OpenCV, tabelas escritas à mão)
   web\               interface

@@ -117,6 +117,7 @@ class Apt:
         for i in range(nimp):
             b = pimp + 32 * i
             self.imports.append({"filme": self.txt(self.u64(b)), "nome": self.txt(self.u64(b + 8)), "char": self.u64(b + 16)})
+        self.p_exports = pexp
         self.exports = [{"nome": self.txt(self.u64(pexp + 16 * i)), "char": self.u64(pexp + 16 * i + 8)} for i in range(nexp)]
         self.chars = []
         for i in range(nchars):
@@ -187,6 +188,22 @@ class Apt:
             self.d[q + 24:q + 28] = bytes(int(max(0, min(255, round(v)))) for v in cor)
         if altura is not None:
             struct.pack_into("<f", self.d, q + 28, float(altura))
+
+    def renomear_export(self, antes, novo):
+        """Outro nome para um símbolo exportado: o nome novo vai para o fim do APT e a tabela passa a apontar para ele
+        (o nome de um clipe com classe precisa ser igual ao do registerClass do código)."""
+        achou = False
+        for i, e in enumerate(self.exports):
+            if e["nome"] == antes:
+                while len(self.d) % 8:
+                    self.d.append(0)
+                p = len(self.d)
+                self.d += novo.encode("latin-1") + b"\0"
+                struct.pack_into("<Q", self.d, self.p_exports + 16 * i, p)
+                e["nome"] = novo
+                achou = True
+        if not achou:
+            raise ErroApt(f"Este placar não exporta {antes}")
 
     def bytes(self):
         return bytes(self.d)
@@ -368,6 +385,17 @@ class Overlay:
                 p_txt = len(a.d)
                 a.d += str(op["nome"]).encode("latin-1") + b"\0"
                 struct.pack_into("<Q", a.d, c["off"] + 32, p_txt)
+            elif tipo == "codigo":
+                # troca de bytes de uma instrução do código (ex.: o 1 de "n > 1" virando 0), conferindo o que havia
+                pos = int(op["pos"])
+                antes, depois = bytes.fromhex(str(op["antes"])), bytes.fromhex(str(op["depois"]))
+                if len(antes) != len(depois) or not antes or pos < 0 or a.d[pos:pos + len(antes)] != antes:
+                    raise ErroApt("O código deste placar não é o esperado nesse ponto (%s): a troca não foi aplicada."
+                                  % (op.get("nome") or pos))
+                a.d[pos:pos + len(depois)] = depois
+            elif tipo == "export":
+                # nome exportado de um símbolo (o clipe da classe, quando o nome da classe muda no código)
+                a.renomear_export(str(op["antes"]), str(op["nome"]))
             else:
                 raise ErroApt(f"Operação desconhecida: {tipo}")
         if consts is not None:

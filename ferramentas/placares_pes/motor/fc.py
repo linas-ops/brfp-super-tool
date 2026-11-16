@@ -152,14 +152,15 @@ class Molde:
 
 def simular(ov, bibliotecas=(), tema=None):
     """O que o código do placar faz ao entrar (pelo simulador de ActionScript do editor): {"constantes": {nome: {slot,
-    valor}}, "textos": {caminho do clipe: {config do MultiText}}, "tweens": [...]}. Vazio se a simulação falhar."""
+    valor}}, "textos": {caminho do clipe: {config do MultiText}}, "tweens": [...], "formatos": [TextFormat criados:
+    fonte_chave, tamanho, tamanho_slot…]}. Vazio se a simulação falhar."""
     from nucleo import as2
     try:
         r = as2.simular(ov, ("AnimateIn",), bibliotecas=bibliotecas, tema=tema)
     except Exception:  # o simulador é aproximado: sem ele, a conversão só não mexe nas constantes
-        return {"constantes": {}, "textos": {}, "tweens": []}
+        return {"constantes": {}, "textos": {}, "tweens": [], "formatos": []}
     return {"constantes": {c["nome"]: c for c in r.get("constantes") or [] if c.get("nome") and c.get("slot")},
-            "textos": r.get("textos") or {}, "tweens": r.get("tweens") or []}
+            "textos": r.get("textos") or {}, "tweens": r.get("tweens") or [], "formatos": r.get("formatos") or []}
 
 
 def constantes_do_codigo(ov, bibliotecas=(), tema=None):
@@ -167,68 +168,177 @@ def constantes_do_codigo(ov, bibliotecas=(), tema=None):
     return simular(ov, bibliotecas, tema)["constantes"]
 
 
-def chamadas_pintura(ov, metodo="ChangeColorFlat"):
-    """Onde o código do overlay chama ColorUtil.<metodo>(clipe, cor): [(caminho do clipe a partir do this, slot do
-    nome do método)]. O slot ("c:N" ou "pk:pos:pool") troca o nome só naquela chamada (operação const_txt)."""
+def ler_chamadas(ov):
+    """Leitura simbólica do código do overlay, nas duas codificações do APT (a de PushData do overlay_9002 e a compacta
+    do overlay_9021, com índices do ConstantPool no próprio byte da instrução).
+
+    Devolve (chamadas, funções). Cada chamada: {"funcao" (nome do método em que está), "nome" (método chamado),
+    "slot_nome" (de onde vem o nome: troca só nessa chamada), "obj" (caminho do objeto: "<reg1>.mcA.mcB", "cafe.utility.
+    ColorUtil"…), "args" ([{"v", "slot", "cam", "refs"}]: valor, de onde vem, caminho, nomes de membros usados na conta),
+    "pos"}. Cada função: {"nome", "inicio", "fim", "pars" ([(registrador, nome)])}."""
     import struct
     from nucleo import as2
-    a = ov.apt
-    d = bytes(a.d)
+    d = bytes(ov.apt.d)
     c = as2.Constantes(ov.entrada("1"))
-    out = []
-    for _tipo, _spr, codigo in as2._itens_quadro0(a):
-        p, pool, pool_pos, fins, toks, n = codigo, [], None, [], [], 0
-        while n < 2_000_000:
+    chamadas, funcoes = [], []
+
+    def val(v=None, slot=None, cam=None, refs=()):
+        return {"v": v, "slot": slot, "cam": cam, "refs": frozenset(refs)}
+
+    def junta(*xs):
+        r = set()
+        for x in xs:
+            r |= x["refs"]
+            if x["cam"]:
+                r.add(x["cam"].split(".")[-1])
+        return val(refs=r)
+
+    def membro(obj, nome, slot):
+        reg = obj["v"] if isinstance(obj["v"], tuple) and obj["v"][:1] == ("reg",) else None
+        base = obj["cam"] if obj["cam"] is not None else ("<reg%d>" % reg[1] if reg else "?")
+        return val(cam=base + "." + str(nome), refs=obj["refs"] | {str(nome)}, slot=slot)
+
+    def args_de(pilha, n):
+        n = n if isinstance(n, int) and 0 <= n < 64 else 0
+        return [pilha.pop() if pilha else val() for _ in range(n)]
+
+    def rodar(p, fim, pool, pool_pos, nome_funcao):
+        pilha, alvos, ult_txt, n = [], {}, None, 0
+        pop = lambda: pilha.pop() if pilha else val()
+        while p < fim and n < 400000:
             n += 1
+            if p in alvos:                          # destino de um desvio: a pilha de quando o desvio saiu
+                pilha = alvos.pop(p)
             try:
                 op, arg, q = as2.decodificar(d, p)
             except (struct.error, IndexError, as2.ErroAS):
-                break
-            fins = [f for f in fins if f > p]
+                return
+            if op == 0x00:
+                return
             if op == 0x88:
                 ptr, cnt = arg
                 pool = [c.valor(i, []) for i in struct.unpack_from("<%dQ" % cnt, d, ptr)] if cnt else []
                 pool_pos = p
-                toks.append(op)
             elif op == 0x96:
                 ptr, cnt = arg
-                toks.append([(c.valor(i, pool), "c:%d" % i) for i in (struct.unpack_from("<%dQ" % cnt, d, ptr) if cnt else ())])
+                for i in (struct.unpack_from("<%dQ" % cnt, d, ptr) if cnt else ()):
+                    v = c.valor(i, pool)
+                    pilha.append(val(v=v) if isinstance(v, tuple) and v[:1] == ("reg",) else val(v=v, slot="c:%d" % i))
+                    if isinstance(v, str):
+                        ult_txt = v
             elif op in (0xA2, 0xA3):
-                toks.append([(pool[arg] if arg < len(pool) else None,
-                              "%s:%d:%s" % ("pk" if op == 0xA2 else "pkw", p + 1, pool_pos))])
+                v = pool[arg] if arg < len(pool) else None
+                pilha.append(val(v=v, slot="%s:%d:%s" % ("pk" if op == 0xA2 else "pkw", p + 1, pool_pos)))
+                if isinstance(v, str):
+                    ult_txt = v
             elif op == 0xA1:
-                toks.append([(as2._txt(d, arg), None)])
-            else:
-                toks.append(op)
-            if op == 0x8E:
-                fins.append(q + arg[4])
-            elif op == 0x9B:
-                fins.append(q + arg[2])
-            elif op == 0x00 and not fins:
-                break
+                ult_txt = as2._txt(d, arg)
+                pilha.append(val(v=ult_txt))
+            elif op in (0xB4, 0xB5, 0xB6, 0xB7):
+                pilha.append(val(v=arg, slot="%s:%d" % ({0xB4: "pf", 0xB5: "pb", 0xB6: "ps", 0xB7: "pl"}[op], p + 1)))
+            elif op == 0xB9:
+                pilha.append(val(v=("reg", arg)))
+            elif op in (0x59, 0x5A, 0x73, 0x74, 0x75, 0x76):
+                pilha.append(val(v={0x59: 0, 0x5A: 1, 0x73: True, 0x74: False}.get(op)))
+            elif op in (0x56, 0x58, 0x71):
+                pilha.append(val(cam="this" if op == 0x56 else "_global"))
+            elif op == 0xAE:
+                pilha.append(val(cam=str(pool[arg]) if arg < len(pool) else "?"))
+            elif op == 0x1C:
+                pilha.append(val(cam=str(pop()["v"])))
+            elif op in (0xAF, 0xA5):
+                if op == 0xAF:
+                    nome, slot = (pool[arg] if arg < len(pool) else "?"), "pk:%d:%s" % (p + 1, pool_pos)
+                else:
+                    nome, slot = as2._txt(d, arg), None
+                pilha.append(membro(pop(), nome, slot))
+            elif op == 0x4E:
+                nm = pop()
+                pilha.append(membro(pop(), nm["v"], nm["slot"]))
+            elif op in (0xB2, 0xB3, 0x52, 0x5D, 0x5E):     # chamada de método (nome no byte ou na pilha)
+                if op in (0xB2, 0xB3):
+                    nome, slot = (pool[arg] if arg < len(pool) else None), "pk:%d:%s" % (p + 1, pool_pos)
+                else:
+                    nm = pop()
+                    nome, slot = nm["v"], nm["slot"]
+                obj = pop()
+                args = args_de(pilha, pop()["v"])
+                chamadas.append({"funcao": nome_funcao, "nome": nome, "slot_nome": slot, "obj": obj["cam"],
+                                 "args": args, "pos": p})
+                if op in (0xB3, 0x52, 0x5E):
+                    pilha.append(junta(obj, *args))
+            elif op in (0xB0, 0xB1, 0x3D, 0x5B, 0x5C):     # chamada de função
+                nome = (pool[arg] if arg < len(pool) else None) if op in (0xB0, 0xB1) else pop()["v"]
+                args = args_de(pilha, pop()["v"])
+                chamadas.append({"funcao": nome_funcao, "nome": nome, "slot_nome": None, "obj": None, "args": args,
+                                 "pos": p})
+                if op in (0xB1, 0x3D, 0x5C):
+                    pilha.append(junta(*args))
+            elif op in (0x40, 0x53):
+                nm = pop()
+                if op == 0x53:
+                    pop()
+                args_de(pilha, pop()["v"])
+                pilha.append(val(cam="new " + str(nm["v"])))
+            elif op in (0x47, 0x0B, 0x0C, 0x0D, 0x48, 0x67, 0x49, 0x66, 0x10, 0x11, 0x3F, 0x60, 0x13, 0x0A, 0x0E, 0x0F,
+                        0x54, 0x2B):
+                b = pop()
+                pilha.append(junta(pop(), b))
+            elif op in (0x12, 0x4B, 0x4A, 0x18, 0x14, 0x44, 0x50, 0x51):
+                pilha.append(junta(pop()))
+            elif op in (0x17, 0x3E, 0x55):
+                x = pop()
+                if op == 0x55:                      # enumerate2: deixa os nomes na pilha
+                    pilha.append(junta(x))
+            elif op == 0x4C:
+                x = pop()
+                pilha += [x, dict(x)]
+            elif op == 0x4D:
+                b, a_ = pop(), pop()
+                pilha += [b, a_]
+            elif op == 0x4F:
+                pop(), pop(), pop()
+            elif op in (0x1D, 0xA7):
+                pop(), pop()
+            elif op in (0x42, 0x43):
+                k = pop()["v"]
+                xs = args_de(pilha, (k if op == 0x42 else 2 * k) if isinstance(k, int) and k < 2048 else 0)
+                pilha.append(junta(*xs))
+            elif op in (0x8E, 0x9B):
+                corpo = arg[4] if op == 0x8E else arg[2]
+                pars = [(r, d[pn:d.index(b"\0", pn)].decode("latin-1") if pn else "") for r, pn in arg[1]] \
+                    if op == 0x8E else []
+                nome_f = ult_txt or ""
+                funcoes.append({"nome": nome_f, "inicio": q, "fim": q + corpo, "pars": pars})
+                rodar(q, q + corpo, list(pool), pool_pos, nome_f)
+                q += corpo
+                pilha.append(val(cam="function " + nome_f))
+            elif op in (0x9D, 0xB8):
+                pop()
+                alvos.setdefault(q + arg, [dict(x) for x in pilha])
+            elif op == 0x99:
+                alvos.setdefault(q + arg, [dict(x) for x in pilha])
+                pilha = []
             p = q
-        for t, tok in enumerate(toks):
-            if not isinstance(tok, list) or not any(v == metodo for v, _s in tok):
-                continue
-            slot = next(s for v, s in tok if v == metodo)
-            # para trás: push argc, 'cafe' (o ColorUtil) e, antes dele, o clipe: this.a.b… (o push com o registrador
-            # do this começa o caminho)
-            k = next((j for j in range(t - 1, max(-1, t - 10), -1)
-                      if isinstance(toks[j], list) and any(v == "cafe" for v, _s in toks[j])), None)
-            if k is None:
-                continue
-            cam = []
-            for j in range(k - 1, max(-1, k - 24), -1):
-                tj = toks[j]
-                if not isinstance(tj, list):
-                    continue
-                regs = [i for i, (v, _s) in enumerate(tj) if isinstance(v, tuple) and v[:1] == ("reg",)]
-                if regs:
-                    cam = [v for v, _s in tj[regs[-1] + 1:] if isinstance(v, str)] + cam
-                    break
-                cam = [v for v, _s in tj if isinstance(v, str)] + cam
-            out.append((".".join(cam), slot))
-    return out
+
+    for _tipo, _spr, codigo in as2._itens_quadro0(ov.apt):
+        rodar(codigo, len(d), [], None, "")
+    return chamadas, funcoes
+
+
+def _relativo(cam):
+    """Caminho a partir do registrador do this ("<reg1>.mcA.mcB" -> "mcA.mcB")."""
+    partes = (cam or "").split(".")
+    return ".".join(partes[1:] if partes and partes[0].startswith("<reg") else partes)
+
+
+def chamadas_pintura(ov, metodo="ChangeColorFlat", chamadas=None):
+    """Onde o código do overlay chama ColorUtil.<metodo>(clipe, cor): [(caminho do clipe a partir do this, slot do
+    nome do método)]. O slot ("c:N" ou "pk:pos:pool") troca o nome só naquela chamada (operação const_txt)."""
+    if chamadas is None:
+        chamadas = ler_chamadas(ov)[0]
+    return [(_relativo(ch["args"][0]["cam"]), ch["slot_nome"]) for ch in chamadas
+            if ch["nome"] == metodo and str(ch["obj"] or "").endswith("ColorUtil") and ch["args"]]
 
 
 def abrir(ov):
@@ -269,17 +379,10 @@ MULTITEXT_LARGURA = 240        # MultiText.PROXY_BASE_WIDTH: a caixa do texto te
 COR_CLARA, COR_ESCURA = "COLOR_PURE_WHITE", "COLOR_SAFE_BLACK"     # cores do tema (FIFA.xml) para os textos
 
 
-class MoldeGeneric:
-    """O placar Generic do jogo (data/ui/game/overlays/Generic/overlay_9002.big) visto como molde.
-
-    É bem diferente do modelo do LTA: o desenho são caixas de cor sem imagem, e os textos são componentes MultiText
-    (do overlayComponents_9) que o código posiciona e formata. O MultiText desfaz a escala que recebe: a caixa do texto
-    tem 240 × _xscale de largura, a letra tem o tamanho do TextFormat do código e o _y do clipe é o meio da linha.
-
-    A conversão põe a arte do PES na imagem do logo do FC (o clipe do logo vai para trás de tudo e a máscara dele cobre
-    o placar inteiro), esconde as caixas e leva nomes, gols, relógio, cores e cartões para os lugares do PES — pelos
-    lugares (x e largura) e pelas constantes do código (alturas, x do relógio e dos gols, fonte, tamanho e cor)."""
-    tipo = "generic"
+class MoldeCodigo:
+    """Um overlay do jogo em que o código põe as peças no lugar (os Generic): os lugares por caminho, as formas e as
+    chamadas do código (pintura com cor chapada, animações…)."""
+    precisa = ()
 
     def __init__(self, ov):
         self.ov = ov
@@ -288,7 +391,7 @@ class MoldeGeneric:
         self.por_caminho = {}
         for lg in self.lugares:
             self.por_caminho.setdefault(".".join(lg["caminho"]), lg)
-        falta = [c.split(".")[-1] for c in G_PRECISA if c not in self.por_caminho]
+        falta = [c.split(".")[-1] for c in self.precisa if c not in self.por_caminho]
         if falta:
             raise ErroMolde("Esse placar do FC não serve de molde: faltam " + ", ".join(falta) + ".")
         self.geo = {}
@@ -296,39 +399,64 @@ class MoldeGeneric:
             if c and c["t"] == "forma":
                 g = ov.ent.get(str(c["geo"] + 1))
                 self.geo[i] = apt.ler_geometria(g) if g else []
-        # a imagem do logo do FC, dentro do mcLogoFc: é onde a arte do PES vai
-        lf = self.por_caminho[G + ".mcLogoHolder.mcLogoFc"]
-        usos = []
+        self._codigo = None
+
+    def _ler_codigo(self):
+        if self._codigo is None:
+            try:
+                self._codigo = ler_chamadas(self.ov)
+            except Exception:  # noqa: BLE001  (código diferente do esperado: a conversão só avisa)
+                self._codigo = ([], [])
+        return self._codigo
+
+    @property
+    def chamadas(self):
+        return self._ler_codigo()[0]
+
+    @property
+    def funcoes(self):
+        return self._ler_codigo()[1]
+
+    @property
+    def pinturas(self):
+        """[(clipe, slot)] das chamadas de ChangeColorFlat do código."""
+        return chamadas_pintura(self.ov, PINTURA, self.chamadas)
+
+    def imagem_em(self, cam):
+        """A primeira forma com imagem dentro do clipe 'cam': {lugar, item, char (da imagem), w, h, caixa}."""
+        lf = self.por_caminho[cam]
         for lg in self.lugares:
             c = self.a.chars[lg["char"]] if 0 <= lg["char"] < len(self.a.chars) else None
             if c and c["t"] == "forma" and lg["caminho"][:len(lf["caminho"])] == lf["caminho"] and lg is not lf:
                 for it in self.geo.get(lg["char"], []):
                     if it["k"] in (0, 1) and it.get("img") is not None:
-                        usos.append((lg, it, it["img"]))
-        if not usos:
-            raise ErroMolde("Esse Generic não tem a imagem do logo do FC (onde vai a arte do PES).")
-        lg, it, img = usos[0]
-        inf = apt.dds_info(ov.ent.get(str(self.a.chars[img]["tex"] + 1), b"")) or {"w": 0, "h": 0}
-        bv = _caixa_vertices(self.geo[lg["char"]])
-        self.arte = {"lugar": lg, "item": it, "char": img, "w": inf["w"], "h": inf["h"], "caixa": bv}
-        # mesmo formato do "fundo" do outro modelo (para a lista de moldes)
-        self.fundo = {"w": inf["w"], "h": inf["h"], "tela": _transformar_caixa(lg["mundo"], bv) if bv else (0, 0, 0, 0)}
-        self._pinturas = None
+                        img = it["img"]
+                        inf = apt.dds_info(self.ov.ent.get(str(self.a.chars[img]["tex"] + 1), b"")) or {"w": 0, "h": 0}
+                        return {"lugar": lg, "item": it, "char": img, "w": inf["w"], "h": inf["h"],
+                                "caixa": _caixa_vertices(self.geo[lg["char"]])}
+        return None
 
-    @property
-    def pinturas(self):
-        """[(clipe, slot)] das chamadas de ChangeColorFlat do código (lido na primeira vez)."""
-        if self._pinturas is None:
-            try:
-                self._pinturas = chamadas_pintura(self.ov, PINTURA)
-            except Exception:  # noqa: BLE001  (código diferente do esperado: a conversão só avisa)
-                self._pinturas = []
-        return self._pinturas
+    def forma_em(self, lg):
+        """A forma colocada direto dentro do clipe (a de uma máscara, por exemplo) e a caixa dela: (lugar, caixa)."""
+        n = len(lg["caminho"])
+        for d in self.lugares:
+            c = self.a.chars[d["char"]] if 0 <= d["char"] < len(self.a.chars) else None
+            if d is not lg and len(d["caminho"]) == n + 1 and d["caminho"][:n] == lg["caminho"] and c and c["t"] == "forma":
+                bv = _caixa_vertices(self.geo.get(d["char"], []))
+                if bv:
+                    return d, bv
+        return None, None
 
-    def descricao(self):
-        f = self.fundo
-        return {"fundo": {"w": f["w"], "h": f["h"], "tela": [round(v) for v in f["tela"]]}, "tipo": self.tipo,
-                "campos": ["mcHomeTeamName", "mcAwayTeamName", "mcScoreHome", "mcScoreAway", "mcClockText"]}
+    def mascara_de(self, lg):
+        """O irmão que serve de máscara para o clipe (profundidade < a dele <= a do recorte): o lugar, ou None."""
+        n = len(lg["caminho"]) - 1
+        prof = lg["item"]["prof"]
+        for d in self.lugares:
+            it = d["item"]
+            if len(d["caminho"]) == n + 1 and d["caminho"][:n] == lg["caminho"][:n] and it["fl"] & apt.F_RECORTE \
+                    and it["prof"] < prof <= it["clip"]:
+                return d
+        return None
 
     # ---------------------------------------------------------- geometria
     def caixa_conteudo(self, lg):
@@ -346,6 +474,36 @@ class MoldeGeneric:
         if not cxs:
             return None
         return (min(c[0] for c in cxs), min(c[1] for c in cxs), max(c[2] for c in cxs), max(c[3] for c in cxs))
+
+
+class MoldeGeneric(MoldeCodigo):
+    """O placar Generic do jogo (data/ui/game/overlays/Generic/overlay_9002.big) visto como molde.
+
+    É bem diferente do modelo do LTA: o desenho são caixas de cor sem imagem, e os textos são componentes MultiText
+    (do overlayComponents_9) que o código posiciona e formata. O MultiText desfaz a escala que recebe: a caixa do texto
+    tem 240 × _xscale de largura, a letra tem o tamanho do TextFormat do código e o _y do clipe é o meio da linha.
+
+    A conversão põe a arte do PES na imagem do logo do FC (o clipe do logo vai para trás de tudo e a máscara dele cobre
+    o placar inteiro), esconde as caixas e leva nomes, gols, relógio, cores e cartões para os lugares do PES — pelos
+    lugares (x e largura) e pelas constantes do código (alturas, x do relógio e dos gols, fonte, tamanho e cor)."""
+    tipo = "generic"
+    precisa = G_PRECISA
+
+    def __init__(self, ov):
+        super().__init__(ov)
+        # a imagem do logo do FC, dentro do mcLogoFc: é onde a arte do PES vai
+        self.arte = self.imagem_em(G + ".mcLogoHolder.mcLogoFc")
+        if not self.arte:
+            raise ErroMolde("Esse Generic não tem a imagem do logo do FC (onde vai a arte do PES).")
+        lg, bv = self.arte["lugar"], self.arte["caixa"]
+        # mesmo formato do "fundo" do outro modelo (para a lista de moldes)
+        self.fundo = {"w": self.arte["w"], "h": self.arte["h"],
+                      "tela": _transformar_caixa(lg["mundo"], bv) if bv else (0, 0, 0, 0)}
+
+    def descricao(self):
+        f = self.fundo
+        return {"fundo": {"w": f["w"], "h": f["h"], "tela": [round(v) for v in f["tela"]]}, "tipo": self.tipo,
+                "campos": ["mcHomeTeamName", "mcAwayTeamName", "mcScoreHome", "mcScoreAway", "mcClockText"]}
 
 
 # ------------------------------------------------------------------ a conversão
@@ -645,64 +803,65 @@ def converter(pl, molde, S, constantes=None, numeros=None, textos=None):
     return ops, resumo
 
 
-# ------------------------------------------------------------------ a conversão no Generic
+# ------------------------------------------------------------------ a montagem nos moldes do jogo (Generic)
 
-def converter_generic(pl, molde, S, constantes=None, numeros=None, textos=None):
-    """Operações do Editor de Placares para o molde Generic (ver MoldeGeneric) e um resumo do que foi feito."""
-    constantes = constantes or {}
-    textos = textos or {}
-    P = molde.por_caminho
-    ops = {}
-    resumo = []
-    avisos = []
-    locais = {}                       # off do PlaceObject -> matriz local já com as mudanças (para as contas)
+class Montagem:
+    """As operações do Editor de Placares de uma conversão num molde em que o código põe as peças no lugar, com a
+    matriz local de cada clipe já com as mudanças (as contas seguintes usam a posição nova)."""
 
-    def local_de(lg):
-        return locais.get(lg["item"]["off"]) or _local(lg["item"])
+    def __init__(self, molde, constantes=None):
+        self.molde = molde
+        self.P = molde.por_caminho
+        self.constantes = constantes or {}
+        self.ops, self.resumo, self.avisos = {}, [], []
+        self.locais = {}                 # off do PlaceObject -> matriz local já com as mudanças
 
-    def mundo_cam(cam):
+    def local_de(self, lg):
+        return self.locais.get(lg["item"]["off"]) or _local(lg["item"])
+
+    def mundo_cam(self, cam):
         M = afp.IDENT
         for i in range(1, len(cam) + 1):
-            M = mul(local_de(P[".".join(cam[:i])]), M)
+            M = mul(self.local_de(self.P[".".join(cam[:i])]), M)
         return M
 
-    def mundo(lg):
-        return mundo_cam(lg["caminho"])
+    def mundo(self, lg):
+        return mul(self.local_de(lg), self.mundo_cam(lg["caminho"][:-1]))
 
-    def op_place(lg, **campos):
+    def place(self, lg, **campos):
         it = lg["item"]
         chave = "place:%d" % it["off"]
-        atual = ops.get(chave) or {"op": "place", "off": it["off"]}
+        atual = self.ops.get(chave) or {"op": "place", "off": it["off"]}
         atual.update(campos)
-        ops[chave] = atual
+        self.ops[chave] = atual
         if "m" in campos or "tx" in campos:
-            l = list(local_de(lg))
+            l = list(self.local_de(lg))
             if "m" in campos:
                 l[0:4] = campos["m"]
             if "tx" in campos:
                 l[4:6] = campos["tx"]
-            locais[it["off"]] = tuple(l)
+            self.locais[it["off"]] = tuple(l)
 
-    def op_textura(char, img):
+    def textura(self, char, img):
         ident, w, h = _salvar(img)
-        ops["textura:%d" % char] = {"op": "textura", "char": char, "img": ident, "w": w, "h": h}
+        self.ops["textura:%d" % char] = {"op": "textura", "char": char, "img": ident, "w": w, "h": h}
 
-    def op_num(slot, valor, orig, nome=""):
+    def num(self, slot, valor, orig, nome=""):
         if not slot or not isinstance(orig, (int, float)) or str(slot).startswith("m:"):
             return False
         v = round(float(valor), 2)
         if abs(v - orig) > 1e-6:
-            ops["const:" + slot] = {"op": "const", "slot": slot, "valor": v, "orig": orig, "nome": nome}
+            self.ops["const:" + slot] = {"op": "const", "slot": slot, "valor": v, "orig": orig, "nome": nome}
         return True
 
-    def op_const(nome, valor):
-        c = constantes.get(nome)
+    def const(self, nome, valor):
+        c = self.constantes.get(nome)
         if not c or not isinstance(c.get("valor"), (int, float)):
-            avisos.append(nome)
+            self.avisos.append(nome)
             return False
-        return op_num(c["slot"], valor, c["valor"], nome)
+        return self.num(c["slot"], valor, c["valor"], nome)
 
-    def op_txt(slot, texto, orig):
+    def txt(self, slot, texto, orig):
         """Troca um texto usado pelo código (nome de fonte, cor do tema, alinhamento). 'slot' pode vir como
         "m:c:5046|COLOR_SAFE_BLACK" (membro de uma classe do jogo): o texto fica no c:5046."""
         if not slot:
@@ -710,32 +869,56 @@ def converter_generic(pl, molde, S, constantes=None, numeros=None, textos=None):
         if str(slot).startswith("m:"):
             slot = slot[2:].split("|")[0]
         if texto != orig:
-            ops["const_txt:" + slot] = {"op": "const_txt", "slot": slot, "texto": texto, "orig": orig}
+            self.ops["const_txt:" + slot] = {"op": "const_txt", "slot": slot, "texto": texto, "orig": orig}
         return True
 
-    def esconder(lg):
+    def codigo(self, pos, antes, depois, nome):
+        """Troca bytes de uma instrução do código (o editor confere o que havia antes de trocar)."""
+        self.ops["codigo:%d" % pos] = {"op": "codigo", "pos": pos, "antes": antes, "depois": depois, "nome": nome}
+
+    def esconder(self, lg):
         it = lg["item"]
         tint = list(it["tint"]) if it["fl"] & apt.F_COR else [255, 255, 255, 255]
-        op_place(lg, tint=tint[:3] + [0])
+        self.place(lg, tint=tint[:3] + [0])
 
-    def afastar(lg, eixo):
+    def afastar(self, lg, eixo):
         """Leva o clipe para longe da tela num eixo que o código nunca mexe (para os que o código volta a mostrar)."""
-        l = local_de(lg)
-        op_place(lg, tx=[l[4] - 4000, l[5]] if eixo == "x" else [l[4], l[5] + 4000])
+        l = self.local_de(lg)
+        self.place(lg, tx=[l[4] - 4000, l[5]] if eixo == "x" else [l[4], l[5] + 4000])
 
-    def mapear(lg, B, R):
+    def mapear(self, lg, B, R):
         """Lugar do clipe para o retângulo B (dele) cair no retângulo R da tela."""
-        pai = mundo_cam(lg["caminho"][:-1])
+        pai = self.mundo_cam(lg["caminho"][:-1])
         p0, p1 = ponto(inv(pai), R[0], R[1]), ponto(inv(pai), R[2], R[3])
         sa = (p1[0] - p0[0]) / max(1e-6, B[2] - B[0])
         sd = (p1[1] - p0[1]) / max(1e-6, B[3] - B[1])
-        op_place(lg, m=[sa, 0.0, 0.0, sd], tx=[p0[0] - sa * B[0], p0[1] - sd * B[1]])
+        self.place(lg, m=[sa, 0.0, 0.0, sd], tx=[p0[0] - sa * B[0], p0[1] - sd * B[1]])
 
-    def mascara(nome, R, folga=(3, 2)):
-        lg = P.get(nome)
-        B = molde.caixa_conteudo(lg) if lg else None
+    def mascara(self, nome, R, folga=(3, 2)):
+        lg = self.P.get(nome)
+        B = self.molde.caixa_conteudo(lg) if lg else None
         if lg and B:
-            mapear(lg, B, (R[0] - folga[0], R[1] - folga[1], R[2] + folga[0], R[3] + folga[1]))
+            self.mapear(lg, B, (R[0] - folga[0], R[1] - folga[1], R[2] + folga[0], R[3] + folga[1]))
+
+    def multitext(self, lg, R, yc):
+        """Põe um MultiText na caixa R da tela: a largura vem do _xscale (240 × escala), o _y é o meio da linha."""
+        pai = self.mundo_cam(lg["caminho"][:-1])
+        p0, p1 = ponto(inv(pai), R[0], R[1]), ponto(inv(pai), R[2], R[3])
+        yl = ponto(inv(pai), 0, yc)[1]
+        self.place(lg, m=[round((p1[0] - p0[0]) / MULTITEXT_LARGURA, 5), 0.0, 0.0, lg["item"]["m"][3]], tx=[p0[0], yl])
+        return p0[0], yl
+
+
+# ------------------------------------------------------------------ a conversão no Generic
+
+def converter_generic(pl, molde, S, constantes=None, numeros=None, textos=None):
+    """Operações do Editor de Placares para o molde Generic (ver MoldeGeneric) e um resumo do que foi feito."""
+    textos = textos or {}
+    M = Montagem(molde, constantes)
+    constantes, P, ops, resumo, avisos, locais = M.constantes, M.P, M.ops, M.resumo, M.avisos, M.locais
+    local_de, mundo_cam, mundo = M.local_de, M.mundo_cam, M.mundo
+    op_place, op_textura, op_num, op_const, op_txt = M.place, M.textura, M.num, M.const, M.txt
+    esconder, afastar, mapear, mascara, multitext = M.esconder, M.afastar, M.mapear, M.mascara, M.multitext
 
     def tela(cx):
         return _transformar_caixa(S, cx)
@@ -759,14 +942,6 @@ def converter_generic(pl, molde, S, constantes=None, numeros=None, textos=None):
     def tamanho(cfg, valor):
         f = cfg.get("formato") or {}
         return op_num(f.get("tamanho_slot"), round(valor), f.get("tamanho"), "tamanho da letra")
-
-    def multitext(lg, R, yc):
-        """Põe um MultiText na caixa R da tela: a largura vem do _xscale (240 × escala), o _y é o meio da linha."""
-        pai = mundo_cam(lg["caminho"][:-1])
-        p0, p1 = ponto(inv(pai), R[0], R[1]), ponto(inv(pai), R[2], R[3])
-        yl = ponto(inv(pai), 0, yc)[1]
-        op_place(lg, m=[round((p1[0] - p0[0]) / MULTITEXT_LARGURA, 5), 0.0, 0.0, lg["item"]["m"][3]], tx=[p0[0], yl])
-        return p0[0], yl
 
     fundo_pes = pl.caixa_visivel(("fundo",))
     placa_pes = pl.caixa_visivel(("fundo", "cor_casa", "cor_fora")) or fundo_pes
@@ -1006,6 +1181,327 @@ def converter_generic(pl, molde, S, constantes=None, numeros=None, textos=None):
         resumo.append("Constantes que o código do molde não tem (ficaram como estavam): " + ", ".join(falta) + ".")
     resumo += [n for n in dict.fromkeys(avisos) if not n.isupper()]
     return ops, resumo
+
+
+# ------------------------------------------------------------------ a substituição (Generic/overlay_9021)
+
+SU = G + ".mcMoreSubsLT"
+SU_PRECISA = tuple(SU + s for s in ("", ".mcMiddleVector", ".mcVectorsMask", ".mtPlayersIn", ".mtPlayersOut",
+                                    ".mtPlayersInAway", ".mtPlayersOutAway", ".mcTeamCrest", ".mcTeamCrest.mcLogo",
+                                    ".mcTeamCrest.mcMask", ".mtPlayersIn.mcText", ".mtPlayersIn.mcNumber"))
+# fundos do painel (pintados pelo código), o fio, a textura do Ultimate Team e as setas do FC (as do PES vêm na arte)
+SU_ESCONDER = ("mcBackground", "mcWipe", "mcContainer", "mcLine", "mcTexture", "mcGreenArrow", "mcRedArrow",
+               "mcTeamCrest.mcBg")
+SU_AFASTAR = ("mcBackground", "mcWipe", "mcContainer", "mcLine", "mcTeamCrest.mcBg")      # o código só mexe no _y
+# a pintura chapada do Init: na arte (vira silhueta) e nos fundos escondidos (a cor nova traria o alpha de volta)
+SU_SEM_PINTURA = tuple("mcMoreSubsLT." + n for n in ("mcMiddleVector", "mcBackground", "mcWipe", "mcContainer",
+                                                    "mcLine", "mcTeamCrest.mcBg", "mcGreenArrow.mcBGArrow",
+                                                    "mcRedArrow.mcBGArrow"))
+SU_LINHAS = (("entra", ("mtPlayersIn", "mtPlayersInAway"), "INIT_TEXTS_IN_POS", "ANIM_TEXTS_IN_TWO_POS"),
+             ("sai", ("mtPlayersOut", "mtPlayersOutAway"), "INIT_TEXTS_OUT_POS", "ANIM_TEXTS_OUT_TWO_POS"))
+ANIMATE_DESLIGADO = "Animate_PES"
+
+
+class MoldeSubst(MoldeCodigo):
+    """A substituição do Generic do jogo (data/ui/game/overlays/Generic/overlay_9021.big).
+
+    Com duas ou mais trocas o código mostra o painel mcMoreSubsLT: fundos chapados que descem, a imagem
+    mcMiddleVector revelada pela máscara mcVectorsMask, o escudo do time, as setas e as linhas de quem entra e de quem
+    sai (mtPlayersIn/Out, instâncias do símbolo mcPlayerRowText com o número e o nome em MultiText; as outras trocas
+    viram linhas novas presas nelas). Com uma troca só, ele esconde o painel e mostra duas tarjas do componente
+    LowerThird, que outras telas do jogo também usam: a conversão faz o painel aparecer também nesse caso."""
+    tipo = "subst"
+    precisa = SU_PRECISA
+
+    def __init__(self, ov):
+        super().__init__(ov)
+        self.arte = self.imagem_em(SU + ".mcMiddleVector")
+        if not self.arte:
+            raise ErroMolde("Essa substituição do FC não tem a imagem do painel (mcMiddleVector), onde vai a arte do PES.")
+        self.fundo = {"w": self.arte["w"], "h": self.arte["h"], "tela": (0, 0, 0, 0)}
+
+    def descricao(self):
+        return {"tipo": self.tipo, "campos": ["mtPlayersIn", "mtPlayersOut", "mcTeamCrest"]}
+
+    def _funcao(self, nome):
+        return next((f for f in self.funcoes if f["nome"] == nome), None)
+
+    def byte_uma_troca(self):
+        """Posição do 1 de "nSubsCount > 1" no SetData (o que escolhe entre as tarjas e o painel), ou None."""
+        from nucleo import as2
+        fn = self._funcao("SetData")
+        reg = next((r for r, n in (fn or {}).get("pars", ()) if n == "nSubsCount"), None)
+        if not fn or not reg:
+            return None
+        d = self.a.d
+        p, ant = fn["inicio"], []
+        while p < fn["fim"]:
+            op, arg, q = as2.decodificar(d, p)
+            ant = (ant + [(op, arg, p)])[-3:]
+            if len(ant) == 3 and ant[0][:2] == (0xB9, reg) and ant[1][0] == 0x5A and ant[2][0] == 0x67:
+                return ant[1][2]
+            p = q
+        return None
+
+    def rolagens(self):
+        """Slots do nome do método das chamadas de Animate da entrada que rolam as linhas quando a quantidade de trocas
+        não é 2 nem 3 (destino com ROW_HEIGHT): com uma troca, levariam a linha para o lugar da terceira."""
+        out = []
+        for ch in self.chamadas:
+            if ch["funcao"] != "AnimateIn" or ch["nome"] != "Animate" or len(ch["args"]) < 3:
+                continue
+            alvo = str(ch["args"][0]["cam"] or "")
+            if alvo.rsplit(".", 1)[-1] in ("mtPlayersIn", "mtPlayersOut", "mtPlayersInAway", "mtPlayersOutAway") and \
+                    "ROW_HEIGHT" in ch["args"][2]["refs"] and ch["slot_nome"]:
+                out.append(ch["slot_nome"])
+        return out
+
+
+def converter_subst(sp, molde, S=None, constantes=None, formatos=None):
+    """Operações do Editor de Placares para a substituição do Generic (MoldeSubst) com a tela da substituição do PES
+    (pes.SubstPes) e um resumo. 'S' leva o filme do PES para a tela do FC (sem ela, as mesmas coordenadas: o PES
+    também desenha a substituição numa tela de 1920×1080). 'formatos': os TextFormat do código (da simulação)."""
+    S = S or afp.IDENT
+    M = Montagem(molde, constantes)
+    P = M.P
+
+    def tela(cx):
+        return _transformar_caixa(S, cx)
+
+    fundo, ce, cs = sp.caixa_visivel(("fundo",)), sp.caixa_campo("entra"), sp.caixa_campo("sai")
+    if not fundo or not ce or not cs:
+        raise ErroMolde("A substituição do PES não tem a placa ou as caixas de quem entra e de quem sai.")
+    Ra, Re, Rs = tela(fundo), tela(ce), tela(cs)
+    painel = P[SU]
+    iWP = inv(M.mundo(painel))
+
+    # 0. o painel também com uma troca só: o "nSubsCount > 1" do SetData vira "> 0" (com uma troca o FC mostraria as
+    #    tarjas do LowerThird, um componente que as outras telas também usam)
+    pos = molde.byte_uma_troca()
+    if pos is None:
+        raise ErroMolde("Não achei no código da substituição onde ele escolhe entre as tarjas e o painel.")
+    M.codigo(pos, "5a", "59", "painel também com uma troca (nSubsCount > 0)")
+    #    e a entrada não rola as linhas: com uma troca (ou mais de 3) o código chamaria um segundo Animate que leva a
+    #    primeira linha para outro lugar; essas chamadas passam a chamar um método que não existe
+    rol = molde.rolagens()
+    for slot in rol:
+        M.txt(slot, ANIMATE_DESLIGADO, "Animate")
+    if len(rol) != 4:
+        M.avisos.append("O código da entrada da substituição não é o esperado: com uma troca a linha pode não ficar na "
+                        "caixa do PES.")
+
+    # 1. a arte do PES (placa e setas) na imagem do mcMiddleVector, revelada pela máscara mcVectorsMask, que desce
+    arte = molde.arte
+    M.mapear(arte["lugar"], arte["caixa"], Ra)
+    Wf = M.mundo(arte["lugar"])
+    k = min(2.0, 2048.0 / max(Ra[2] - Ra[0], Ra[3] - Ra[1]))
+    wi, hi = max(8, int(round((Ra[2] - Ra[0]) * k))), max(8, int(round((Ra[3] - Ra[1]) * k)))
+    Tn = mul(tuple(arte["item"]["m"]), (wi / arte["w"], 0.0, 0.0, hi / arte["h"], 0.0, 0.0)) if arte["w"] else \
+        tuple(arte["item"]["m"])
+    M.textura(arte["char"], sp.desenhar(("fundo",), mul(mul(S, inv(Wf)), Tn), wi, hi))
+    lvm, bvm = molde.forma_em(P[SU + ".mcVectorsMask"])
+    if lvm:
+        M.mapear(lvm, bvm, (Ra[0] - 1, Ra[1] - 1, Ra[2] + 1, Ra[3] + 1))
+    alt = Ra[3] - Ra[1]
+    ch = (M.constantes.get("CONTENT_HEIGHT") or {}).get("valor")
+    if isinstance(ch, (int, float)) and ch < alt + 4:              # o quanto a máscara sobe antes de descer
+        M.const("CONTENT_HEIGHT", round(alt + 4))
+    M.resumo.append("Arte da substituição do PES (%d×%d) na imagem do painel, revelada de cima para baixo." % (wi, hi))
+
+    # 2. o que o Generic desenha some: os fundos chapados, o fio, a textura do Ultimate Team e as setas
+    for n in SU_ESCONDER:
+        if SU + "." + n in P:
+            M.esconder(P[SU + "." + n])
+    for n in SU_AFASTAR:
+        if SU + "." + n in P:
+            M.afastar(P[SU + "." + n], "x")
+    desligadas = set()
+    for alvo, slot in molde.pinturas:
+        if alvo in SU_SEM_PINTURA and slot:
+            M.txt(slot, PINTURA_DESLIGADA, PINTURA)
+            desligadas.add(alvo)
+    if "mcMoreSubsLT.mcMiddleVector" not in desligadas:
+        M.avisos.append("Não achei no código a pintura da imagem do painel: no jogo a arte pode ficar com uma cor só.")
+
+    # 3. o escudo do time na caixa do escudo do PES: o código carrega o escudo com CREST_SIZE de lado e o faz subir
+    #    até -ANIM_IN_LOGO_Y_POS; o mcTeamCrest vai para o lugar em que isso cai na caixa, e a máscara dele cobre a caixa
+    lt, ll = P[SU + ".mcTeamCrest"], P[SU + ".mcTeamCrest.mcLogo"]
+    cesc = sp.caixa_escudo()
+    y_logo = (M.constantes.get("ANIM_IN_LOGO_Y_POS") or {}).get("valor")
+    if cesc and isinstance(y_logo, (int, float)):
+        R = tela(cesc)
+        lado = int(round(min(R[2] - R[0], R[3] - R[1])))
+        x0, y0 = (R[0] + R[2] - lado) / 2, (R[1] + R[3] - lado) / 2
+        px, py = ponto(iWP, x0, y0)
+        x_logo = M.local_de(ll)[4]
+        M.place(lt, tx=[round(px - x_logo, 2), round(py + y_logo, 2)])
+        M.const("CREST_SIZE", max(8, min(127, lado)))
+        M.mascara(SU + ".mcTeamCrest.mcMask", (x0, y0, x0 + lado, y0 + lado), (1, 1))
+        M.resumo.append("Escudo do time na caixa do escudo do PES (%d px)." % lado)
+    else:
+        M.esconder(lt)
+        M.resumo.append("A substituição do PES não tem caixa de escudo: o escudo do FC fica escondido.")
+
+    # 4. quem entra e quem sai nas caixas do PES. As linhas são instâncias do mesmo símbolo (número à direita numa
+    #    caixa estreita, nome à esquerda ao lado): a origem da linha fica no começo da caixa do PES e no meio da linha;
+    #    o _y das linhas vem das constantes (iguais com 1, 2 ou 3 trocas); a cor de cada grupo vai pela cor do clipe do
+    #    grupo (multiplica 0 e soma a cor), por cima da pintura do código
+    h = min(Re[3] - Re[1], Rs[3] - Rs[1])
+    s = int(round(0.72 * h))
+    wn, gap, pad = 1.3 * s, 0.4 * s, 0.2 * s
+    largura = min(Re[2] - Re[0], Rs[2] - Rs[0]) - 2 * pad
+    lnum, lnome = P[SU + ".mtPlayersIn.mcNumber"], P[SU + ".mtPlayersIn.mcText"]
+    M.place(lnum, m=[round(wn / MULTITEXT_LARGURA, 5), 0.0, 0.0, lnum["item"]["m"][3]], tx=[0.0, 0.0])
+    M.place(lnome, m=[round(max(20.0, largura - wn - gap) / MULTITEXT_LARGURA, 5), 0.0, 0.0, lnome["item"]["m"][3]],
+            tx=[round(wn + gap, 2), 0.0])
+    for campo, nomes, c_tres, c_duas in SU_LINHAS:
+        cx = sp.caixa_campo(campo)
+        R = tela(cx)
+        cor = CLARO if _cor_texto_tela(sp, cx) == CLARO else ESCURO
+        px, py = ponto(iWP, R[0] + pad, (R[1] + R[3]) / 2 + 0.06 * s)
+        y = int(round(py))
+        for n in nomes:
+            M.place(P[SU + "." + n], tx=[round(px, 2), float(y)], tint=[0, 0, 0, 255], soma=cor[:3] + [0])
+        M.const(c_tres, y)
+        M.const(c_duas, y)
+        mk = molde.mascara_de(P[SU + "." + nomes[0]])
+        if mk:
+            B = _caixa_vertices(molde.geo.get(mk["char"], []))
+            if B:
+                M.mapear(mk, B, (R[0] - 2, R[1] - 2, R[2] + 2, R[3] + 2))
+    # as trocas a mais (2 ou 3 de uma vez) viram linhas abaixo da primeira: ficam fora da máscara, porque a placa do
+    # PES só tem lugar para uma; ROW_HEIGHT × 3 é o quanto as linhas sobem na saída (e saem da máscara)
+    M.const("ROW_COMMON_HEIGHT", min(127, int(round(h + 8))))
+    M.const("CONTAINER_ROW_HEIGHT", min(127, int(round(2 * (h + 8)))))
+    M.const("ROW_HEIGHT", min(127, int(round((h + 8) / 3.0)) + 1))
+    nome_f = next((f for f in formatos or () if f.get("fonte_chave") == "FONT_NAME_BOLD"), None)
+    num_f = next((f for f in formatos or () if "DIGITS" in str(f.get("fonte_chave") or "")), None)
+    for f in (nome_f, num_f):
+        if f and f.get("tamanho_slot"):
+            M.num(f["tamanho_slot"], max(8, min(127, s)), f.get("tamanho"), "tamanho da letra")
+    if not (nome_f and num_f):
+        M.avisos.append("Não achei no código o tamanho das letras da substituição: ficou o do FC.")
+    M.resumo.append("Quem entra e quem sai nas caixas do PES (letra %d px), com a cor de cada caixa." % s)
+    M.resumo.append("Com 2 ou 3 trocas de uma vez, aparecem a primeira que entra e a primeira que sai (a placa do PES "
+                    "tem lugar para uma).")
+    if sp.campo_na_placa("titulo"):
+        M.resumo.append("A faixa do título da substituição do PES fica sem texto (o FC não escreve título nessa tela).")
+    falta = [n for n in dict.fromkeys(M.avisos) if n.isupper()]
+    if falta:
+        M.resumo.append("Constantes que o código da substituição não tem (ficaram como estavam): " + ", ".join(falta) + ".")
+    M.resumo += [n for n in dict.fromkeys(M.avisos) if not n.isupper()]
+    return M.ops, M.resumo
+
+
+def _cor_texto_tela(tl, caixa):
+    lum = tl.luminancia(caixa, ("fundo",))
+    return ESCURO if lum is not None and lum > 0.55 else CLARO
+
+
+def classe_do_overlay(ov):
+    """Nome completo da classe do overlay (o do símbolo __Packages.… exportado), ou None."""
+    for e in ov.apt.exports:
+        if e["nome"].startswith("__Packages."):
+            return e["nome"][len("__Packages."):]
+    return None
+
+
+def _item_do_slot(ov, consts, slot):
+    """O item da tabela de constantes que um texto do código lê ("c:N", "pk:pos:pool" ou "pkw:pos:pool"), ou None."""
+    import struct
+    from nucleo import as2
+    d = bytes(ov.apt.d)
+    tipo, _, resto = str(slot or "").partition(":")
+
+    def pool(pool_pos):
+        p_cnt = (pool_pos + 1 + 7) // 8 * 8
+        cnt, ptr = struct.unpack_from("<QQ", d, p_cnt)
+        return list(struct.unpack_from("<%dQ" % cnt, d, ptr))
+    try:
+        if tipo == "c":
+            n = int(resto)
+            t, v = consts.item(n)
+            if t == as2.T_TEXTO:
+                return n
+            if t == as2.T_LOOKUP:
+                pp = as2._pool_do_slot(d, consts, n)
+                return pool(pp)[v] if pp is not None else None
+        elif tipo in ("pk", "pkw"):
+            pos_s, _, pool_s = resto.partition(":")
+            pos = int(pos_s)
+            k = d[pos] if tipo == "pk" else struct.unpack_from("<H", d, pos)[0]
+            return pool(int(pool_s))[k]
+    except (ValueError, IndexError, struct.error):
+        return None
+    return None
+
+
+def ops_renomear_classe(ov, novo):
+    """Operações que dão o nome curto 'novo' à classe do overlay (game.overlays.Generic.<novo>).
+
+    O jogo define cada classe uma vez só (o código pula a definição se ela já existe): uma cópia modificada de um
+    overlay do jogo gravada em outro arquivo precisa de um nome próprio, senão vale a que carregar primeiro e a outra
+    roda com o código errado. Mudam: o nome curto em todo o código (a definição e as constantes da classe), o nome
+    completo que o registerClass usa (o do símbolo e o caminho da classe, no mesmo texto) e o nome exportado do clipe
+    da classe, que precisa ser igual ao do registerClass. O nome que o construtor passa para a classe base
+    (Initialize) fica como está. Devolve {} se o overlay não tiver classe ou o código não for o esperado."""
+    from nucleo import as2
+    cheio = classe_do_overlay(ov)
+    curto = (cheio or "").rpartition(".")[2]
+    if not curto or novo == curto:
+        return {}
+    novo_cheio = cheio[:-len(curto)] + novo
+    consts = as2.Constantes(ov.entrada("1"))
+    try:
+        chamadas = ler_chamadas(ov)[0]
+    except Exception:  # noqa: BLE001  (código diferente do esperado: fica com o nome que tem)
+        return {}
+    if not any(c["nome"] == "registerClass" and c["args"] and c["args"][0]["v"] == cheio for c in chamadas):
+        return {}
+    manter = {_item_do_slot(ov, consts, c["args"][0]["slot"]) for c in chamadas
+              if c["nome"] == "Initialize" and c["args"] and c["args"][0]["v"] == cheio}
+    ops = {}
+    for i in range(consts.n):
+        t, v = consts.item(i)
+        if t != as2.T_TEXTO:
+            continue
+        txt = consts.texto(v)
+        if txt == curto or (txt == cheio and i not in manter):
+            ops["const_txt:c:%d" % i] = {"op": "const_txt", "slot": "c:%d" % i, "texto": novo if txt == curto else novo_cheio,
+                                         "orig": txt, "nome": "nome da classe"}
+    if not any(op["texto"] == novo for op in ops.values()) or not any(op["texto"] == novo_cheio for op in ops.values()):
+        return {}
+    ops["export:" + cheio] = {"op": "export", "antes": cheio, "nome": novo_cheio}
+    return ops
+
+
+def previa_subst(sp, S=None, largura=1920, altura=1080, recorte=True):
+    """A substituição do PES na tela do FC, com nomes de exemplo nas caixas (o jogo escreve os de verdade)."""
+    from PIL import ImageDraw, ImageFont
+    S = S or afp.IDENT
+    img = sp.desenhar(("fundo",), S, largura, altura, fundo=(30, 96, 52, 255))
+    dr = ImageDraw.Draw(img)
+    for campo, num, nome in (("entra", "10", "KUBO"), ("sai", "7", "NAKAMURA")):
+        cx = sp.caixa_campo(campo)
+        if not cx:
+            continue
+        R = _transformar_caixa(S, cx)
+        s = max(8, int(round(0.72 * (R[3] - R[1]))))
+        try:
+            fonte = ImageFont.truetype("arialbd.ttf", s)
+        except OSError:
+            fonte = ImageFont.load_default()
+        cor = tuple(_cor_texto_tela(sp, cx))
+        yc = (R[1] + R[3]) / 2
+        x = R[0] + 0.2 * s
+        dr.text((x + 1.3 * s, yc), num, fill=cor, font=fonte, anchor="rm")
+        dr.text((x + 1.7 * s, yc), nome, fill=cor, font=fonte, anchor="lm")
+    if recorte:
+        cx = _transformar_caixa(S, sp.caixa_visivel(("fundo",)))
+        m = 24
+        img = img.crop((max(0, int(cx[0]) - m), max(0, int(cx[1]) - m), min(largura, int(cx[2]) + m),
+                        min(altura, int(cx[3]) + m)))
+    return img
 
 
 # ------------------------------------------------------------------ prévia (como deve ficar no FC)

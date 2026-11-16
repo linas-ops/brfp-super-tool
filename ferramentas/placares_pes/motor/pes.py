@@ -163,7 +163,170 @@ def _papel(p):
     return "fundo"
 
 
-class PlacarPes:
+class TelaPes:
+    """Uma tela do pacote (um filme do PES) com o papel de cada peça: as caixas, o desenho e o brilho do fundo."""
+    janela = None
+    LIMITE = (-1000, -600, 2000, 800)          # área razoável do filme quando não há janela
+
+    def __init__(self, bib, pecas):
+        self.bib = bib
+        self.pecas = pecas
+
+    # ---------------------------------------------------------- caixas (coordenadas do filme do PES)
+
+    def caixas(self, papel):
+        return [p["caixa"] for p in self.pecas if p["papel"] == papel and p["caixa"]]
+
+    def caixa_campo(self, campo):
+        cx = self.caixas("texto:" + campo)
+        if not cx:
+            return None
+        return (min(c[0] for c in cx), min(c[1] for c in cx), max(c[2] for c in cx), max(c[3] for c in cx))
+
+    def caixa_visivel(self, papeis=("fundo",), limite=None):
+        """Retângulo dos pixels visíveis das peças (as placas do PES têm muita margem transparente).
+
+        'limite' restringe a busca a uma área (x0, y0, x1, y1) do filme; sem ele, vale a área do placar (janela).
+        """
+        pecas = [p for p in self.pecas if p["papel"] in papeis and p["caixa"]]
+        if not pecas:
+            return None
+        x0 = min(p["caixa"][0] for p in pecas)
+        y0 = min(p["caixa"][1] for p in pecas)
+        x1 = max(p["caixa"][2] for p in pecas)
+        y1 = max(p["caixa"][3] for p in pecas)
+        # recortes gigantes (uma ponta da placa a 2.000 px) não entram na conta: limita a uma área razoável
+        lx0, ly0, lx1, ly1 = limite or self.janela or self.LIMITE
+        x0, y0, x1, y1 = max(x0, lx0), max(y0, ly0), min(x1, lx1), min(y1, ly1)
+        if x1 <= x0 or y1 <= y0:
+            return None
+        w, h = int(np.ceil(x1 - x0)) + 2, int(np.ceil(y1 - y0)) + 2
+        img = self.desenhar(papeis, (1, 0, 0, 1, -x0, -y0), w, h)
+        a = np.asarray(img)[..., 3]
+        ys, xs = np.nonzero(a > 8)
+        if not len(xs):
+            return None
+        return (x0 + xs.min(), y0 + ys.min(), x0 + xs.max() + 1, y0 + ys.max() + 1)
+
+    def desenhar(self, papeis, ajuste, w, h, fundo=None, janela=True):
+        """Desenha as peças com a matriz 'ajuste' (filme -> imagem). Com 'janela', só a área do placar aparece."""
+        pecas = [p for p in self.pecas if p["papel"] in papeis]
+        img = afp.desenhar(self.bib, pecas, w, h, ajuste=ajuste, fundo=None if janela and self.janela else fundo,
+                           formas=False)
+        if not (janela and self.janela):
+            return img
+        # o que fica fora da área do placar some (os pixels são levados de volta para o filme pela inversa)
+        a, b, c, d, e, f = afp.inversa(ajuste)
+        xs = np.arange(w, dtype=np.float32) + 0.5
+        ys = np.arange(h, dtype=np.float32)[:, None] + 0.5
+        fx = a * xs + c * ys + e
+        fy = b * xs + d * ys + f
+        jx0, jy0, jx1, jy1 = self.janela
+        fora = (fx < jx0) | (fx > jx1) | (fy < jy0) | (fy > jy1)
+        if fora.any():
+            arr = np.asarray(img).copy()
+            arr[fora] = 0
+            img = afp.Image.fromarray(arr, "RGBA")
+        if fundo is not None:
+            from PIL import Image
+            bg = Image.new("RGBA", img.size, tuple(fundo))
+            bg.alpha_composite(img)
+            img = bg
+        return img
+
+    def luminancia(self, caixa, papeis=("fundo",)):
+        """Brilho médio (0 a 1) do fundo dentro de uma caixa: decide se o texto vai claro ou escuro."""
+        x0, y0, x1, y1 = caixa
+        w, h = max(2, int(x1 - x0)), max(2, int(y1 - y0))
+        img = np.asarray(self.desenhar(papeis, (1, 0, 0, 1, -x0, -y0), w, h), np.float32) / 255
+        a = img[..., 3]
+        if a.sum() < 1:
+            return None
+        lum = (0.2126 * img[..., 0] + 0.7152 * img[..., 1] + 0.0722 * img[..., 2])
+        return float((lum * a).sum() / a.sum())
+
+
+# ------------------------------------------------------------------ a tela da substituição (game2d_memberChange)
+
+SUBST = "game2d_memberChange"
+# caixas vazias com nome onde o jogo escreve: quem entra, quem sai e o título (num pacote o título vem no desenho)
+CAMPOS_SUBST = {"playerName_in": "entra", "playerName_out": "sai", "text_title": "titulo"}
+
+
+def _papel_subst(p):
+    nomes = set(p["caminho"])
+    if p["tipo"] == "forma":
+        for k, v in CAMPOS_SUBST.items():
+            if k in nomes:
+                return "texto:" + v
+        if "emblem" in nomes:
+            return "escudo"
+        return None
+    if p["tipo"] != "imagem":
+        return None
+    if "texfont" in p["ref"].lower() or "logo" in nomes or "emblem" in nomes:
+        return None
+    return "fundo"                             # a placa e as setas de quem entra e de quem sai
+
+
+class SubstPes(TelaPes):
+    """A tela da substituição do PES (game2d_memberChange): a placa com as setas, a caixa do escudo do time e as
+    caixas de quem entra e de quem sai. As peças ficam nas coordenadas da tela do jogo (1920×1080)."""
+    janela = (-400.0, -300.0, 2320.0, 1380.0)
+
+    def __init__(self, bib, nome=""):
+        fm = bib.filme(SUBST)
+        if not fm:
+            raise afp.ErroAfp("Esse pacote não tem a tela da substituição (game2d_memberChange).")
+        self.nome = nome
+        pecas = afp.Cena(fm).pecas()
+        for p in pecas:
+            p["papel"] = _papel_subst(p)
+            p["caixa"] = afp.caixa(bib, p)
+            if p["mult"][3] <= 0.01:
+                p["papel"] = None
+        super().__init__(bib, pecas)
+
+    def caixa_escudo(self):
+        cx = self.caixas("escudo")
+        if not cx:
+            return None
+        return (min(c[0] for c in cx), min(c[1] for c in cx), max(c[2] for c in cx), max(c[3] for c in cx))
+
+    def campo_na_placa(self, campo, margem=4):
+        """A caixa do campo, se ela cai na placa (num pacote o título fica fora da tela e vem desenhado na placa)."""
+        cx, pl = self.caixa_campo(campo), self.caixa_visivel(("fundo",))
+        if not cx or not pl:
+            return None
+        if cx[0] < pl[0] - margem or cx[1] < pl[1] - margem or cx[2] > pl[2] + margem or cx[3] > pl[3] + margem:
+            # a caixa pode passar um pouco da placa (o texto é menor que ela): vale se o meio dela estiver na placa
+            mx, my = (cx[0] + cx[2]) / 2, (cx[1] + cx[3]) / 2
+            if not (pl[0] <= mx <= pl[2] and pl[1] <= my <= pl[3]):
+                return None
+        return cx
+
+    def previa(self, margem=12, fundo=(26, 92, 48, 255), caixas_texto=True):
+        """Imagem da substituição como no PES, com as caixas de texto e a do escudo marcadas."""
+        from PIL import ImageDraw
+        cx = self.caixa_visivel(("fundo",))
+        if not cx:
+            return None
+        x0, y0 = cx[0] - margem, cx[1] - margem
+        w, h = int(cx[2] - cx[0]) + 2 * margem, int(cx[3] - cx[1]) + 2 * margem
+        img = self.desenhar(("fundo",), (1, 0, 0, 1, -x0, -y0), w, h, fundo)
+        if caixas_texto:
+            dr = ImageDraw.Draw(img)
+            for campo in ("entra", "sai", "titulo"):
+                c = self.campo_na_placa(campo)
+                if c:
+                    dr.rectangle((c[0] - x0, c[1] - y0, c[2] - x0, c[3] - y0), outline=(255, 210, 0, 255))
+            c = self.caixa_escudo()
+            if c:
+                dr.rectangle((c[0] - x0, c[1] - y0, c[2] - x0, c[3] - y0), outline=(90, 200, 255, 255))
+        return img
+
+
+class PlacarPes(TelaPes):
     def __init__(self, pasta, cache=None):
         self.pasta = pasta
         self.bins = achar_bins(pasta)
@@ -195,41 +358,16 @@ class PlacarPes:
                 p["papel"] = None               # escondida neste estado
         return pecas
 
-    # ---------------------------------------------------------- caixas (coordenadas do filme do PES)
-
-    def caixas(self, papel):
-        return [p["caixa"] for p in self.pecas if p["papel"] == papel and p["caixa"]]
-
-    def caixa_campo(self, campo):
-        cx = self.caixas("texto:" + campo)
-        if not cx:
-            return None
-        return (min(c[0] for c in cx), min(c[1] for c in cx), max(c[2] for c in cx), max(c[3] for c in cx))
-
-    def caixa_visivel(self, papeis=("fundo",), limite=None):
-        """Retângulo dos pixels visíveis das peças (as placas do PES têm muita margem transparente).
-
-        'limite' restringe a busca a uma área (x0, y0, x1, y1) do filme; sem ele, vale a área do placar (janela).
-        """
-        pecas = [p for p in self.pecas if p["papel"] in papeis and p["caixa"]]
-        if not pecas:
-            return None
-        x0 = min(p["caixa"][0] for p in pecas)
-        y0 = min(p["caixa"][1] for p in pecas)
-        x1 = max(p["caixa"][2] for p in pecas)
-        y1 = max(p["caixa"][3] for p in pecas)
-        # recortes gigantes (uma ponta da placa a 2.000 px) não entram na conta: limita a uma área razoável
-        lx0, ly0, lx1, ly1 = limite or self.janela or (-1000, -600, 2000, 800)
-        x0, y0, x1, y1 = max(x0, lx0), max(y0, ly0), min(x1, lx1), min(y1, ly1)
-        if x1 <= x0 or y1 <= y0:
-            return None
-        w, h = int(np.ceil(x1 - x0)) + 2, int(np.ceil(y1 - y0)) + 2
-        img = self.desenhar(papeis, (1, 0, 0, 1, -x0, -y0), w, h)
-        a = np.asarray(img)[..., 3]
-        ys, xs = np.nonzero(a > 8)
-        if not len(xs):
-            return None
-        return (x0 + xs.min(), y0 + ys.min(), x0 + xs.max() + 1, y0 + ys.max() + 1)
+    def substituicao(self):
+        """A tela da substituição do mesmo pacote (SubstPes), ou None se ele não tiver ou ela não tiver as caixas."""
+        if getattr(self, "_subst", None) is None:
+            try:
+                sp = SubstPes(self.bib, self.nome)
+                ok = sp.caixa_visivel(("fundo",)) and sp.caixa_campo("entra") and sp.caixa_campo("sai")
+                self._subst = sp if ok else False
+            except afp.ErroAfp:
+                self._subst = False
+        return self._subst or None
 
     def _achar_janela(self, papeis=("fundo", "cor_casa", "cor_fora", "acrescimos")):
         """(área do placar, [áreas soltas]) no filme do PES.
@@ -274,32 +412,6 @@ class PlacarPes:
         janela = caixa_de(np.isin(rotulos, list(manter)))
         soltas = [c for c in (caixa_de(rotulos == r) for r in range(1, n + 1) if r not in manter) if c]
         return janela, soltas
-
-    def desenhar(self, papeis, ajuste, w, h, fundo=None, janela=True):
-        """Desenha as peças com a matriz 'ajuste' (filme -> imagem). Com 'janela', só a área do placar aparece."""
-        pecas = [p for p in self.pecas if p["papel"] in papeis]
-        img = afp.desenhar(self.bib, pecas, w, h, ajuste=ajuste, fundo=None if janela and self.janela else fundo,
-                           formas=False)
-        if not (janela and self.janela):
-            return img
-        # o que fica fora da área do placar some (os pixels são levados de volta para o filme pela inversa)
-        a, b, c, d, e, f = afp.inversa(ajuste)
-        xs = np.arange(w, dtype=np.float32) + 0.5
-        ys = np.arange(h, dtype=np.float32)[:, None] + 0.5
-        fx = a * xs + c * ys + e
-        fy = b * xs + d * ys + f
-        jx0, jy0, jx1, jy1 = self.janela
-        fora = (fx < jx0) | (fx > jx1) | (fy < jy0) | (fy > jy1)
-        if fora.any():
-            arr = np.asarray(img).copy()
-            arr[fora] = 0
-            img = afp.Image.fromarray(arr, "RGBA")
-        if fundo is not None:
-            from PIL import Image
-            bg = Image.new("RGBA", img.size, tuple(fundo))
-            bg.alpha_composite(img)
-            img = bg
-        return img
 
     def previa(self, margem=12, fundo=(26, 92, 48, 255), caixas_texto=True):
         """Imagem do placar como no PES (fundo + cores + acréscimos), com as caixas de texto marcadas."""
@@ -350,14 +462,3 @@ class PlacarPes:
                 except ImportError:            # o contorno usa o OpenCV (pacote do grupo da ferramenta)
                     self._fonte = False
         return self._fonte or None
-
-    def luminancia(self, caixa, papeis=("fundo",)):
-        """Brilho médio (0 a 1) do fundo dentro de uma caixa: decide se o texto vai claro ou escuro."""
-        x0, y0, x1, y1 = caixa
-        w, h = max(2, int(x1 - x0)), max(2, int(y1 - y0))
-        img = np.asarray(self.desenhar(papeis, (1, 0, 0, 1, -x0, -y0), w, h), np.float32) / 255
-        a = img[..., 3]
-        if a.sum() < 1:
-            return None
-        lum = (0.2126 * img[..., 0] + 0.7152 * img[..., 1] + 0.0722 * img[..., 2])
-        return float((lum * a).sum() / a.sum())
