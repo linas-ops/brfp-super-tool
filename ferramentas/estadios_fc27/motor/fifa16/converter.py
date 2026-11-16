@@ -1296,6 +1296,93 @@ class Conversao:
             base.aviso(f"colisão: {rel['placas_alem_da_parede']} placas de publicidade do El Grandioso ficam além da parede "
                        f"nova (dentro da arquibancada)")
 
+    def stage_cameras(self):
+        """Câmeras próprias do estádio novo (motor/fifa16/cameras.py): as do conjunto genérico do jogo que a geometria nova
+        tapa, movidas para onde a vista fica livre, num bundle registrado na CameraOverridesBrt como os dos estádios do
+        jogo. Receita "cameras": "ajustar" (padrão) ou "genericas" (sem conjunto próprio: o jogo usa o genérico, como até
+        a 2.0, e as câmeras de torcida podem ficar atrás ou dentro da arquibancada nova)."""
+        from . import cameras
+        modo = self.rc.get('cameras') or 'ajustar'
+        if modo not in ('ajustar', 'genericas'):
+            falha('modo de câmeras desconhecido: ' + str(modo))
+        if modo == 'genericas':
+            self.report['cameras'] = 'as do conjunto genérico do jogo (receita)'
+            return
+        c = self.c
+        N, M = cameras.nomes(self.N), cameras.nomes(cameras.MODELO_ID)
+        if N['colecao'].lower() in c['ebx_by_name'] or N['bundle'] in c['bundle_by_name']:
+            self.report['cameras'] = f'o jogo já tem câmeras próprias para o ID {self.N}: ficam as dele'
+            base.aviso('câmeras: ' + self.report['cameras'])
+            return
+        for nome in (N['colecao'], N['blueprint'], N['bundle']):
+            if self.plano.tem('ebx', nome):
+                falha(f'o projeto já tem as câmeras próprias do estádio {self.N} ({nome}): o mesmo estádio novo já foi '
+                      f'convertido nele?')
+        dump = self.amb.dumps([cameras.GENERICO], self.work / 'sdk')[cameras.GENERICO.lower()]
+        cams = cameras.cameras(dump)
+        oc = cameras.Ocupacao(self.triangulos16())
+        aj, sem = cameras.analisar(oc, cams)
+        rel = collections.OrderedDict(conjunto_generico=len(cams), tapadas=len(aj) + len(sem), movidas=len(aj),
+                                      modos=dict(collections.Counter(a[1] for a in aj)),
+                                      deslocamento_m=[round(float(np.percentile([a[2] for a in aj], q)), 1) for q in (50, 100)] if aj else [],
+                                      sem_ajuste=[x['nome'] for x in sem])
+        self.report['cameras'] = rel
+        if not aj:
+            rel['registro'] = 'nenhuma câmera tapada: fica o conjunto genérico'
+            base.aviso('câmeras: nenhuma câmera do conjunto genérico fica tapada pela geometria nova')
+            return
+        guid = lambda *partes: self.u5('cameras', *partes)  # noqa: E731
+        out = self.work / 'out'
+        bp_part, bb_part = guid('blueprint'), guid('blueprint_bundle')
+        jobs = [dict(kind='ebx_ops', input=str(self.amb.native('ebx', cameras.GENERICO)[0]), output=str(out / 'cameras_colecao.ebx'),
+                     expect_name=cameras.GENERICO, expect_new_name=N['colecao'], ops=cameras.ops_colecao(dump, aj, N['colecao'], guid)),
+                dict(kind='ebx_ops', input=str(self.amb.native('ebx', M['blueprint'])[0]), output=str(out / 'cameras_blueprint.ebx'),
+                     expect_name=M['blueprint'], expect_new_name=N['blueprint'], ops=cameras.ops_registro(N['blueprint'], bp_part)),
+                dict(kind='ebx_ops', input=str(self.amb.native('ebx', M['bundle'])[0]), output=str(out / 'cameras_bundle.ebx'),
+                     expect_name=M['bundle'], expect_new_name=N['bundle'],
+                     ops=cameras.ops_registro(N['bundle'], bb_part, blueprint=bp_part))]
+        r_col, r_bp, r_bb = self.run(jobs, 'cameras')['rows']
+        esperadas = 1 + sum(1 + len(a[0]['refs'][1]) for a in aj)
+        if r_col['instances_after'] != esperadas or r_bp['partition'] != bp_part or r_bb['partition'] != bb_part:
+            falha(f"câmeras: EBX novos não conferem ({r_col['instances_after']} instâncias, esperadas {esperadas})")
+        # bundle novo, com o superbundle e o tipo do bundle de câmeras do El Grandioso
+        mb = c['bundle_by_name'][M['bundle']]
+        h = self.hashes([N['bundle'], M['bundle']])
+        if int(h[M['bundle']]['xxh3_utf16_lower']) != mb['hash']:
+            falha('câmeras: a fórmula do hash de bundle falhou no bundle do El Grandioso')
+        bh = int(h[N['bundle']]['xxh3_utf16_lower'])
+        if any(b['hash'] == bh for b in c['bundles']):
+            falha('câmeras: o hash do bundle novo colide com um do jogo')
+        self.plano.bundles_novos([{'name': N['bundle'], 'superbundle': self.dup.superbundles[mb['superbundle']]['hash'],
+                                   'type': mb['type']}])
+        ler = lambda r: Path(r['output']).read_bytes()  # noqa: E731
+        self.add('ebx', N['colecao'], ler(r_col), dict(name=N['colecao'], type=r_col['type'], partition=r_col['partition'],
+                                                        is_added=True, addedbundles=[bh], brthash=cameras.BRT_HASH,
+                                                        brtpath=N['caminho']))
+        self.add('ebx', N['blueprint'], ler(r_bp), dict(name=N['blueprint'], type=r_bp['type'], partition=r_bp['partition'],
+                                                         is_added=True, addedbundles=[bh]))
+        self.add('ebx', N['bundle'], ler(r_bb), dict(name=N['bundle'], type=r_bb['type'], partition=r_bb['partition'],
+                                                      is_added=True, addedbundles=[bh]))
+        # presets de lente e corpo que as câmeras usam e os ambientes visuais do bundle de câmeras do El Grandioso
+        compart = {c['ebx_by_part'][x.split('/')[0]]['name'] for x in r_col['imports'] if x.split('/')[0] in c['ebx_by_part']}
+        faltam = [x for x in r_col['imports'] if x.split('/')[0] not in c['ebx_by_part']]
+        if faltam:
+            falha('câmeras: presets que não existem no jogo: ' + ', '.join(faltam[:3]))
+        compart |= {n for n in cameras.COMPARTILHADOS if n.lower() in c['ebx_by_name']}
+        cas = self.amb.cas()
+        for nome in sorted(compart):
+            e = c['ebx_by_name'][nome.lower()]
+            _, encoded, _ = cas.read_asset(e)
+            self.plano.atribuir_nativo('ebx', e['name'], {'name': e['name'], 'is_added': False, 'original_sha1': e['sha1'],
+                                                          'bundle_assignment_only': True, 'addedbundles': [bh],
+                                                          'original_size': e['original_size'], 'compression_level': 7},
+                                       encoded, 'cas')
+        rel['registro'] = dict(bundle=N['bundle'], colecao=N['colecao'], brt=cameras.BRT_NOME, caminho=N['caminho'],
+                               compartilhados=len(compart))
+        base.aviso(f"câmeras: {len(aj)} do conjunto genérico ficavam tapadas pela geometria nova e foram movidas "
+                   f"(deslocamento mediano {rel['deslocamento_m'][0]:.0f} m), num conjunto próprio do estádio {self.N}"
+                   + (f"; {len(sem)} sem posição livre ficam como estão ({', '.join(rel['sem_ajuste'][:3])})" if sem else ''))
+
     def campos_do_gol(self):
         """Rede do gol na linha do estádio: a quadrada (padrão) ou a funda do El Grandioso (receita "rede_gol": "veu")."""
         modo = self.rc.get('rede_gol') or 'quadrada'
@@ -1428,7 +1515,7 @@ class Conversao:
                  ('meshes', self.build_host_mesh), ('caixas', self.stage_host_blueprint), ('esconder', self.stage_hide),
                  ('telao', self.stage_scoreclock), ('gramado', self.stage_pitch), ('torcida', self.stage_crowd),
                  ('luzes da torcida', self.stage_luzes), ('glares', self.stage_glares), ('personagens', self.stage_slc),
-                 ('colisão', self.stage_colisao), ('banco', self.stage_db)]
+                 ('colisão', self.stage_colisao), ('câmeras', self.stage_cameras), ('banco', self.stage_db)]
         if int(self.rc.get('luz') or BASE_ID) != BASE_ID:
             falha(f"o pré-cálculo de luz de outro estádio (estádio {self.rc['luz']}) está desativado: com ele a partida fica "
                   f"carregando sem fim. A conversão usa o do El Grandioso ({BASE_ID}).")

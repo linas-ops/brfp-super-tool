@@ -108,7 +108,7 @@ motor desta ferramenta reproduz a v3 byte a byte. Os estádios do FIFA 16 têm t
    - **luzes da torcida à noite** (veja abaixo);
    - recuo do gramado no lado dos bancos;
    - placas baixas de madeira do El Grandioso;
-   - rede do gol e colisão em volta do campo (veja abaixo);
+   - rede do gol, colisão em volta do campo e câmeras (veja abaixo);
    - cadeiras da torcida (cores do FIFA 16 ou uma cor);
    - lado da torcida da casa;
    - altura do anel superior.
@@ -129,6 +129,7 @@ O que entra no FC 27:
 | Glares | Brilhos nas lâmpadas do `.lnx`, de dia e de noite, e fachos de luz das lâmpadas da noite. |
 | Personagens | Gandulas, fotógrafos e técnicos vão para os marcadores `slc_` do FIFA 16, quando existem; os outros seguem a opção "Personagens laterais". Os reservas sentam nas cadeiras do banco do estádio novo (opção "Reservas no banco"), e as áreas técnicas do banco de dados ficam à frente desse banco. |
 | Colisão | O chão e as paredes invisíveis em volta do campo saem do modelo do estádio novo, com as paredes na frente da arquibancada (opção "Colisão em volta do campo", abaixo). |
+| Câmeras | As câmeras de replay e de cenas que a arquibancada nova tapa saem do conjunto do jogo para onde a vista fica livre, num conjunto próprio do estádio (opção "Câmeras", abaixo). |
 | El Grandioso | A arquitetura dele some. Nenhum subset fica vazio: os que sobram ganham um triângulo de área zero, e as peças que a lógica do jogo liga e desliga vão para baixo do piso. |
 
 ## Converter PES 2021 → FC 27
@@ -276,6 +277,28 @@ linhas as paredes ficaram e avisa se alguma placa ficou além da parede (dentro 
 PES: paredes a uns 10 m da linha lateral e 9 m da de fundo (as do El Grandioso ficavam a até 26 e 36 m), 474 triângulos;
 no Allianz Parque do FIFA 16, 14 e 10 m. A opção **Colisão em volta do campo** volta à do El Grandioso. **Precisa de teste
 em partida.**
+
+## Câmeras
+
+Cada estádio do jogo pode ter câmeras próprias para os replays e as cenas (torcida, comemoração, entrada dos times,
+pênalti, bancos): um conjunto que troca só as câmeras que mudam naquele estádio, casadas pelo nome com as do conjunto
+genérico, e registrado numa tabela do jogo (`Broadcasting/Cameras/CameraOverridesBrt`). Um ID novo não tem conjunto
+próprio e usa o genérico (`Broadcasting/Cameras/StadiumCameras`, 1317 câmeras), feito para arquibancadas mais longe do
+campo: até a 2.0, numa arquibancada mais perto, algumas câmeras de torcida e de comemoração ficavam atrás ou dentro dela.
+
+Desde a 2.1 a conversão confere cada câmera do conjunto genérico contra o modelo do estádio novo. A vista fica tapada
+quando há arquibancada na linha da câmera ao foco (depois do plano de corte da câmera e antes do último trecho, que é a
+própria torcida ou o gramado) ou entre a câmera e o campo. Cada câmera tapada vai para onde todas as vistas dela ficam
+livres, pelo menor deslocamento entre: câmera e foco juntos na direção do centro do campo (o mesmo enquadramento, mais
+para dentro; até 40 m nas câmeras de torcida e só um empurrão de até 3 m nas outras, que filmam bancos, jogadores e
+cenas que não mudam de lugar), a câmera mais perto do foco, ou a câmera mais alta. Ficam como estão as câmeras que
+acompanham a jogada, as que filmam o estádio por fora e as do interior do túnel (o túnel do conjunto genérico fica onde
+está a arquibancada nova, e mover a câmera não traria os jogadores para a vista). As movidas vão num conjunto próprio do
+estádio novo, com o bundle e o registro iguais aos dos estádios do jogo; a entrada na tabela é gravada pelo gerenciador
+de mods ao aplicar o mod, como nos troféus e uniformes que o próprio FET duplica. Na Neo Química Arena do PES, 24
+câmeras do conjunto genérico ficavam tapadas: 22 foram movidas (8 m na mediana, até 28 m) e 2 não têm posição livre e
+ficam como estão; no Allianz Parque do FIFA 16, 27 tapadas e 24 movidas. A câmera de jogo (a que você escolhe para
+jogar) não muda. A opção **Câmeras** volta ao conjunto do jogo. **Precisa de teste em partida.**
 
 ## Personagens laterais
 
