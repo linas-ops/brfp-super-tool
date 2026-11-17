@@ -34,7 +34,7 @@ sys.path.insert(0, EDITOR)
 
 import base  # noqa: E402
 
-VERSAO = "1.2.1"
+VERSAO = "1.3.0"
 GRUPO = "placares_pes"                 # numpy e Pillow
 PREFS = base.Prefs(os.path.join(AQUI, "preferencias.json"), {
     "pasta": "", "molde": None, "x": 64, "y": 48, "escala": 1.0, "alvo": "molde", "alvo_outro": "", "fonte_pes": True,

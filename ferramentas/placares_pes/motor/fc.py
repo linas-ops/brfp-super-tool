@@ -1958,9 +1958,9 @@ class MoldeGol(MoldeCodigo):
 
 
 def exemplos_gol(tl):
-    ex = {"jogador": "GABIGOL"}
+    ex = {"jogador": ("GABIGOL", "esquerda")}
     if tl.campo("rotulo"):
-        ex["rotulo"] = "GOL"
+        ex["rotulo"] = ("GOL", "esquerda")
         if tl.campo("valor"):
             ex["valor"] = "23'"
     return ex
@@ -2088,6 +2088,7 @@ def previa_tela(tl, S, exemplos, largura=1920, altura=1080, recorte=True, ttf_nu
             return ImageFont.load_default()
 
     for campo, txt in exemplos.items():
+        txt, alinh = txt if isinstance(txt, tuple) else (txt, "centro")
         cx = tl.campo(campo)
         if not cx:
             continue
@@ -2095,7 +2096,8 @@ def previa_tela(tl, S, exemplos, largura=1920, altura=1080, recorte=True, ttf_nu
         h = R[3] - R[1]
         gol = campo.startswith("gols")
         f = fonte(max(8, int(h * (0.8 if gol and ttf_numeros else 0.66 if gol else 0.72))), ttf_numeros if gol else None)
-        dr.text(((R[0] + R[2]) / 2, (R[1] + R[3]) / 2), txt, fill=tuple(_cor_texto_tela(tl, cx)), font=f, anchor="mm")
+        pos, anc = (((R[0] + R[2]) / 2, (R[1] + R[3]) / 2), "mm") if alinh == "centro" else ((R[0] + 2, (R[1] + R[3]) / 2), "lm")
+        dr.text(pos, txt, fill=tuple(_cor_texto_tela(tl, cx)), font=f, anchor=anc)
     cores = [(0, 192, 75), (233, 27, 36), (0, 192, 75), (90, 90, 96), (90, 90, 96)]
     lamp, extra = _lampadas(tl) if hasattr(tl, "caixa_fora") else (None, None)
     for j, caixas in enumerate(lamp or ()):

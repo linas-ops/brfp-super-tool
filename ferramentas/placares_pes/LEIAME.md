@@ -6,7 +6,8 @@ Converte o placar da partida de um pacote de placares do **PES 2021** para o **E
 vai para um placar do FC usado como **molde**, e os textos que o jogo escreve (nomes dos times, placar, relógio,
 acréscimos), as faixas das cores dos times e os cartões vão para os lugares do PES. O resultado é gravado como um
 **projeto do Editor de Placares**: abre lá, em **Editados**, para ajustar e ver a animação. A **tela de substituição**
-do pacote vai junto, para a substituição do mesmo conjunto de overlays (ver *A substituição*, mais abaixo).
+do pacote vai junto, para a substituição do mesmo conjunto de overlays (ver *A substituição*, mais abaixo), e também
+as telas de **pênaltis** e de **gol** (ver *As outras telas*).
 
 ## Como usar
 
@@ -123,11 +124,41 @@ exemplo), a faixa do título fica vazia, porque o FC não escreve título nessa 
 os overlays dele que reaproveitam a classe do Generic (`overlay_5021`, `overlay_8021`, `overlay_8002`…) podem se misturar
 com o Generic convertido — nesse caso, grave no arquivo da competição em vez do Generic.
 
+## As outras telas
+
+Cada uma tem um interruptor na seção *Outras telas* (todas ligadas no começo) e uma prévia lado a lado (como o PES
+desenha e como deve ficar no FC). Vão para a tela do **mesmo conjunto do placar**: o destino com `…002.big` trocado pelo
+número da tela (`…003.big` para os pênaltis, `…075.big` para o gol; no Generic, `Generic/overlay_9003.big` e
+`Generic/overlay_9075.big`). O molde é sempre a tela do Generic do jogo; fora do Generic, a classe do código ganha nome
+próprio, como na substituição.
+
+As coordenadas dos filmes do PES são as da tela (1920×1080): as telas largas (pênaltis) ficam centralizadas, na altura
+do placar; as pequenas desenhadas dentro da tela (a tarja de gol, embaixo à esquerda) ficam onde o PES põe; uma pequena
+com o desenho fora da tela fica logo abaixo do placar. No Editor de Placares dá para mover tudo junto (`mcClassOverlay`).
+
+- **Pênaltis** (`game2d_pkScore` → `overlay_9003`): a arte do PES vai na imagem do logo do FC, atrás de tudo; nomes, gols
+  e escudos vão para as caixas do PES (o FC põe os dois times no mesmo x, um embaixo do outro: nas contas do time de
+  fora o código passa a ler constantes livres, e o desvio do Ultimate Team Pro fica desligado); as bolinhas das
+  cobranças (verde, vermelha, neutra, pintadas pelo código) vão para as lâmpadas do PES, e a 6ª, das cobranças
+  alternadas, fica logo depois da 5ª se ali houver desenho do PES. A entrada é a do FC (cada time entra pelo seu lado);
+  na saída a tela some de uma vez.
+- **Gol** (`game2d_goal` → `overlay_9075`): no FC essa é a tela dos **replays** de gol e de expulsão (com um placar
+  pequeno, que some). A arte do PES vai na imagem do ícone da bola, atrás dos textos; o sobrenome do jogador vai na
+  caixa do nome do PES; o lance (GOL, CARTÃO VERMELHO…) e o minuto vão nas caixas do texto e do número do PES, quando o
+  pacote as mostra (quando o pacote escreve o lance no próprio desenho, como o "GOL(S)" da GETV, os dois ficam
+  escondidos). O escudo do time do lance não aparece (essa tela do FC não sabe de que time é o lance). A tela fica
+  parada: aparece e some de uma vez. Pacotes que tiram a tela de gol de cena (levando tudo para longe, como o Globo)
+  ficam sem ela.
+
+Não dá para levar: **cartões**, **estatísticas** e a **tarja do jogador** — no FC elas são desenhadas por componentes
+(`Dropdown`, `LowerThird`) de outro arquivo, que muitas telas usam juntas. **Intervalo/fim**, **narradores** e
+**escalação** ainda não: essas telas do FC não têm uma imagem onde caiba a arte do PES.
+
 ## Limites
 
-- São convertidos o **placar da partida** (`game2d_score`) e a **substituição** (`game2d_memberChange`). O pacote do PES
-  também tem escalação, gol, estatísticas e pênaltis (outros filmes do `game2dPes.bin`, `game2dPesEnter.bin`,
-  `game2dPesPk.bin`).
+- São convertidos o **placar da partida** (`game2d_score`), a **substituição** (`game2d_memberChange`), os **pênaltis**
+  (`game2d_pkScore`) e o **gol** (`game2d_goal`). O pacote do PES também tem escalação, intervalo, estatísticas e outras
+  telas (outros filmes do `game2dPes.bin`, `game2dPesEnter.bin`, `game2dPesPk.bin`).
 - Os nomes são escritos pelo FC com a fonte do molde: a fonte dos nomes do PES é do próprio jogo e não vem no pacote.
   Para trocar, use a aba Fontes do Editor de Placares com um .ttf parecido.
 - O logo/escudo da competição do PES (que o jogo põe por licença) não entra.
@@ -157,7 +188,8 @@ com o Generic convertido — nesse caso, grave no arquivo da competição em vez
 placares_pes\
   servidor.py        servidor local (127.0.0.1:8781) e rotas
   motor\afp.py       leitor do TXP2/AFP do PES: texturas, recortes, formas, filmes e a montagem da cena
-  motor\pes.py       o placar e a substituição do PES entendidos: papel de cada peça (fundo, cores, caixas de texto)
+  motor\pes.py       o placar, a substituição e as outras telas do PES entendidos: papel de cada peça (fundo, cores,
+                     caixas de texto)
   motor\fc.py        a conversão para o molde do FC (operações do Editor de Placares)
   motor\fonte_ttf.py fonte TrueType a partir das imagens dos números (contorno com OpenCV, tabelas escritas à mão)
   web\               interface
