@@ -47,7 +47,8 @@
           <p>A pasta do placar (com <span class="mono">common\menu\licence\game2dPes.bin</span>, ou
             <span class="mono">game2dEngland.bin</span> e outras licenças) ou a de um pacote com
             vários placares, como o J-League Scoreboard Package. O desenho do placar do PES vai para um placar do FC usado
-            como molde, com os nomes, o placar e o relógio do FC nos lugares do PES; a tela de substituição vai junto.</p>
+            como molde, com os nomes, o placar e o relógio do FC nos lugares do PES; a substituição e as outras telas
+            do pacote (como a dos pênaltis) vão junto.</p>
           <div class="acoes"><button class="btn-primario" id="btn-vazio-pasta"></button></div>
           <small>O resultado é um projeto do Editor de Placares: grava na pasta de saída dele e abre lá para ajustar.</small>
         </div>
@@ -69,8 +70,12 @@
             <div class="previa-img"><img id="img-subst-fc" alt="Substituição no FC"></div>
           </div>
         </section>
+        <section class="previa-bloco" id="bloco-extras" hidden>
+          <header><h3>Outras telas</h3><span class="dica">à esquerda como o PES desenha (em amarelo, as caixas dos textos; em azul, as dos escudos; em rosa, o que o FC desenha com as peças dele); à direita como deve ficar no FC, com textos de exemplo</span></header>
+          <div id="extras"></div>
+        </section>
         <section class="previa-bloco">
-          <header><h3>Telas do pacote</h3><span class="dica">tudo o que o pacote do PES traz; o placar e a substituição são convertidos</span>
+          <header><h3>Telas do pacote</h3><span class="dica">tudo o que o pacote do PES traz; as convertidas ficam marcadas</span>
             <button id="btn-exportar" class="btn peq" title="Grava cada tela, cada recorte das texturas e a fonte dos números em PNG/TTF"></button></header>
           <div id="telas" class="telas"></div>
         </section>

@@ -170,6 +170,14 @@ class Apt:
             self.d[off + 48:off + 52] = bytes(int(max(0, min(255, round(v)))) for v in soma)
             fl |= F_COR
         struct.pack_into("<I", self.d, off + 8, fl)
+        # os itens já lidos dessa PlaceObject ficam iguais aos bytes: a simulação do código (prévia da animação) lê a
+        # posição dos clipes deles (um destino como "mcShootMask._x" tem de ser o lugar novo)
+        novo = self._item(off)
+        for c in self.chars:
+            for q in (c or {}).get("quadros") or []:
+                for it in q:
+                    if it.get("t") == "place" and it.get("off") == off:
+                        it.update(novo)
 
     def editar_texto(self, char, limites=None, fonte=None, alinh=None, cor=None, altura=None):
         c = self.chars[char]

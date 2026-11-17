@@ -309,6 +309,49 @@ class TelaPes:
         lum = (0.2126 * img[..., 0] + 0.7152 * img[..., 1] + 0.0722 * img[..., 2])
         return float((lum * a).sum() / a.sum())
 
+    def achar_janela(self, papeis, ancoras):
+        """(área da tela, [áreas soltas]) no filme do PES.
+
+        Alguns pacotes trazem, no mesmo filme e até na mesma imagem, peças longe da tela: o logo do canal no canto de
+        baixo, uma marca d'água, a outra metade de uma textura enorme… Desenha tudo em escala pequena, junta as manchas
+        próximas e fica com as que encostam nas caixas 'ancoras' (as de texto); as outras ficam de fora."""
+        pecas = [p for p in self.pecas if p["papel"] in papeis and p["caixa"]]
+        if not pecas:
+            return None, []
+        k = 0.25
+        x0 = max(min(p["caixa"][0] for p in pecas), -2400.0)
+        y0 = max(min(p["caixa"][1] for p in pecas), -1400.0)
+        x1 = min(max(p["caixa"][2] for p in pecas), x0 + 5600)
+        y1 = min(max(p["caixa"][3] for p in pecas), y0 + 3400)
+        if x1 <= x0 or y1 <= y0:
+            return None, []
+        w, h = int(np.ceil((x1 - x0) * k)) + 2, int(np.ceil((y1 - y0) * k)) + 2
+        img = afp.desenhar(self.bib, pecas, w, h, ajuste=(k, 0, 0, k, -x0 * k, -y0 * k), formas=False)
+        visivel = np.asarray(img)[..., 3] > 8
+        if not visivel.any():
+            return None, []
+        rotulos, n = _manchas(_dilatar(visivel, 10))       # 10 px aqui = 40 px no filme
+        if n <= 1:
+            return None, []
+        manter = set()
+        for c in ancoras:
+            ax0, ay0 = max(0, int((c[0] - x0) * k) - 2), max(0, int((c[1] - y0) * k) - 2)
+            ax1, ay1 = min(w, int(np.ceil((c[2] - x0) * k)) + 3), min(h, int(np.ceil((c[3] - y0) * k)) + 3)
+            if ax1 > ax0 and ay1 > ay0:
+                manter.update(int(v) for v in np.unique(rotulos[ay0:ay1, ax0:ax1]) if v)
+        if not manter:                                      # sem caixas de texto: a maior mancha
+            manter = {int(np.argmax(np.bincount(rotulos[visivel].ravel())[1:]) + 1)}
+
+        def caixa_de(sel):
+            ys, xs = np.nonzero(sel & visivel)
+            if not len(xs):
+                return None
+            return (x0 + xs.min() / k - 6, y0 + ys.min() / k - 6, x0 + (xs.max() + 1) / k + 6,
+                    y0 + (ys.max() + 1) / k + 6)
+        janela = caixa_de(np.isin(rotulos, list(manter)))
+        soltas = [c for c in (caixa_de(rotulos == r) for r in range(1, n + 1) if r not in manter) if c]
+        return janela, soltas
+
 
 # ------------------------------------------------------------------ a tela da substituição (game2d_memberChange)
 
@@ -390,6 +433,121 @@ class SubstPes(TelaPes):
         return img
 
 
+# ------------------------------------------------------------------ as outras telas (pênaltis, gol, cartão…)
+
+# Cada tela do pacote que vai para uma tela do FC: o filme, as caixas onde o jogo escreve (nome do clipe -> campo), as
+# caixas dos escudos e as peças que o FC desenha com as dele (as lâmpadas dos pênaltis, por exemplo): essas não entram
+# na arte. "forcar" escolhe quadros de clipes com estados (como o SEM_ACRESCIMOS do placar).
+TELAS_EXTRAS = {
+    "penaltis": {"filme": "game2d_pkScore", "titulo": "Pênaltis",
+                 "campos": {"teamName_left": "nome_casa", "teamName_right": "nome_fora",
+                            "score_home": "gols_casa", "score_away": "gols_fora"},
+                 "escudos": {"emblem_left": "casa", "emblem_right": "fora"},
+                 "fora": ("lamp_left_", "lamp_right_")},
+    "gol": {"filme": "game2d_goal", "titulo": "Gol",
+            "campos": {"playerNameNumber_str": "jogador", "todaysGoal_item": "rotulo", "todaysGoal_value": "valor"},
+            "escudos": {"emblem": "time"}, "exige": ("jogador",)},
+}
+
+
+def _papel_tela(p, d):
+    nomes = p["caminho"]
+    if p["tipo"] == "forma":
+        for n in nomes:
+            if n in d["campos"]:
+                return "texto:" + d["campos"][n]
+            if n in d.get("escudos", {}):
+                return "escudo:" + d["escudos"][n]
+        return None
+    if p["tipo"] != "imagem":
+        return None
+    for n in nomes:
+        if any(n.startswith(pre) for pre in d.get("fora", ())):
+            return "fora:" + n
+    if "texfont" in p["ref"].lower():
+        return None
+    if any(n == "logo" or n.startswith("emblem") for n in nomes):
+        return None                            # escudos e logos que o jogo carrega
+    return "fundo"
+
+
+class TelaFilme(TelaPes):
+    """Uma das outras telas do pacote (TELAS_EXTRAS): o desenho, as caixas de texto e de escudo pelo nome dos clipes e
+    as peças que o FC desenha com as dele. As coordenadas são as do filme do PES (o palco tem o tamanho do filme)."""
+
+    def __init__(self, bib, chave, nome=""):
+        d = TELAS_EXTRAS[chave]
+        fm = bib.filme(d["filme"])
+        if not fm:
+            raise afp.ErroAfp("Esse pacote não tem a tela %s (%s)." % (d["titulo"], d["filme"]))
+        self.chave, self.defin, self.nome = chave, d, nome
+        self.palco = (fm.largura, fm.altura)
+        cena = afp.Cena(fm)
+        pecas = cena.pecas(d["forcar"]) if d.get("forcar") else cena.pecas()
+        for p in pecas:
+            p["papel"] = _papel_tela(p, d)
+            p["caixa"] = afp.caixa(bib, p)
+            if p["mult"][3] <= 0.01:
+                p["papel"] = None
+        super().__init__(bib, pecas)
+        ancoras = [c for c in [self.caixa_campo(cp) for cp in set(d["campos"].values())] +
+                   [self.caixa_escudo(k) for k in set(d.get("escudos", {}).values())] if c]
+        self.janela = None
+        self.janela, self.soltas = self.achar_janela(("fundo",), ancoras)
+
+    def _uniao(self, papel):
+        cx = self.caixas(papel)
+        if not cx:
+            return None
+        return (min(c[0] for c in cx), min(c[1] for c in cx), max(c[2] for c in cx), max(c[3] for c in cx))
+
+    def caixa_escudo(self, lado):
+        return self._uniao("escudo:" + lado)
+
+    def caixa_fora(self, nome):
+        """A caixa de uma peça que o FC desenha (ex.: "lamp_left_0")."""
+        return self._uniao("fora:" + nome)
+
+    def na_tela(self, cx, margem=8):
+        """Se a caixa está na área da tela (num pacote, a caixa de um texto que não aparece fica longe dela)."""
+        if not cx:
+            return False
+        j = self.janela or self.caixa_visivel(("fundo",))
+        if not j:
+            return True
+        mx, my = (cx[0] + cx[2]) / 2, (cx[1] + cx[3]) / 2
+        return j[0] - margem <= mx <= j[2] + margem and j[1] - margem <= my <= j[3] + margem
+
+    def campo(self, campo):
+        """A caixa do campo, se ela aparece na tela; None se a tela não tem o campo ou ele fica fora dela."""
+        cx = self.caixa_campo(campo)
+        return cx if self.na_tela(cx) else None
+
+    def escudo(self, lado):
+        cx = self.caixa_escudo(lado)
+        return cx if self.na_tela(cx) else None
+
+    def previa(self, margem=12, fundo=(26, 92, 48, 255), caixas_texto=True):
+        """A tela como no PES, com as caixas de texto (amarelo), dos escudos (azul) e das peças do FC (rosa)."""
+        from PIL import ImageDraw
+        cx = self.caixa_visivel(("fundo",))
+        if not cx:
+            return None
+        x0, y0 = cx[0] - margem, cx[1] - margem
+        w, h = int(cx[2] - cx[0]) + 2 * margem, int(cx[3] - cx[1]) + 2 * margem
+        img = self.desenhar(("fundo",), (1, 0, 0, 1, -x0, -y0), w, h, fundo)
+        if caixas_texto:
+            dr = ImageDraw.Draw(img)
+            marcas = [(self.campo(c), (255, 210, 0, 255)) for c in set(self.defin["campos"].values())]
+            marcas += [(self.escudo(k), (90, 200, 255, 255)) for k in set(self.defin.get("escudos", {}).values())]
+            marcas += [(self._uniao(pp), (255, 120, 200, 255)) for pp in {p["papel"] for p in self.pecas
+                                                                       if str(p["papel"]).startswith("fora:")}]
+            for c, cor in marcas:
+                if c:
+                    dr.rectangle((c[0] - x0, c[1] - y0, c[2] - x0, c[3] - y0), outline=cor)
+        return img
+
+
 class PlacarPes(TelaPes):
     def __init__(self, pasta, cache=None):
         self.pasta = pasta
@@ -433,49 +591,26 @@ class PlacarPes(TelaPes):
                 self._subst = False
         return self._subst or None
 
-    def _achar_janela(self, papeis=("fundo", "cor_casa", "cor_fora", "acrescimos")):
-        """(área do placar, [áreas soltas]) no filme do PES.
+    def tela(self, chave):
+        """Uma das outras telas do pacote (TelaFilme, ver TELAS_EXTRAS), ou None se ele não tiver ou ela não tiver
+        desenho."""
+        cache = self.__dict__.setdefault("_telas", {})
+        if chave not in cache:
+            try:
+                tl = TelaFilme(self.bib, chave, self.nome)
+                # sem desenho, ou sem um texto que a tela precisa (pacotes que tiram a tela de cena levam tudo para longe)
+                ok = tl.caixa_visivel(("fundo",)) and all(tl.campo(c) for c in tl.defin.get("exige", ()))
+                cache[chave] = tl if ok else False
+            except afp.ErroAfp:
+                cache[chave] = False
+        return cache[chave] or None
 
-        Alguns pacotes trazem, no mesmo filme e até na mesma imagem do placar, peças longe dele: o logo do canal no
-        canto de baixo da tela, uma marca d'água… Desenha tudo em escala pequena, junta as manchas próximas e fica com
-        as que encostam nas caixas de texto (nomes, gols, relógio); as outras ficam de fora do placar.
-        """
-        pecas = [p for p in self.pecas if p["papel"] in papeis and p["caixa"]]
-        if not pecas:
-            return None, []
-        k = 0.25
-        x0 = max(min(p["caixa"][0] for p in pecas), -2400.0)
-        y0 = max(min(p["caixa"][1] for p in pecas), -1400.0)
-        x1 = min(max(p["caixa"][2] for p in pecas), x0 + 5600)
-        y1 = min(max(p["caixa"][3] for p in pecas), y0 + 3400)
-        w, h = int(np.ceil((x1 - x0) * k)) + 2, int(np.ceil((y1 - y0) * k)) + 2
-        img = afp.desenhar(self.bib, pecas, w, h, ajuste=(k, 0, 0, k, -x0 * k, -y0 * k), formas=False)
-        visivel = np.asarray(img)[..., 3] > 8
-        if not visivel.any():
-            return None, []
-        rotulos, n = _manchas(_dilatar(visivel, 10))       # 10 px aqui = 40 px no filme
-        if n <= 1:
-            return None, []
+    def _achar_janela(self, papeis=("fundo", "cor_casa", "cor_fora", "acrescimos")):
+        """(área do placar, [áreas soltas]) no filme do PES: fica com as peças que encostam nos nomes, gols e relógio
+        (o logo do canal num canto da tela, por exemplo, fica de fora)."""
         ancoras = [c for c in (self.caixa_campo(cp) for cp in ("nome_casa", "nome_fora", "gols_casa", "gols_fora",
                                                                 "relogio")) if c]
-        manter = set()
-        for c in ancoras:
-            ax0, ay0 = max(0, int((c[0] - x0) * k) - 2), max(0, int((c[1] - y0) * k) - 2)
-            ax1, ay1 = min(w, int(np.ceil((c[2] - x0) * k)) + 3), min(h, int(np.ceil((c[3] - y0) * k)) + 3)
-            if ax1 > ax0 and ay1 > ay0:
-                manter.update(int(v) for v in np.unique(rotulos[ay0:ay1, ax0:ax1]) if v)
-        if not manter:                                      # sem caixas de texto: a maior mancha
-            manter = {int(np.argmax(np.bincount(rotulos[visivel].ravel())[1:]) + 1)}
-
-        def caixa_de(sel):
-            ys, xs = np.nonzero(sel & visivel)
-            if not len(xs):
-                return None
-            return (x0 + xs.min() / k - 6, y0 + ys.min() / k - 6, x0 + (xs.max() + 1) / k + 6,
-                    y0 + (ys.max() + 1) / k + 6)
-        janela = caixa_de(np.isin(rotulos, list(manter)))
-        soltas = [c for c in (caixa_de(rotulos == r) for r in range(1, n + 1) if r not in manter) if c]
-        return janela, soltas
+        return self.achar_janela(papeis, ancoras)
 
     def previa(self, margem=12, fundo=(26, 92, 48, 255), caixas_texto=True):
         """Imagem do placar como no PES (fundo + cores + acréscimos), com as caixas de texto marcadas."""

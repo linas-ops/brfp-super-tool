@@ -5,7 +5,7 @@ import { api } from './comum/api.js';
 import { instalarComponentes } from './comum/componentes.js';
 
 const S = { inicio: null, pasta: '', placares: [], sel: null, info: {}, moldes: null, molde: null, pos: { x: 64, y: 48, escala: 1 },
-  alvo: 'molde', alvoOutro: '', fontePes: true, subst: true, fontes: {}, previa: null, ultimo: null, ocupado: false, tPrevia: null };
+  alvo: 'molde', alvoOutro: '', fontePes: true, subst: true, telasEsc: {}, fontes: {}, previa: null, ultimo: null, ocupado: false, tPrevia: null };
 
 const GENERIC = 'data/ui/game/overlays/Generic/overlay_9002.big';
 async function tentar(fn) { try { return await fn(); } catch (e) { aviso(e.message, { tipo: 'erro' }); return undefined; } }
@@ -13,7 +13,11 @@ const nomeArq = (c) => (c || '').split(/[\\/]/).filter(Boolean).pop() || '';
 const chaveMolde = (m) => (m ? `${m.fonte}|${m.arquivo}` : '');
 // destino do placar (o mesmo cálculo do servidor) e o da substituição do mesmo conjunto (…002.big -> …021.big)
 const alvoPlacar = () => ({ molde: S.molde?.arquivo, generic: GENERIC }[S.alvo] || S.alvoOutro || '').replace(/\\/g, '/').replace(/^\/+|\/+$/g, '');
-const alvoSubst = (alvo) => { const m = /^(.*overlay_\d+)002\.big$/i.exec(alvo || ''); return m ? m[1] + '021.big' : ''; };
+const alvoTela = (alvo, numero) => { const m = /^(.*overlay_\d+)002\.big$/i.exec(alvo || ''); return m ? m[1] + String(+numero % 1000).padStart(3, '0') + '.big' : ''; };
+const alvoSubst = (alvo) => alvoTela(alvo, 9021);
+// as outras telas do pacote (pênaltis…) que vão junto: todas, menos as desmarcadas
+const extras = () => S.info[S.sel]?.telas_extras || [];
+const extraMarcada = (x) => S.telasEsc[x.chave] !== false;
 
 function carregando(txt) {
   const c = $('#carregando');
@@ -88,8 +92,9 @@ function desenharTelas() {
   if (!S.telas) return;
   t.innerHTML = '';
   const subst = S.info[S.sel]?.subst && S.subst;
+  const filmes = new Set(extras().filter(extraMarcada).map((x) => x.filme));
   for (const x of S.telas) {
-    const conv = x.nome === 'game2d_score' || (subst && x.nome === 'game2d_memberChange');
+    const conv = x.nome === 'game2d_score' || (subst && x.nome === 'game2d_memberChange') || filmes.has(x.nome);
     t.append(el('figure', { class: 'tela-mini' + (conv ? ' convertida' : ''), title: `${x.nome} · ${x.w}×${x.h}` },
       el('div', { class: 'tela-img xadrez' }, el('img', { src: x.imagem, alt: x.titulo })),
       el('figcaption', {}, el('b', {}, x.titulo), el('small', {}, conv ? 'convertida' : `${x.w}×${x.h}`))));
@@ -133,6 +138,7 @@ async function atualizarPrevia() {
   $('#img-pes').style.width = info ? `${info.w * 2}px` : '';       // o placar do PES é pequeno: em dobro
   $('#bloco-subst').hidden = !info?.subst;
   $('#img-subst-pes').src = info?.subst?.previa || '';
+  desenharExtras(null);
   if (!info || !S.molde) { $('#img-fc').src = ''; $('#img-tela').src = ''; $('#img-subst-fc').src = ''; return; }
   const r = await api('previa', { pasta: S.sel, molde: S.molde, ...S.pos, fonte_pes: S.fontePes }).catch((e) => { aviso(e.message, { tipo: 'erro' }); return null; });
   if (!r) return;
@@ -140,9 +146,27 @@ async function atualizarPrevia() {
   $('#img-fc').src = r.recorte;
   $('#img-tela').src = r.tela;
   $('#img-subst-fc').src = r.subst || '';
+  desenharExtras(r.telas_extras || {});
   $('#dica-fc').textContent = S.molde.tipo === 'generic'
     ? `fundo do PES no Generic (${nomeArq(S.molde.arquivo)}), com textos de exemplo`
     : `fundo do PES no molde ${nomeArq(S.molde.arquivo)} (imagem ${r.fundo.w}×${r.fundo.h}), com textos de exemplo`;
+}
+
+// as outras telas: à esquerda como o PES desenha, à direita como deve ficar no FC ('fc': {chave: imagem}, ou null
+// enquanto a prévia do FC não chega)
+function desenharExtras(fc) {
+  const lst = extras();
+  const b = $('#extras');
+  $('#bloco-extras').hidden = !lst.length;
+  b.innerHTML = '';
+  for (const x of lst) {
+    const ligada = extraMarcada(x);
+    b.append(el('div', { class: 'extra' + (ligada ? '' : ' desligada') },
+      el('div', { class: 'extra-tit' }, el('b', {}, x.titulo), el('small', {}, ligada ? `vai para …${String(+x.numero % 1000).padStart(3, '0')}.big` : 'não será convertida')),
+      el('div', { class: 'previa-par' },
+        el('div', { class: 'previa-img xadrez' }, el('img', { src: x.previa || '', alt: `${x.titulo} no PES` })),
+        el('div', { class: 'previa-img' }, el('img', { src: fc?.[x.chave] || '', alt: `${x.titulo} no FC` })))));
+  }
 }
 
 // ---------------------------------------------------------------- converter
@@ -151,15 +175,17 @@ async function converter() {
   S.ocupado = true;
   desenharTopo();
   carregando('Convertendo e gravando…');
-  const r = await tentar(() => api('converter', { pasta: S.sel, molde: S.molde, ...S.pos, alvo: S.alvo, alvo_outro: S.alvoOutro, fonte_pes: S.fontePes, subst: S.subst }));
+  const r = await tentar(() => api('converter', { pasta: S.sel, molde: S.molde, ...S.pos, alvo: S.alvo, alvo_outro: S.alvoOutro, fonte_pes: S.fontePes, subst: S.subst, telas: S.telasEsc }));
   carregando('');
   S.ocupado = false;
   if (r) {
     S.ultimo = r;
-    const sub = r.subst && !r.subst.erro;
-    aviso(sub ? 'Placar e substituição gravados' : 'Placar gravado', { tipo: 'sucesso', tempo: 7000, detalhe: sub ? `${r.alvo} · ${nomeArq(r.subst.alvo)}` : r.alvo,
+    const gravadas = [r.subst && !r.subst.erro ? 'substituição' : null, ...(r.telas || []).filter((t) => !t.erro).map((t) => t.titulo.toLowerCase())].filter(Boolean);
+    aviso(gravadas.length ? `Placar gravado, com ${gravadas.join(', ')}` : 'Placar gravado', { tipo: 'sucesso', tempo: 7000,
+      detalhe: [r.alvo, ...(r.subst && !r.subst.erro ? [nomeArq(r.subst.alvo)] : []), ...(r.telas || []).filter((t) => !t.erro).map((t) => nomeArq(t.alvo))].join(' · '),
       acao: { rotulo: 'Mostrar arquivo', fn: () => tentar(() => api('abrir', { caminho: r.destino })) } });
     if (r.subst?.erro) aviso(`A substituição não foi gravada: ${r.subst.erro}`, { tipo: 'erro', tempo: 10000 });
+    for (const t of (r.telas || []).filter((x) => x.erro)) aviso(`${t.titulo}: não foi gravada. ${t.erro}`, { tipo: 'erro', tempo: 10000 });
   }
   desenharTudo();
 }
@@ -289,6 +315,17 @@ function desenharPropriedades() {
       }
     } else corpoSubst.push(el('div', { class: 'mudo' }, 'Este pacote não traz a tela de substituição com as caixas de quem entra e de quem sai.'));
     p.append(secao('Substituição', 'converter', corpoSubst));
+    // outras telas
+    const corpoExtras = [];
+    if (extras().length) {
+      corpoExtras.push(el('div', { class: 'mudo peq-txt' }, 'Cada uma vai para a tela do mesmo conjunto do placar, com a do Generic do jogo como molde: a arte do PES atrás, e os textos, escudos e marcadores do FC nos lugares do PES.'));
+      for (const x of extras()) {
+        const iv = interruptor({ titulo: x.titulo, descricao: `<span class="mono">${esc(x.filme)}</span> → a tela <span class="mono">…${String(+x.numero % 1000).padStart(3, '0')}.big</span> do conjunto (no Generic, <span class="mono">overlay_${esc(x.numero)}</span>)`,
+          marcado: extraMarcada(x), aoMudar: (v) => { S.telasEsc[x.chave] = v; desenharTelas(); desenharExtras(S.previa?.telas_extras || {}); desenharPropriedades(); } });
+        corpoExtras.push(iv.el);
+      }
+    } else corpoExtras.push(el('div', { class: 'mudo' }, 'Este pacote não traz outras telas que o conversor saiba levar para o FC.'));
+    p.append(secao('Outras telas', 'camadas', corpoExtras));
   }
   // destino
   const radio = (valor, titulo, sub) => {
@@ -313,6 +350,13 @@ function desenharPropriedades() {
       ? el('div', { class: 'mudo peq-txt', html: `A substituição vai para <span class="mono">${esc(as)}</span>.` })
       : nota('Esse destino não termina em <span class="mono">…002.big</span>: não sei qual é a substituição dele, e ela não será gravada.', 'alerta'));
   }
+  const marcadas = extras().filter(extraMarcada);
+  if (marcadas.length) {
+    const ap = alvoPlacar();
+    destino.push(alvoTela(ap, 9003)
+      ? el('div', { class: 'mudo peq-txt', html: marcadas.map((x) => `${esc(x.titulo)}: <span class="mono">${esc(alvoTela(ap, x.numero))}</span>`).join('<br>') })
+      : nota('Esse destino não termina em <span class="mono">…002.big</span>: não sei quais são as outras telas dele, e elas não serão gravadas.', 'alerta'));
+  }
   const ed = S.inicio.editor;
   destino.push(campo('Pasta de saída do Editor de Placares', el('div', { class: 'caminho-saida' }, ed?.saida || '(não escolhida: abra o Editor de Placares e escolha em Arquivo › Pasta de saída)')));
   p.append(secao('Gravar', 'salvar', destino));
@@ -328,8 +372,14 @@ function desenharPropriedades() {
       corpoGravado.push(el('div', { class: 'mudo peq-txt' }, 'Substituição'), el('div', { class: 'caminho-saida' }, u.subst.destino),
         el('ul', { class: 'lista-resumo' }, ...u.subst.resumo.map((t) => el('li', {}, t))));
     } else if (u.subst?.erro) corpoGravado.push(nota(`A substituição não foi gravada: ${esc(u.subst.erro)}`, 'erro'));
+    for (const t of u.telas || []) {
+      if (t.erro) { corpoGravado.push(nota(`${esc(t.titulo)}: não foi gravada. ${esc(t.erro)}`, 'erro')); continue; }
+      corpoGravado.push(el('div', { class: 'mudo peq-txt' }, t.titulo), el('div', { class: 'caminho-saida' }, t.destino),
+        el('ul', { class: 'lista-resumo' }, ...t.resumo.map((x) => el('li', {}, x))));
+    }
+    const varias = (u.subst && !u.subst.erro) || (u.telas || []).some((t) => !t.erro);
     corpoGravado.push(
-      nota('Abra o <b>Editor de Placares</b>: ' + (u.subst && !u.subst.erro ? 'o placar e a substituição aparecem' : 'o placar aparece') + ' em <b>Editados</b> e abrem com as alterações, para mover, trocar cores e fontes. Para ver no jogo, a pasta de saída precisa ser a <span class="mono">mods\\legacy</span> do Live Editor.'),
+      nota('Abra o <b>Editor de Placares</b>: ' + (varias ? 'as telas gravadas aparecem' : 'o placar aparece') + ' em <b>Editados</b> e abrem com as alterações, para mover, trocar cores e fontes. Para ver no jogo, a pasta de saída precisa ser a <span class="mono">mods\\legacy</span> do Live Editor.'),
       el('div', { class: 'acoes-linha' }, el('button', { class: 'btn peq', onclick: () => tentar(() => api('abrir', { caminho: u.destino })) }, el('span', { html: icone('externo', 12) }), 'Mostrar arquivo')));
     p.append(secao('Gravado', 'check', corpoGravado));
   }
@@ -338,8 +388,9 @@ function desenharPropriedades() {
     const nomes = { nome_casa: 'Nome do mandante', nome_fora: 'Nome do visitante', gols_casa: 'Gols do mandante', gols_fora: 'Gols do visitante', relogio: 'Relógio', acrescimos: 'Acréscimos' };
     p.append(secao('O que o placar do PES tem', 'info', [
       el('dl', { class: 'kv' }, ...Object.keys(nomes).flatMap((k) => [el('dt', {}, nomes[k]), el('dd', {}, c[k] ? 'sim' : 'não achei')]),
-        el('dt', {}, 'Substituição'), el('dd', {}, info.subst ? 'sim' : 'não achei')),
-      el('div', { class: 'mudo peq-txt' }, `Arquivos: ${info.arquivos.join(', ')}. Filmes: ${info.filmes.join(', ')}. São convertidos o placar da partida (game2d_score) e a substituição (game2d_memberChange).`),
+        el('dt', {}, 'Substituição'), el('dd', {}, info.subst ? 'sim' : 'não achei'),
+        el('dt', {}, 'Outras telas'), el('dd', {}, extras().length ? extras().map((x) => x.titulo).join(', ') : 'nenhuma')),
+      el('div', { class: 'mudo peq-txt' }, `Arquivos: ${info.arquivos.join(', ')}. Filmes: ${info.filmes.join(', ')}. São convertidos o placar da partida (game2d_score), a substituição (game2d_memberChange) e as outras telas listadas acima.`),
     ], false));
   }
 }
@@ -395,6 +446,7 @@ async function iniciar() {
   S.alvo = pr.alvo || 'molde';
   S.fontePes = pr.fonte_pes !== false;
   S.subst = pr.subst !== false;
+  S.telasEsc = pr.telas && typeof pr.telas === 'object' ? { ...pr.telas } : {};
   S.alvoOutro = pr.alvo_outro || '';
   desenharTudo();
   if (!r.motor.ok) return;

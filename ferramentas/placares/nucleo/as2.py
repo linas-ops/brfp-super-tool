@@ -650,6 +650,13 @@ class Simulador:
                 ligada = Funcao(self, nativa=lambda t, a, f=f, alvo=alvo: self.chamar(f, alvo, a), nome="delegate")
                 ligada.dados = f
                 return (ligada, None)
+        if fim == "GetDefaultWidth":
+            # MultiText: a largura da caixa do texto, PROXY_BASE_WIDTH (240) × a escala com que o clipe foi posto.
+            # Pelo cast MultiText(clipe).GetDefaultWidth(), o "this" é o dublê do cast, com o clipe no argumento
+            mt = this.args[0][0] if isinstance(this, Duble) and this.args and isinstance(this.args[0][0], Clipe) \
+                else this
+            if isinstance(mt, Clipe):
+                return (240.0 * _num(self.ler_prop_clipe(mt, "_xscale")) / 100.0, None)
         if fim in ("SetText", "setText", "SetHtmlText", "Initialize", "Init", "SetConfig", "SetTextFormat") and isinstance(this, Clipe):
             cfg = None
             texto = None

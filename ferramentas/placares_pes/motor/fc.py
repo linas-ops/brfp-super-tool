@@ -182,21 +182,24 @@ def ler_chamadas(ov):
     c = as2.Constantes(ov.entrada("1"))
     chamadas, funcoes = [], []
 
-    def val(v=None, slot=None, cam=None, refs=()):
-        return {"v": v, "slot": slot, "cam": cam, "refs": frozenset(refs)}
+    def val(v=None, slot=None, cam=None, refs=(), cadeia=()):
+        # cadeia: [(nome do membro, slot do nome)] de "a.b.c" (para trocar um nome do meio só naquele ponto)
+        return {"v": v, "slot": slot, "cam": cam, "refs": frozenset(refs), "cadeia": tuple(cadeia)}
 
     def junta(*xs):
+        # uma conta (a + b, f(x)…): os nomes usados e os membros lidos (com os slots) de todas as partes
         r = set()
         for x in xs:
             r |= x["refs"]
             if x["cam"]:
                 r.add(x["cam"].split(".")[-1])
-        return val(refs=r)
+        return val(refs=r, cadeia=sum((tuple(x["cadeia"]) for x in xs), ()))
 
     def membro(obj, nome, slot):
         reg = obj["v"] if isinstance(obj["v"], tuple) and obj["v"][:1] == ("reg",) else None
         base = obj["cam"] if obj["cam"] is not None else ("<reg%d>" % reg[1] if reg else "?")
-        return val(cam=base + "." + str(nome), refs=obj["refs"] | {str(nome)}, slot=slot)
+        return val(cam=base + "." + str(nome), refs=obj["refs"] | {str(nome)}, slot=slot,
+                   cadeia=obj.get("cadeia", ()) + ((str(nome), slot),))
 
     def args_de(pilha, n):
         n = n if isinstance(n, int) and 0 <= n < 64 else 0
@@ -296,9 +299,15 @@ def ler_chamadas(ov):
             elif op == 0x4D:
                 b, a_ = pop(), pop()
                 pilha += [b, a_]
-            elif op == 0x4F:
-                pop(), pop(), pop()
-            elif op in (0x1D, 0xA7):
+            elif op == 0x4F:                        # obj.nome = valor: registrado como uma "chamada" de nome "="
+                v, nm, obj = pop(), pop(), pop()
+                chamadas.append({"funcao": nome_funcao, "nome": "=", "slot_nome": None, "obj": obj["cam"],
+                                 "prop": nm["v"], "slot_prop": nm["slot"], "args": [v], "pos": p})
+            elif op == 0xA7:                        # obj.nome = valor, com o nome na própria instrução
+                v, obj = pop(), pop()
+                chamadas.append({"funcao": nome_funcao, "nome": "=", "slot_nome": None, "obj": obj["cam"],
+                                 "prop": as2._txt(d, arg), "slot_prop": None, "args": [v], "pos": p})
+            elif op == 0x1D:
                 pop(), pop()
             elif op in (0x42, 0x43):
                 k = pop()["v"]
@@ -1399,6 +1408,712 @@ def converter_subst(sp, molde, S=None, constantes=None, formatos=None):
 def _cor_texto_tela(tl, caixa):
     lum = tl.luminancia(caixa, ("fundo",))
     return ESCURO if lum is not None and lum > 0.55 else CLARO
+
+
+# ------------------------------------------------------------------ as outras telas (pênaltis, gol, cartões…)
+
+def _lugar_tela(tl):
+    """"cheia" (1920×1080), "larga" (pênaltis, intervalo), "pes" (uma tela pequena desenhada dentro da tela, como as
+    tarjas de gol embaixo à esquerda: fica onde o PES põe) ou "abaixo" (uma pequena com o desenho fora da tela)."""
+    w, h = tl.palco
+    if w >= 1900 and h >= 1000:
+        return "cheia"
+    if w >= 1000:
+        return "larga"
+    cx = tl.caixa_visivel(("fundo",))
+    if cx and cx[0] >= -40 and cx[1] >= -40 and cx[2] <= 1960 and cx[3] <= 1120:
+        return "pes"
+    return "abaixo"
+
+
+def matriz_tela(tl, S, palco_placar=(480, 129)):
+    """Onde uma das outras telas do PES fica na tela do FC (matriz filme do PES -> tela).
+
+    As coordenadas dos filmes do PES são as da tela (1920×1080): as telas cheias (escalação, apresentação) e as
+    pequenas desenhadas dentro da tela (as tarjas de gol, embaixo à esquerda) ficam onde o PES põe; as largas
+    (pênaltis, placar do intervalo: palco de ~1500 px) ficam centralizadas, na altura do placar; uma pequena com o
+    desenho fora da tela fica logo abaixo do placar, com a mesma escala e o mesmo x dele ('S' é a matriz do placar;
+    'palco_placar' o tamanho do filme do placar). No Editor de Placares dá para mover."""
+    k = S[0]
+    w, h = tl.palco
+    lugar = _lugar_tela(tl)
+    if lugar in ("cheia", "pes"):
+        return afp.IDENT
+    if lugar == "larga":
+        return (k, 0.0, 0.0, k, round(960.0 - k * w / 2.0, 2), S[5])
+    cx = tl.caixa_visivel(("fundo",)) or (0.0, 0.0, 0.0, 0.0)
+    return (k, 0.0, 0.0, k, S[4] - k * cx[0], S[5] + k * palco_placar[1] + 8 - k * cx[1])
+
+
+def descrever_lugar(tl):
+    """A frase do resumo sobre onde a tela fica (ver matriz_tela)."""
+    lugar = {"cheia": "no mesmo lugar do PES (tela inteira)", "pes": "no mesmo lugar da tela em que o PES põe",
+             "larga": "centralizada, na altura do placar", "abaixo": "logo abaixo do placar, alinhada com ele"}
+    return "A tela fica %s; no Editor de Placares dá para mover tudo junto (o grupo mcClassOverlay)." %         lugar[_lugar_tela(tl)]
+
+
+def _dentro(*cxs):
+    cxs = [c for c in cxs if c]
+    if not cxs:
+        return None
+    return (min(c[0] for c in cxs), min(c[1] for c in cxs), max(c[2] for c in cxs), max(c[3] for c in cxs))
+
+
+def _pos_arte(molde, lugar_holder, excluir=()):
+    """Uma profundidade livre, atrás dos outros clipes do mesmo nível (menos os de 'excluir', que somem), para pôr o
+    clipe da arte do PES atrás de tudo. Não cai na faixa de nenhuma máscara. None se não houver."""
+    n = len(lugar_holder["caminho"])
+    pai = lugar_holder["caminho"][:-1]
+    irmaos = [l for l in molde.lugares if len(l["caminho"]) == n and l["caminho"][:-1] == pai]
+    frente = [l["item"]["prof"] for l in irmaos if l is not lugar_holder and l["nome"] not in excluir]
+    usadas = {l["item"]["prof"] for l in irmaos}
+    faixas = [(l["item"]["prof"], l["item"]["clip"]) for l in irmaos if l["item"]["fl"] & apt.F_RECORTE]
+    if not frente:
+        return None
+    return next((d for d in range(min(frente) - 1, 0, -1)
+                 if d not in usadas and not any(p < d <= c for p, c in faixas)), None)
+
+
+def _por_arte(M, arte, R, desenhar):
+    """A arte do PES na imagem 'arte' do molde (imagem_em), esticada no retângulo R da tela. 'desenhar(ajuste, w, h)'
+    desenha a arte com a matriz tela -> imagem. Devolve (w, h) da imagem."""
+    M.mapear(arte["lugar"], arte["caixa"], R)
+    Wf = M.mundo(arte["lugar"])
+    k = min(2.0, 2048.0 / max(R[2] - R[0], R[3] - R[1]))
+    wi, hi = max(8, int(round((R[2] - R[0]) * k))), max(8, int(round((R[3] - R[1]) * k)))
+    Tn = mul(tuple(arte["item"]["m"]), (wi / arte["w"], 0.0, 0.0, hi / arte["h"], 0.0, 0.0)) if arte["w"] else \
+        tuple(arte["item"]["m"])
+    M.textura(arte["char"], desenhar(mul(inv(Wf), Tn), wi, hi))
+    return wi, hi
+
+
+def _animacoes(molde, funcao, sufixo, prop):
+    """As chamadas de AnimationManager.Animate da função com alvo terminando em 'sufixo' e a propriedade 'prop'."""
+    return [ch for ch in molde.chamadas if ch["funcao"] == funcao and ch["nome"] == "Animate" and len(ch["args"]) >= 3
+            and str(ch["args"][0]["cam"] or "").endswith(sufixo) and ch["args"][1]["v"] == prop]
+
+
+def _atribuicoes(molde, funcao, sufixo, prop):
+    """As atribuições "clipe.prop = valor" da função, com o clipe terminando em 'sufixo'."""
+    return [ch for ch in molde.chamadas if ch["funcao"] == funcao and ch["nome"] == "=" and ch.get("prop") == prop
+            and str(ch["obj"] or "").endswith(sufixo)]
+
+
+def _redirecionar(M, valor, antes, depois):
+    """A conta de um valor do código (o destino de um Animate, o lado direito de uma atribuição) passa a ler o membro
+    'depois' no lugar de 'antes', só nesse ponto do código. Devolve quantas leituras mudaram."""
+    slots = [s for n, s in valor["cadeia"] if n == antes and s and not str(s).startswith("c:")]
+    for s in slots:
+        M.txt(s, depois, antes)
+    return len(slots)
+
+
+def _desligar_animacoes(M, molde, funcao, sufixos, prop=None):
+    """As animações (Animate) desses clipes na função passam a chamar um método que não existe: não acontecem."""
+    n = 0
+    for ch in molde.chamadas:
+        if ch["funcao"] == funcao and ch["nome"] == "Animate" and ch["slot_nome"] and ch["args"] and \
+                str(ch["args"][0]["cam"] or "").endswith(tuple(sufixos)) and \
+                (prop is None or (len(ch["args"]) > 1 and ch["args"][1]["v"] == prop)):
+            M.txt(ch["slot_nome"], ANIMATE_DESLIGADO, "Animate")
+            n += 1
+    return n
+
+
+def _desligar_pinturas(M, molde, alvos):
+    """As chamadas de ColorUtil.ChangeColorFlat nesses clipes (caminho a partir do this) deixam de fazer efeito."""
+    feitas = set()
+    for alvo, slot in molde.pinturas:
+        if alvo in alvos and slot:
+            M.txt(slot, PINTURA_DESLIGADA, PINTURA)
+            feitas.add(alvo)
+    return feitas
+
+
+def _texto_cor(M, lg, tl, cx):
+    """A cor do texto (clara ou escura, pelo desenho do PES atrás da caixa) pela cor do próprio clipe."""
+    cor = _cor_texto_tela(tl, cx)
+    M.place(lg, tint=[0, 0, 0, 255], soma=list(cor[:3]) + [0])
+
+
+def _cobertura(tl, cx, papeis=("fundo",)):
+    """Quanto de uma caixa (no filme do PES) o desenho cobre, de 0 a 1."""
+    x0, y0, x1, y1 = cx
+    w, h = max(2, int(round(x1 - x0))), max(2, int(round(y1 - y0)))
+    a = np.asarray(tl.desenhar(papeis, (1, 0, 0, 1, -x0, -y0), w, h), np.float32)[..., 3]
+    return float(a.mean()) / 255.0
+
+
+def _lampadas(tl):
+    """As 5 lâmpadas de cada time ([[casa], [fora]], no filme do PES) e a 6ª de cada um, um passo depois da 5ª (a das
+    cobranças alternadas), ou None se ela cair fora do desenho do PES. None se faltar alguma lâmpada."""
+    lamp = [[tl.caixa_fora("lamp_%s_%d" % (lado, i)) for i in range(5)] for lado in ("left", "right")]
+    if not all(all(linha) for linha in lamp):
+        return None, None
+    passo = (lamp[0][4][0] - lamp[0][0][0]) / 4.0
+    extra = [(c[0] + passo, c[1], c[2] + passo, c[3]) for c in (lamp[0][4], lamp[1][4])]
+    return lamp, (extra if all(_cobertura(tl, c) > 0.5 for c in extra) else None)
+
+
+def _fim_resumo(M, nome_tela):
+    falta = [n for n in dict.fromkeys(M.avisos) if n.isupper()]
+    if falta:
+        M.resumo.append("Constantes que o código d%s não tem (ficaram como estavam): %s." % (nome_tela, ", ".join(falta)))
+    M.resumo += [n for n in dict.fromkeys(M.avisos) if not n.isupper()]
+    return M.ops, M.resumo
+
+
+# ---------------------------------------------------------- pênaltis (Generic/overlay_9003)
+
+PK_PRECISA = tuple(G + s for s in (".mcLogoHolder", ".mcLogoHolder.mcLogoFc", ".mcLogoHolder.mcLogoMask", ".mcTeamHolder",
+                                   ".mcTeamHolder.mcHomeTeamName", ".mcTeamHolder.mcAwayTeamName",
+                                   ".mcTeamHolder.mcLogoHome", ".mcTeamHolder.mcLogoAway",
+                                   ".mcTeamHolder.mcTeamLogoMask", ".mcTeamHolder.mcTeamNameMask",
+                                   ".mcTeamHolder.mcBg", ".mcTeamHolder.mcLines", ".mcScoreHolder",
+                                   ".mcScoreHolder.mcScoreHome", ".mcScoreHolder.mcScoreAway",
+                                   ".mcScoreHolder.mcScoreMask", ".mcShootMask", ".mcShootHolder",
+                                   ".mcShootHolder.mcHome", ".mcShootHolder.mcAway", ".mcShootHolder.mcHome.mcShot0"))
+# o que o Generic desenha e some (fundos, fios, faixas de cor, rodapé "PÊNALTIS", logo da competição)
+PK_ESCONDER = ("mcFooterBg", "mcFooterText", "mcTeamHolder.mcBg", "mcTeamHolder.mcLines", "mcScoreHolder.mcColorHome",
+               "mcScoreHolder.mcColorAway", "mcShootHolder.mcBg", "mcShootHolder.mcLine", "mcLogoHolder.mcLogoBg",
+               "mcLogoHolder.mcLine", "mcLogoHolder.mcLogo")
+# a pintura chapada do Init: na arte (viraria uma silhueta), nos textos (a cor vem do PES) e no que some (a cor nova
+# traria o alpha de volta). As bolinhas das cobranças continuam pintadas pelo código (verde, vermelho, neutra)
+PK_SEM_PINTURA = ("mcTeamHolder.mcBg.mcBg", "mcTeamHolder.mcBg.mcSecondLayer", "mcTeamHolder.mcBg.mcFirstLayer",
+                  "mcFooterText", "mcFooterBg.mcBg", "mcFooterBg.mcSecondLayer", "mcFooterBg.mcFirstLayer",
+                  "mcTeamHolder.mcHomeTeamName", "mcTeamHolder.mcAwayTeamName", "mcScoreHolder.mcScoreHome",
+                  "mcScoreHolder.mcScoreAway", "mcTeamHolder.mcLines", "mcShootHolder.mcLine",
+                  "mcScoreHolder.mcColorHome.mcColor", "mcScoreHolder.mcColorAway.mcColor", "mcLogoHolder.mcLogoBg",
+                  "mcLogoHolder.mcLogoFc", "mcLogoHolder.mcLine")
+# o código põe nome, gol e escudo dos dois times no mesmo x (no FC os times ficam um embaixo do outro; no PES, lado a
+# lado). Nas contas do time de fora, ele passa a ler outra constante: uma que o código não usa, a do rodapé (que some)
+# ou as do Ultimate Team Pro (esse desvio do código é desligado); ou outro clipe (do fundo, que some)
+PK_K_NOME, PK_K_GOL = "ANIM_OUT_SHOOT_HOLDER_X_POS", "ANIM_INIT_FOOTER_TEXT_X_POS"
+PK_K_NOME_INI, PK_K_GOL_INI, PK_K_COBRANCAS_INI = "NORMAL_FUT_SIZE", "SCORE_HOLDER_X_NORMAL_POS", "INIT_BG_NORMAL_SIZE"
+UTPRO, UTPRO_DESLIGADO = "GetIsUTPro", "GetIsUTPro_PES"
+
+
+class MoldePenaltis(MoldeCodigo):
+    """A disputa de pênaltis do Generic do jogo (data/ui/game/overlays/Generic/overlay_9003.big): o mesmo modelo do
+    placar (overlay_9002: logo do FC, nomes e gols em MultiText, escudos), com as cobranças em duas linhas (mcHome e
+    mcAway, instâncias do mesmo símbolo, com as bolinhas mcShot0…5 que o código pinta de verde, vermelho ou da cor
+    neutra; a 6ª é a das cobranças alternadas). O código põe os dois nomes, os dois gols e os dois escudos no mesmo x."""
+    tipo = "penaltis"
+    precisa = PK_PRECISA
+
+    def __init__(self, ov):
+        super().__init__(ov)
+        self.arte = self.imagem_em(G + ".mcLogoHolder.mcLogoFc")
+        if not self.arte:
+            raise ErroMolde("Essa tela de pênaltis do FC não tem a imagem do logo do FC (onde vai a arte do PES).")
+
+
+def converter_penaltis(tl, molde, S, sim=None, numeros=None):
+    """Operações do Editor de Placares para os pênaltis do Generic (MoldePenaltis) com a tela de pênaltis do PES
+    (pes.TelaFilme "penaltis") e um resumo. 'S': filme do PES -> tela do FC (matriz_tela); 'sim': a simulação do código
+    (simular: constantes e os MultiText, com formato e alinhamento); 'numeros': a fonte dos números do PES."""
+    sim = sim or {}
+    M = Montagem(molde, sim.get("constantes"))
+    P, W = M.P, G + "."
+    textos = sim.get("textos") or {}
+
+    def T(cx):
+        return _transformar_caixa(S, cx)
+
+    def valor(nome, padrao=None):
+        v = (M.constantes.get(nome) or {}).get("valor")
+        return v if isinstance(v, (int, float)) else padrao
+
+    def formato(cam):
+        return (textos.get(W + cam) or {}).get("config") or {}
+
+    fundo = tl.caixa_visivel(("fundo",))
+    if not fundo:
+        raise ErroMolde("A tela de pênaltis do PES não tem desenho.")
+    Rf = T(fundo)
+
+    # 0. o desvio do Ultimate Team Pro (que muda as larguras e os x de tudo) deixa de acontecer: as constantes dele ficam
+    #    livres para as contas do time de fora
+    ut = [ch for ch in molde.chamadas if ch["funcao"] == "Init" and ch["nome"] == UTPRO and ch["slot_nome"]]
+    for ch in ut:
+        M.txt(ch["slot_nome"], UTPRO_DESLIGADO, UTPRO)
+
+    def apontar(valor_cod, antes, nome, v):
+        """A conta 'valor_cod' do código passa a ler a constante livre 'nome' (com o valor v) no lugar de 'antes'."""
+        c = M.constantes.get(nome) or {}
+        if not isinstance(c.get("valor"), (int, float)) or str(c.get("slot", "")).startswith(("pb", "m:")) or \
+                not (ut or nome in (PK_K_NOME, PK_K_GOL)) or not (-32768 <= v <= 32767):
+            return False
+        if not _redirecionar(M, valor_cod, antes, nome):
+            return False
+        M.const(nome, round(v))
+        return True
+
+    cruzam = []          # o que, sem constante livre, entra passando pelo lugar do time da casa
+
+    # 1. a arte do PES na imagem do logo do FC; o clipe do logo vai para trás de tudo e a máscara dele cobre a arte. A
+    #    arte sobe um pouco ao entrar (como o logo do FC) e fica até a tela sumir
+    lh = P[W + "mcLogoHolder"]
+    prof = _pos_arte(molde, lh, ("mcFooterBg", "mcFooterMask", "mcFooterText"))
+    if prof is None:
+        raise ErroMolde("Não achei uma profundidade livre para pôr a arte do PES atrás da tela de pênaltis.")
+    M.place(lh, prof=prof)
+    lf = P[W + "mcLogoHolder.mcLogoFc"]
+    yfc = valor("ANIM_IN_LOGO_FC_Y_POS")
+    if yfc is not None:                       # onde o código deixa o logo no fim da entrada
+        l = list(M.local_de(lf))
+        l[5] = yfc
+        M.locais[lf["item"]["off"]] = tuple(l)
+    wi, hi = _por_arte(M, molde.arte, Rf, lambda aj, w, h: tl.desenhar(("fundo",), mul(S, aj), w, h))
+    M.mascara(W + "mcLogoHolder.mcLogoMask", Rf, (1, 1))
+    _desligar_animacoes(M, molde, "Remove", (".mcLogoHolder.mcLogoFc",))
+    M.resumo.append("Arte dos pênaltis do PES (%d×%d) na imagem do logo do FC, atrás dos textos." % (wi, hi))
+
+    # 2. o que o Generic desenha some; a pintura chapada do código deixa de valer nisso, na arte e nos textos
+    for n in PK_ESCONDER:
+        if W + n in P:
+            M.esconder(P[W + n])
+    if "mcLogoHolder.mcLogoFc" not in _desligar_pinturas(M, molde, PK_SEM_PINTURA):
+        M.avisos.append("Não achei no código a pintura do logo do FC: no jogo a arte pode ficar com uma cor só.")
+
+    # 3. o código leva o nome da casa até ANIM_IN_TEAM_NAME_X_POS (dentro do mcTeamHolder) e o gol da casa até
+    #    ANIM_IN_SCORE_X_POS (dentro do mcScoreHolder): os dois clipes vão para que esses x sejam o começo das caixas do
+    #    time da casa do PES
+    lt, ls = P[W + "mcTeamHolder"], P[W + "mcScoreHolder"]
+    cn, cf = tl.campo("nome_casa"), tl.campo("nome_fora")
+    gc, gf = tl.campo("gols_casa"), tl.campo("gols_fora")
+    ec, ef = tl.escudo("casa"), tl.escudo("fora")
+
+    def mover_x(lg, x_cod, R):
+        px = ponto(inv(M.mundo_cam(lg["caminho"][:-1])), R[0], R[1])[0]
+        l = M.local_de(lg)
+        M.place(lg, tx=[round(px - x_cod * l[0], 2), l[5]])
+
+    if cn and cf:
+        mover_x(lt, valor("ANIM_IN_TEAM_NAME_X_POS", 10), T(cn))
+    if gc and gf:
+        mover_x(ls, valor("ANIM_IN_SCORE_X_POS", 4), T(gc))
+    WT = M.mundo(lt)
+
+    # 4. nomes nas caixas do PES. O de fora termina a entrada noutra constante e entra pela direita (o da casa entra
+    #    pela esquerda): a máscara dos nomes cobre as duas caixas
+    lnc, lnf = P[W + "mcTeamHolder.mcHomeTeamName"], P[W + "mcTeamHolder.mcAwayTeamName"]
+    if cn and cf:
+        Rnc, Rnf = T(cn), T(cf)
+        tam = max(8, min(127, round(0.72 * min(Rnc[3] - Rnc[1], Rnf[3] - Rnf[1]))))
+        for lg, R, cx in ((lnc, Rnc, cn), (lnf, Rnf, cf)):
+            M.multitext(lg, R, (R[1] + R[3]) / 2 + 0.06 * tam)
+            _texto_cor(M, lg, tl, cx)
+        M.mascara(W + "mcTeamHolder.mcTeamNameMask", _dentro(Rnc, Rnf))
+        xa, wa = M.local_de(lnf)[4], MULTITEXT_LARGURA * M.local_de(lnf)[0]
+        ch = _animacoes(molde, "AnimateIn", ".mcTeamHolder.mcAwayTeamName", "_x")
+        if not (ch and apontar(ch[0]["args"][2], "ANIM_IN_TEAM_NAME_X_POS", PK_K_NOME, xa)):
+            M.avisos.append("Não achei no código a entrada do nome de fora: ele pode ficar no x do nome da casa.")
+        ini = _atribuicoes(molde, "InitAnimations", ".mcTeamHolder.mcAwayTeamName", "_x")
+        # começo: 0 - K - largura = logo depois da caixa
+        if not (ini and apontar(ini[0]["args"][0], "ANIM_INIT_BG_X_POS", PK_K_NOME_INI, -(xa + 2 * wa + 4))):
+            cruzam.append("o nome")
+        f = formato("mcTeamHolder.mcHomeTeamName")
+        fm = f.get("formato") or {}
+        M.num(fm.get("tamanho_slot"), tam, fm.get("tamanho"), "tamanho da letra dos nomes")
+        partes = f.get("partes") or []
+        if "H_ALIGN_LEFT" in partes and len(f.get("partes_slots") or ()) == len(partes):
+            M.txt(f["partes_slots"][partes.index("H_ALIGN_LEFT")], "H_ALIGN_CENTER", "H_ALIGN_LEFT")
+        # o FC escreve a sigla (3 letras); numa caixa larga do PES vai o nome (até 15 letras)
+        largos = (Rnc[2] - Rnc[0]) > 7 * tam
+        if largos:
+            for chm in molde.chamadas:
+                if chm["funcao"] == "Init" and chm["nome"] == "GetTeamName3Upper" and chm["slot_nome"]:
+                    M.txt(chm["slot_nome"], "GetTeamName15", "GetTeamName3Upper")
+        _desligar_animacoes(M, molde, "Remove", (".mcTeamHolder.mcHomeTeamName", ".mcTeamHolder.mcAwayTeamName"))
+        M.resumo.append("Nomes dos times nas caixas do PES (letra %d px, %s)." % (tam, "nome inteiro" if largos else
+                                                                                 "sigla"))
+    else:
+        M.esconder(lnc)
+        M.esconder(lnf)
+        M.resumo.append("O pacote não mostra os nomes dos times nos pênaltis: os do FC ficam escondidos.")
+
+    # 5. gols nas caixas do PES, do mesmo jeito (o de fora termina noutra constante e entra pela direita)
+    larg_gol = 0.0
+    if gc and gf:
+        Rgc, Rgf = T(gc), T(gf)
+        tam_g = max(8, min(127, round(min(Rgc[3] - Rgc[1], Rgf[3] - Rgf[1]) * (0.8 if numeros else 0.66))))
+        lgc, lgf = P[W + "mcScoreHolder.mcScoreHome"], P[W + "mcScoreHolder.mcScoreAway"]
+        for lg, R, cx in ((lgc, Rgc, gc), (lgf, Rgf, gf)):
+            M.multitext(lg, R, (R[1] + R[3]) / 2 + 0.06 * tam_g)
+            _texto_cor(M, lg, tl, cx)
+        M.mascara(W + "mcScoreHolder.mcScoreMask", _dentro(Rgc, Rgf))
+        larg_gol = MULTITEXT_LARGURA * M.local_de(lgc)[0]
+        xa, wa = M.local_de(lgf)[4], MULTITEXT_LARGURA * M.local_de(lgf)[0]
+        ch = _animacoes(molde, "AnimateIn", ".mcScoreHolder.mcScoreAway", "_x")
+        if not (ch and apontar(ch[0]["args"][2], "ANIM_IN_SCORE_X_POS", PK_K_GOL, xa)):
+            M.avisos.append("Não achei no código a entrada do gol de fora: ele pode ficar no x do gol da casa.")
+        ini = _atribuicoes(molde, "InitAnimations", ".mcScoreHolder.mcScoreAway", "_x")
+        if not (ini and apontar(ini[0]["args"][0], "ANIM_INIT_SCORE_X_POS", PK_K_GOL_INI, -(xa + wa + 4))):
+            cruzam.append("o gol")
+        fm = formato("mcScoreHolder.mcScoreHome").get("formato") or {}
+        M.num(fm.get("tamanho_slot"), tam_g, fm.get("tamanho"), "tamanho da letra dos gols")
+        if numeros and numeros.get("chave") and fm.get("fonte_slot"):
+            M.txt(fm["fonte_slot"], numeros["chave"], fm.get("fonte_chave"))
+            M.resumo.append("Gols com a fonte dos números do PES (%s)." % numeros["face"])
+        _desligar_animacoes(M, molde, "Remove", (".mcScoreHolder.mcScoreHome", ".mcScoreHolder.mcScoreAway"))
+        M.resumo.append("Gols nas caixas do PES (letra %d px)." % tam_g)
+    else:
+        M.esconder(ls)
+        M.resumo.append("O pacote não mostra os gols nos pênaltis: os do FC ficam escondidos.")
+
+    # 6. escudos nas caixas do PES: o código carrega o escudo com TEAM_CREST_SIZE de lado (a escala do clipe dá o
+    #    tamanho) e leva os dois até o x da máscara dos escudos, que começa no escudo da casa. O de fora termina no x do
+    #    mcLines e começa no do mcBg (os dois somem)
+    llc, llf = P[W + "mcTeamHolder.mcLogoHome"], P[W + "mcTeamHolder.mcLogoAway"]
+    lado_loc = 0.0
+    if ec and ef:
+        tam_esc = valor("TEAM_CREST_SIZE", 50)
+        quadros = []
+        for lg, cx in ((llc, ec), (llf, ef)):
+            R = T(cx)
+            lado = min(R[2] - R[0], R[3] - R[1])
+            x0, y0 = (R[0] + R[2] - lado) / 2, (R[1] + R[3] - lado) / 2
+            px, py = ponto(inv(WT), x0, y0)
+            s = round(lado / WT[0] / max(1.0, tam_esc), 4)
+            M.place(lg, m=[s, 0.0, 0.0, s], tx=[round(px, 2), round(py, 2)])
+            quadros.append((x0, y0, x0 + lado, y0 + lado))
+        lado_loc = (quadros[0][2] - quadros[0][0]) / WT[0]
+        Rm = _dentro(*quadros)
+        lm = P[W + "mcTeamHolder.mcTeamLogoMask"]
+        M.mapear(lm, molde.caixa_conteudo(lm), (quadros[0][0], Rm[1] - 1, Rm[2] + 1, Rm[3] + 1))
+        _desligar_animacoes(M, molde, "Remove", (".mcTeamHolder.mcLogoHome", ".mcTeamHolder.mcLogoAway"))
+        M.resumo.append("Escudos dos times nas caixas dos escudos do PES.")
+    else:
+        M.esconder(llc)
+        M.esconder(llf)
+        M.resumo.append("O pacote não mostra os escudos nos pênaltis: os do FC ficam escondidos.")
+
+    # 7. a entrada da casa começa ANIM_INIT_SCORE_X_POS à esquerda (gol e escudo): o bastante para começar fora da máscara
+    k_ini = valor("ANIM_INIT_SCORE_X_POS", 30)
+    if larg_gol or lado_loc:
+        k_ini = min(127, int(np.ceil(max(larg_gol, lado_loc) + 4)))
+        M.const("ANIM_INIT_SCORE_X_POS", k_ini)
+    if ec and ef:
+        lb, ll = P[W + "mcTeamHolder.mcBg"], P[W + "mcTeamHolder.mcLines"]
+        xa = M.local_de(llf)[4]
+        ch = _animacoes(molde, "AnimateIn", ".mcTeamHolder.mcLogoAway", "_x")
+        if ch and _redirecionar(M, ch[0]["args"][2], "mcTeamLogoMask", "mcLines"):
+            M.place(ll, tx=[round(xa, 2), M.local_de(ll)[5]])
+        else:
+            M.avisos.append("Não achei no código a entrada do escudo de fora: ele pode ficar no lugar do da casa.")
+        ini = _atribuicoes(molde, "InitAnimations", ".mcTeamHolder.mcLogoAway", "_x")
+        if ini and _redirecionar(M, ini[0]["args"][0], "mcTeamLogoMask", "mcBg"):
+            M.place(lb, tx=[round(xa + lado_loc + 2 + k_ini, 2), M.local_de(lb)[5]])     # começo: mcBg._x - K
+        else:
+            cruzam.append("o escudo")
+
+    # 8. cobranças: as bolinhas do FC nas lâmpadas do PES (as 5 de cada time; a 6ª, das alternadas, logo depois da 5ª,
+    #    se ali houver desenho do PES). As duas linhas são o mesmo símbolo: as bolinhas vão para as posições das
+    #    lâmpadas da casa, e cada linha começa na 1ª lâmpada do time. O mcShootHolder termina a entrada no x da máscara
+    #    mcShootMask (que cobre as lâmpadas)
+    lamp, extra_pes = _lampadas(tl)
+    if lamp:
+        Lc, Lf = [[T(c) for c in linha] for linha in lamp]
+        passo = (Lc[4][0] - Lc[0][0]) / 4.0
+        extra = [(R[0] + passo, R[1], R[2] + passo, R[3]) for R in (Lc[4], Lf[4])]
+        Rt = _dentro(*(Lc + Lf + (extra if extra_pes else [])))
+        lsm, lsh = P[W + "mcShootMask"], P[W + "mcShootHolder"]
+        M.mapear(lsm, molde.caixa_conteudo(lsm), (Rt[0] - 2, Rt[1] - 2, Rt[2] + 2, Rt[3] + 2))
+        mx, my = M.local_de(lsm)[4:6]
+        M.place(lsh, tx=[round(mx, 2), round(my, 2)])
+        WH = M.mundo(lsh)
+        for nome, linha in (("mcHome", Lc), ("mcAway", Lf)):
+            px, py = ponto(inv(WH), linha[0][0], linha[0][1])
+            M.place(P[W + "mcShootHolder." + nome], m=[1.0, 0.0, 0.0, 1.0], tx=[round(px, 2), round(py, 2)])
+        lado = 0.86 * min(Lc[0][2] - Lc[0][0], Lc[0][3] - Lc[0][1])
+        for i in range(6):
+            lsi = P.get(W + "mcShootHolder.mcHome.mcShot%d" % i)
+            B = molde.caixa_conteudo(lsi) if lsi else None
+            if not B:
+                continue
+            Ri = Lc[i] if i < 5 else extra[0]
+            cx_, cy_ = (Ri[0] + Ri[2]) / 2, (Ri[1] + Ri[3]) / 2
+            M.mapear(lsi, B, (cx_ - lado / 2, cy_ - lado / 2, cx_ + lado / 2, cy_ + lado / 2))
+            if i == 5 and not extra_pes:
+                M.esconder(lsi)
+        # entrada: as cobranças deslizam só um pouco (40 px), da esquerda; saída: ficam até a tela sumir
+        x_ini = mx - 40
+        if -128 <= x_ini <= 127:
+            M.const("ANIM_INIT_SHOOT_HOLDER_X_POS", round(x_ini))
+        else:
+            ini = _atribuicoes(molde, "InitAnimations", ".mcShootHolder", "_x")
+            if not (ini and apontar(ini[0]["args"][0], "ANIM_INIT_SHOOT_HOLDER_X_POS", PK_K_COBRANCAS_INI, x_ini)):
+                cruzam.append("as cobranças")
+        _desligar_animacoes(M, molde, "Remove", (".mcShootHolder",))
+        M.resumo.append("Cobranças (bolinhas verdes e vermelhas do FC) nas lâmpadas do PES; " +
+                        ("a 6ª, das alternadas, logo depois da 5ª." if extra_pes else
+                         "a 6ª, das alternadas, fica escondida (depois da 5ª lâmpada não há desenho do PES)."))
+    else:
+        M.avisos.append("A tela de pênaltis do PES não tem as 5 lâmpadas de cada time: as cobranças ficam onde o FC põe.")
+
+    if ut:
+        M.resumo.append("O jeito Ultimate Team Pro da tela (larguras maiores) fica desligado.")
+    if cruzam:
+        M.avisos.append("Sem constante livre no código: na entrada, %s de fora passa pelo lugar do da casa."
+                        % ", ".join(cruzam))
+    M.resumo.append("Ao sair, a tela some de uma vez (as saídas do FC cruzariam os dois times).")
+    return _fim_resumo(M, "a tela de pênaltis")
+
+
+# ---------------------------------------------------------- telas paradas (sem a entrada e a saída animadas do FC)
+
+def _caixa_lugar(molde, lg):
+    """A caixa do que um lugar desenha, nas coordenadas dele: as formas dentro do clipe ou, se ele mesmo for uma forma
+    (as máscaras sem nome), a da própria forma."""
+    B = molde.caixa_conteudo(lg)
+    if B:
+        return B
+    c = molde.a.chars[lg["char"]] if 0 <= lg["char"] < len(molde.a.chars) else None
+    if c and c["t"] == "forma":
+        return _caixa_vertices(molde.geo.get(lg["char"], []))
+    return None
+
+
+def _abrir_mascaras(M, molde, R, fora=()):
+    """Toda máscara do overlay (menos as dos clipes de 'fora', que somem) passa a cobrir o retângulo R da tela: com a
+    tela parada, elas só precisam não cortar a arte e os textos do PES."""
+    n = 0
+    fora = tuple(G + "." + f for f in fora)
+    for lg in molde.lugares:
+        cam = ".".join(lg["caminho"])
+        if not (lg["item"]["fl"] & apt.F_RECORTE) or not cam.startswith(G + ".") or \
+                any(cam == f or cam.startswith(f + ".") for f in fora):
+            continue
+        B = _caixa_lugar(molde, lg)
+        if B:
+            M.mapear(lg, B, R)
+            n += 1
+    return n
+
+
+def _parar(M, molde, preparar=("InitAnimations",), funcao="Init", entrada="AnimateIn", saida="Remove"):
+    """A tela fica parada: o Init deixa de chamar a preparação da entrada (que tira as peças do lugar), as animações da
+    entrada deixam de acontecer (as peças ficam onde a conversão pôs) e, na saída, só fica a última animação (a que chama
+    o Shutdown no fim, para o jogo saber que a tela acabou): o resto some de uma vez. Devolve (quantas chamadas da
+    preparação foram desligadas, quantas animações da entrada, a animação da saída que ficou)."""
+    prep = 0
+    for ch in molde.chamadas:
+        if ch["funcao"] == funcao and ch["nome"] in preparar and ch["slot_nome"]:
+            M.txt(ch["slot_nome"], ch["nome"] + "_PES", ch["nome"])
+            prep += 1
+    ent = _desligar_animacoes(M, molde, entrada, ("",))
+    anims = [ch for ch in molde.chamadas if ch["funcao"] == saida and ch["nome"] == "Animate" and ch["slot_nome"]]
+    ultima = max(anims, key=lambda c: c["pos"]) if anims else None
+    for ch in anims:
+        if ch is not ultima:
+            M.txt(ch["slot_nome"], ANIMATE_DESLIGADO, "Animate")
+    return prep, ent, ultima
+
+
+def _prof_abaixo(molde, lg, limite):
+    """A maior profundidade livre entre os irmãos do clipe, abaixo de 'limite' (para ele ficar atrás de um irmão)."""
+    n = len(lg["caminho"])
+    usadas = {l["item"]["prof"] for l in molde.lugares
+              if len(l["caminho"]) == n and l["caminho"][:-1] == lg["caminho"][:-1]}
+    return next((d for d in range(limite - 1, 0, -1) if d not in usadas), None)
+
+
+def _alinhar(M, config, de, para):
+    """Troca um alinhamento do MultiTextConfig de um texto (H_ALIGN_LEFT -> H_ALIGN_CENTER…)."""
+    partes, slots = config.get("partes") or [], config.get("partes_slots") or []
+    if de in partes and len(slots) == len(partes):
+        M.txt(slots[partes.index(de)], para, de)
+        return True
+    return False
+
+
+def _config(sim, cam):
+    return ((sim.get("textos") or {}).get(G + "." + cam) or {}).get("config") or {}
+
+
+# ---------------------------------------------------------- gol / expulsão (Generic/overlay_9075)
+
+# o placar pequeno da tela (siglas, gols, escudos, cartões) e os fundos do FC somem
+GOL_ESCONDER = ("mcTeamHolder", "mcScoreHolder", "mcBackground", "mcWipe", "mcContainer")
+# pintura chapada do Init: nos fundos que somem (traria o alpha de volta), nos textos (a cor vem do PES) e no ícone,
+# onde fica a arte (viraria uma silhueta)
+GOL_SEM_PINTURA = ("mcBackground", "mcWipe", "mcContainer", "mcPlayerTexts", "mcIcon")
+VISIVEL, VISIVEL_DESLIGADO = "_visible", "_visible_PES"
+
+
+class MoldeGol(MoldeCodigo):
+    """A tela de gol e expulsão do Generic (data/ui/game/overlays/Generic/overlay_9075.big): a do replay, com um placar
+    pequeno (siglas, gols e escudos dos dois times) e, ao lado, o sobrenome do jogador (mtFirstRow), o lance
+    (mtSecondRow: GOL, CARTÃO VERMELHO…), o minuto (mtPlayerNumber) e o ícone da bola (mcIcon, só nos gols)."""
+    tipo = "gol"
+    precisa = tuple(G + s for s in (".mcIcon", ".mcPlayerTexts", ".mcPlayerTexts.mtFirstRow", ".mcPlayerTexts.mtSecondRow",
+                                    ".mcPlayerTexts.mtPlayerNumber", ".mcTeamHolder", ".mcScoreHolder"))
+
+    def __init__(self, ov):
+        super().__init__(ov)
+        self.arte = self.imagem_em(G + ".mcIcon")
+        if not self.arte:
+            raise ErroMolde("Essa tela de gol do FC não tem a imagem do ícone (onde vai a arte do PES).")
+
+
+def exemplos_gol(tl):
+    ex = {"jogador": "GABIGOL"}
+    if tl.campo("rotulo"):
+        ex["rotulo"] = "GOL"
+        if tl.campo("valor"):
+            ex["valor"] = "23'"
+    return ex
+
+
+def converter_gol(tl, molde, S, sim=None, numeros=None):
+    """Operações do Editor de Placares para a tela de gol do Generic (MoldeGol) com a tela de gol do PES
+    (pes.TelaFilme "gol"): a arte do PES na imagem do ícone, atrás dos textos; sobrenome na caixa do nome do PES; o
+    lance e o minuto nas caixas do texto e do número do PES, se o pacote as mostra; o placar pequeno do FC some. A tela
+    fica parada (aparece e some de uma vez)."""
+    sim = sim or {}
+    M = Montagem(molde, sim.get("constantes"))
+    P, W = M.P, G + "."
+
+    def T(cx):
+        return _transformar_caixa(S, cx)
+
+    fundo = tl.caixa_visivel(("fundo",))
+    cj, cr, cv = tl.campo("jogador"), tl.campo("rotulo"), tl.campo("valor")
+    if not fundo or not cj:
+        raise ErroMolde("A tela de gol do PES não mostra o nome do jogador.")
+    Rf = T(fundo)
+
+    # 0. parada: sem a preparação e a entrada do código; na saída fica só a animação que avisa o fim
+    prep, ent, _ultima = _parar(M, molde)
+    if not prep or not ent:
+        M.avisos.append("Não achei no código a entrada da tela: no jogo ela pode entrar animada, com as peças do FC.")
+
+    # 1. a arte do PES na imagem do ícone da bola, que vai para trás dos textos
+    li, lt = P[W + "mcIcon"], P[W + "mcPlayerTexts"]
+    prof = _prof_abaixo(molde, li, lt["item"]["prof"])
+    if prof is None:
+        raise ErroMolde("Não achei uma profundidade livre para pôr a arte do PES atrás dos textos da tela de gol.")
+    M.place(li, prof=prof)
+    wi, hi = _por_arte(M, molde.arte, Rf, lambda aj, w, h: tl.desenhar(("fundo",), mul(S, aj), w, h))
+    M.resumo.append("Arte do gol do PES (%d×%d) na imagem do ícone da bola, atrás dos textos." % (wi, hi))
+
+    # 2. o placar pequeno e os fundos do FC somem; o ícone (a arte) aparece também nos replays de expulsão
+    for n in GOL_ESCONDER:
+        M.esconder(P[W + n])
+    if "mcIcon" not in _desligar_pinturas(M, molde, GOL_SEM_PINTURA):
+        M.avisos.append("Não achei no código a pintura do ícone: no jogo a arte pode ficar com uma cor só.")
+    sets = sorted((ch for ch in molde.chamadas if ch["funcao"] == "SetDropDown" and ch["nome"] == "="),
+                  key=lambda c: c["pos"])
+    for i, ch in enumerate(sets):
+        prox = sets[i + 1] if i + 1 < len(sets) else None
+        if str(ch["obj"] or "").endswith(".mcIcon") and ch.get("prop") == VISIVEL and ch["args"] and \
+                ch["args"][0].get("v") is False and ch.get("slot_prop") and \
+                not (prox and str(prox["obj"] or "").endswith(".mcPlayerTexts")):
+            M.txt(ch["slot_prop"], VISIVEL_DESLIGADO, VISIVEL)
+    M.resumo.append("O placar pequeno da tela do FC (siglas, gols e escudos) some: a arte do PES não tem lugar para ele.")
+
+    # 3. textos nas caixas do PES, com a cor pelo desenho atrás de cada caixa
+    caixas = [Rf]
+
+    def texto(nome, cx, tam):
+        lg = P[W + "mcPlayerTexts." + nome]
+        R = T(cx)
+        M.multitext(lg, R, (R[1] + R[3]) / 2 + 0.06 * tam)
+        _texto_cor(M, lg, tl, cx)
+        caixas.append(R)
+
+    Rj = T(cj)
+    tam = max(8, min(127, round(0.72 * (Rj[3] - Rj[1]))))
+    texto("mtFirstRow", cj, tam)
+    linhas = _config(sim, "mcPlayerTexts.mtFirstRow")
+    fl = linhas.get("formato") or {}
+    M.num(fl.get("tamanho_slot"), tam, fl.get("tamanho"), "tamanho da letra das linhas")
+    _alinhar(M, linhas, "H_ALIGN_RIGHT", "H_ALIGN_LEFT")
+    M.resumo.append("Sobrenome do jogador na caixa do nome do PES (letra %d px)." % tam)
+    if cr:
+        texto("mtSecondRow", cr, tam)
+        M.resumo.append("O lance (GOL, CARTÃO VERMELHO…) na caixa do texto do PES.")
+        if cv:
+            Rv = T(cv)
+            tam_v = max(8, min(127, round((0.8 if numeros else 0.72) * (Rv[3] - Rv[1]))))
+            texto("mtPlayerNumber", cv, tam_v)
+            num = _config(sim, "mcPlayerTexts.mtPlayerNumber")
+            fm = num.get("formato") or {}
+            M.num(fm.get("tamanho_slot"), tam_v, fm.get("tamanho"), "tamanho da letra do minuto")
+            _alinhar(M, num, "H_ALIGN_RIGHT", "H_ALIGN_CENTER")
+            if numeros and numeros.get("chave") and fm.get("fonte_slot"):
+                M.txt(fm["fonte_slot"], numeros["chave"], fm.get("fonte_chave"))
+            M.resumo.append("O minuto do lance na caixa do número do PES.")
+        else:
+            M.esconder(P[W + "mcPlayerTexts.mtPlayerNumber"])
+    else:
+        # o pacote escreve o lance no próprio desenho (GOL(S)…): o texto do FC e o minuto somem
+        M.esconder(P[W + "mcPlayerTexts.mtSecondRow"])
+        M.esconder(P[W + "mcPlayerTexts.mtPlayerNumber"])
+        M.resumo.append("O pacote escreve o lance no próprio desenho: o texto do lance e o minuto do FC ficam escondidos.")
+    if tl.escudo("time"):
+        M.avisos.append("O lugar do escudo no desenho do PES fica vazio: essa tela do FC só tem os escudos do placar "
+                        "pequeno, sem saber de que time é o lance.")
+
+    # 4. as máscaras cobrem a arte e os textos
+    _abrir_mascaras(M, molde, _dentro(*caixas), fora=("mcTeamHolder", "mcScoreHolder"))
+    M.resumo.append("Nos replays de expulsão aparece a mesma arte, com o lance escrito pelo FC.")
+    M.resumo.append("A tela aparece e some de uma vez (sem as animações do FC).")
+    return _fim_resumo(M, "a tela de gol")
+
+
+# as outras telas: chave do pes.TELAS_EXTRAS -> overlay do Generic, molde, conversão e textos de exemplo da prévia
+TELAS_FC = {
+    "penaltis": {"overlay": "9003", "molde": MoldePenaltis, "converter": converter_penaltis,
+                 "exemplos": {"nome_casa": "FLAMENGO", "nome_fora": "PALMEIRAS", "gols_casa": "4", "gols_fora": "3"}},
+    "gol": {"overlay": "9075", "molde": MoldeGol, "converter": converter_gol, "exemplos": exemplos_gol},
+}
+
+
+def previa_tela(tl, S, exemplos, largura=1920, altura=1080, recorte=True, ttf_numeros=None):
+    """Uma das outras telas do PES na tela do FC, com textos de exemplo nas caixas ({campo: texto}), os escudos
+    marcados e as bolinhas das cobranças nas lâmpadas."""
+    import io
+    from PIL import ImageDraw, ImageFont
+    if callable(exemplos):
+        exemplos = exemplos(tl)
+    img = tl.desenhar(("fundo",), S, largura, altura, fundo=(30, 96, 52, 255))
+    dr = ImageDraw.Draw(img)
+
+    def fonte(tam, ttf=None):
+        try:
+            return ImageFont.truetype(io.BytesIO(ttf), tam) if ttf else ImageFont.truetype("arialbd.ttf", tam)
+        except OSError:
+            return ImageFont.load_default()
+
+    for campo, txt in exemplos.items():
+        cx = tl.campo(campo)
+        if not cx:
+            continue
+        R = _transformar_caixa(S, cx)
+        h = R[3] - R[1]
+        gol = campo.startswith("gols")
+        f = fonte(max(8, int(h * (0.8 if gol and ttf_numeros else 0.66 if gol else 0.72))), ttf_numeros if gol else None)
+        dr.text(((R[0] + R[2]) / 2, (R[1] + R[3]) / 2), txt, fill=tuple(_cor_texto_tela(tl, cx)), font=f, anchor="mm")
+    cores = [(0, 192, 75), (233, 27, 36), (0, 192, 75), (90, 90, 96), (90, 90, 96)]
+    lamp, extra = _lampadas(tl) if hasattr(tl, "caixa_fora") else (None, None)
+    for j, caixas in enumerate(lamp or ()):
+        Rs = [_transformar_caixa(S, c) for c in caixas + ([extra[j]] if extra else [])]
+        for i, R in enumerate(Rs):
+            d = 0.86 * min(R[2] - R[0], R[3] - R[1])
+            cx_, cy_ = (R[0] + R[2]) / 2, (R[1] + R[3]) / 2
+            dr.ellipse((cx_ - d / 2, cy_ - d / 2, cx_ + d / 2, cy_ + d / 2), fill=cores[i] if i < 5 else (90, 90, 96))
+    for lado in ("casa", "fora"):
+        cx = tl.escudo(lado)
+        if cx:
+            dr.rectangle(_transformar_caixa(S, cx), outline=(90, 200, 255, 255), width=2)
+    if recorte:
+        cx = _transformar_caixa(S, tl.caixa_visivel(("fundo",)))
+        m = 24
+        img = img.crop((max(0, int(cx[0]) - m), max(0, int(cx[1]) - m), min(largura, int(cx[2]) + m),
+                        min(altura, int(cx[3]) + m)))
+    return img
 
 
 def classe_do_overlay(ov):
