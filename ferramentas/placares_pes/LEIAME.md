@@ -44,8 +44,10 @@ MultiText que o código cria e formata, e o código põe quase tudo no lugar dur
   textos ficam com a cor do tema. O nome do método é trocado naquelas chamadas por um que não existe, e elas não fazem
   nada; as outras (faixas das cores dos times, por exemplo) continuam;
 - leva nomes, gols e os dígitos do relógio para as caixas do PES: a largura de cada MultiText é 240 × a escala dele e
-  o `_y` é o meio da linha; altura, tamanho da letra, fonte e cor vão pelas constantes do código; os nomes ficam
-  centralizados (`H_ALIGN_CENTER`);
+  o `_y` é o meio da linha; altura, tamanho da letra e fonte vão pelas constantes do código; os nomes ficam
+  centralizados (`H_ALIGN_CENTER`); a cor (clara ou escura, pelo fundo da caixa do PES) vai pela cor de cada clipe de
+  texto, porque a do TextFormat é uma cor do StyleManager e no jogo nem todas as cores do tema existem nele
+  (`COLOR_PURE_WHITE` deixava os nomes pretos);
 - põe as faixas das cores dos times nas placas de cor do PES, os cartões numa faixa logo acima (casa) e logo abaixo
   (fora) do placar, e o placar agregado à direita, da mesma altura.
 

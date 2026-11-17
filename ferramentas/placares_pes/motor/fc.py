@@ -376,7 +376,6 @@ G_SEM_PINTURA = ("m_mcLogoFc", "mcTeamHolder.mcHomeTeamName", "mcTeamHolder.mcAw
                  "mcScoreHolder.mcScoreAway", "mcClockText", "mcExtraTime")
 PINTURA, PINTURA_DESLIGADA = "ChangeColorFlat", "ChangeColorFlat_PES"
 MULTITEXT_LARGURA = 240        # MultiText.PROXY_BASE_WIDTH: a caixa do texto tem 240 × _xscale de largura
-COR_CLARA, COR_ESCURA = "COLOR_PURE_WHITE", "COLOR_SAFE_BLACK"     # cores do tema (FIFA.xml) para os textos
 
 
 class MoldeCodigo:
@@ -926,11 +925,14 @@ def converter_generic(pl, molde, S, constantes=None, numeros=None, textos=None):
     def formato(caminho):
         return ((textos.get(caminho) or {}).get("config") or {})
 
-    def cor_tema(cfg, caixa_pes):
-        f = cfg.get("formato") or {}
-        orig = (f.get("cor_slot") or "").split("|")[-1] if str(f.get("cor_slot") or "").startswith("m:") else None
-        if orig:
-            op_txt(f["cor_slot"], COR_CLARA if _cor_texto(pl, caixa_pes) == CLARO else COR_ESCURA, orig)
+    def cor_clipes(cams, caixa_pes):
+        # a cor do texto (clara ou escura, pelo fundo da caixa do PES) vai pela cor dos próprios clipes: multiplica por
+        # 0 e soma a cor. O código não pinta mais esses clipes, e a cor do TextFormat (uma cor do StyleManager) não
+        # serve: no jogo o StyleManager não tem todas as cores do tema (COLOR_PURE_WHITE deu texto preto)
+        cor = _cor_texto(pl, caixa_pes)
+        for cam in cams:
+            if cam in P:
+                op_place(P[cam], tint=[0, 0, 0, 255], soma=list(cor[:3]) + [0])
 
     def fonte_num(cfg):
         f = cfg.get("formato") or {}
@@ -1018,6 +1020,7 @@ def converter_generic(pl, molde, S, constantes=None, numeros=None, textos=None):
             continue
         R = tela(cx)
         x0, yl = multitext(lg, R, (R[1] + R[3]) / 2 + 0.06 * (tam_nome or 0))
+        cor_clipes([G + ".mcTeamHolder." + nome], cx)
         op_const(cte, yl)
         y_nome[campo] = (yl, x0)
         mascara(G + ".mcTeamHolder." + msc, R)
@@ -1028,8 +1031,6 @@ def converter_generic(pl, molde, S, constantes=None, numeros=None, textos=None):
     partes = cfg_nome.get("partes") or []
     if "H_ALIGN_LEFT" in partes and cfg_nome.get("partes_slots"):
         op_txt(cfg_nome["partes_slots"][partes.index("H_ALIGN_LEFT")], "H_ALIGN_CENTER", "H_ALIGN_LEFT")
-    if pl.caixa_campo("nome_casa"):
-        cor_tema(cfg_nome, pl.caixa_campo("nome_casa"))
     resumo.append("Nomes dos times nas caixas do PES (letra %s px, centralizados)." % tam_nome)
 
     # 4. gols: o mcScoreHolder fica no x do código (INIT_SCORE_NORMAL_X_POS) e na altura que faz o _y do gol de fora —
@@ -1055,7 +1056,8 @@ def converter_generic(pl, molde, S, constantes=None, numeros=None, textos=None):
         mascara(G + ".mcScoreHolder.mcScoreMask", Rgc)
         mascara(G + ".mcScoreHolder.mcScoreMaskAway", Rgf)
         tamanho(cfg_gol, tam_gol)
-        cor_tema(cfg_gol, cgc)
+        cor_clipes([G + ".mcScoreHolder.mcScoreHome"], cgc)
+        cor_clipes([G + ".mcScoreHolder.mcScoreAway"], cgf)
         if fonte_num(cfg_gol):
             resumo.append("Gols com a fonte dos números do PES (%s)." % numeros["face"])
         resumo.append("Gols nas caixas do PES (letra %d px)." % tam_gol)
@@ -1107,7 +1109,7 @@ def converter_generic(pl, molde, S, constantes=None, numeros=None, textos=None):
             op_const("TIMER_X_POS_FIVE_NUMBER", xk + (x5 - x4) * passo / 15.0)
         mascara(G + ".mcClockMask", (Rk[0] - passo, Rk[1], Rk[2], Rk[3]))
         tamanho(cfg_rel, tam_rel)
-        cor_tema(cfg_rel, cxr)
+        cor_clipes([G + ".mcClockText"], cxr)
         if fonte_num(cfg_rel):
             resumo.append("Relógio com a fonte dos números do PES.")
         resumo.append("Relógio na caixa do relógio do PES (letra %d px)." % tam_rel)
@@ -1142,6 +1144,7 @@ def converter_generic(pl, molde, S, constantes=None, numeros=None, textos=None):
                 for alvo, slot in molde.pinturas:
                     if alvo == "mcExtraTime" and slot:
                         op_txt(slot, PINTURA_DESLIGADA, PINTURA)
+                cor_clipes([G + ".mcExtraTime"], cxr)
 
     # 8. cartões: como no Generic, uma faixa de 10 px para cada time — a da casa logo acima do placar, a de fora logo
     #    abaixo —, com os vermelhos e os dos expulsos a partir do começo do nome. O código põe os da casa em -30 e -33
