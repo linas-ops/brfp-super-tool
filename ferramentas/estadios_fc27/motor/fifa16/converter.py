@@ -980,6 +980,35 @@ class Conversao:
         base.aviso(f"luzes da torcida: {rel['acompanharam']} de {rel['luzes']} acompanharam a torcida nova (mediana da luz na torcida: "
                    f"{lt['antes'][1]}x a do El Grandioso antes, {lt['depois'][1]}x depois)")
 
+    LUZES_EG = ('lighting_stands_main', 'lighting_flood_main')
+
+    def stage_sombras_luzes(self):
+        """Máscara de sombra pré-calculada das luzes da torcida. Metade dos spots do El Grandioso (76 de 145) têm
+        ShadowMask 1 a 4: o jogo escurece a luz deles com a sombra pré-calculada no El Grandioso, com a arquitetura dele e
+        as luzes no lugar antigo. No estádio convertido essa sombra cai em pedaços soltos da arquibancada e da torcida
+        (relato de 2026-11-17: sombras estranhas e desconexas à noite). Receita "sombras_luzes": "tirar" (padrão: ShadowMask 0,
+        como nas outras 69 luzes do El Grandioso e na maioria das luzes dos estádios do jogo; as luzes não projetam sombra
+        em tempo real, então passam a iluminar sem sombra) ou "manter" (como até a 2.1)."""
+        modo = self.rc.get('sombras_luzes') or 'tirar'
+        if modo not in ('tirar', 'manter'):
+            falha('sombras_luzes desconhecido: ' + str(modo))
+        if modo == 'manter':
+            self.report['sombras_das_luzes'] = 'máscara de sombra do El Grandioso mantida (receita)'
+            return
+        tiradas = {}
+        for wp in self.LUZES_EG:
+            name = self.S + wp
+            d = self.ebx_dump(name)
+            ops = [dict(op='set', target={'index': i}, path='ShadowMask', value=0) for i, x in enumerate(d['instances'])
+                   if x['type'].endswith('LightEntityData') and x['fields'].get('ShadowMask')]
+            if ops:
+                self.ebx_edit_mais(name, ops, 'sombras')
+                tiradas[wp] = len(ops)
+        self.report['sombras_das_luzes'] = dict(tiradas=sum(tiradas.values()), por_camada=tiradas)
+        if tiradas:
+            base.aviso(f"sombras das luzes: {sum(tiradas.values())} luzes da torcida sem a máscara de sombra pré-calculada no "
+                       f"El Grandioso (ela caía em pedaços soltos da arquibancada nova à noite)")
+
     VARIANTES_GLARES = ('1_0', '1_1', '1_2', '3_0', '3_1', '3_2')
     ONDE_LAMPADAS = 'nos .lnx do FIFA 16'
 
@@ -1514,7 +1543,7 @@ class Conversao:
                  ('materiais', self.build_mesh_ebx), ('mvdb', self.build_mvdb), ('deposito', self.build_depot),
                  ('meshes', self.build_host_mesh), ('caixas', self.stage_host_blueprint), ('esconder', self.stage_hide),
                  ('telao', self.stage_scoreclock), ('gramado', self.stage_pitch), ('torcida', self.stage_crowd),
-                 ('luzes da torcida', self.stage_luzes), ('glares', self.stage_glares), ('personagens', self.stage_slc),
+                 ('luzes da torcida', self.stage_luzes), ('sombras das luzes', self.stage_sombras_luzes), ('glares', self.stage_glares), ('personagens', self.stage_slc),
                  ('colisão', self.stage_colisao), ('câmeras', self.stage_cameras), ('banco', self.stage_db)]
         if int(self.rc.get('luz') or BASE_ID) != BASE_ID:
             falha(f"o pré-cálculo de luz de outro estádio (estádio {self.rc['luz']}) está desativado: com ele a partida fica "

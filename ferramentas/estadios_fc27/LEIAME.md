@@ -105,7 +105,7 @@ motor desta ferramenta reproduz a v3 byte a byte. Os estádios do FIFA 16 têm t
      quais são as maiores peças: descarte o que não aparece, marque "1 lado" nas peças vistas só de frente ou use faces
      "vista do campo";
    - **personagens laterais** e **reservas no banco** (veja abaixo);
-   - **luzes da torcida à noite** (veja abaixo);
+   - **luzes da torcida à noite** e a sombra delas (veja abaixo);
    - recuo do gramado no lado dos bancos;
    - placas baixas de madeira do El Grandioso;
    - rede do gol, colisão em volta do campo e câmeras (veja abaixo);
@@ -392,6 +392,15 @@ escuro.
 O resultado da conversão compara a luz na torcida nova com a do El Grandioso, antes e depois. O que ainda pode diferir é
 a luz rebatida, pré-calculada em volta da torcida do El Grandioso. O proxy de sombra da torcida (`shadow_seat`) só serve
 a esse pré-cálculo, por isso não é refeito. **Precisa de teste em partida.**
+
+### Sombra das luzes da torcida (desde a 2.2)
+
+Essas luzes não projetam sombra em tempo real, mas 76 das 145 do El Grandioso usam uma máscara de sombra pré-calculada
+(`ShadowMask` de 1 a 4): o jogo escurece a luz delas com a sombra calculada na arquitetura do El Grandioso, com as luzes
+no lugar antigo. No estádio convertido essa sombra cai em pedaços soltos da arquibancada e da torcida, que ficam escuros
+à noite sem nada na frente (relatado em 2026-11-17). Desde a 2.2 a conversão tira a máscara dessas luzes (`ShadowMask`
+0, como nas outras 69 do El Grandioso e na maioria das luzes dos estádios do jogo): elas passam a iluminar sem sombra.
+A opção **Sombra das luzes da torcida** volta à do El Grandioso. **Precisa de teste em partida.**
 
 ## Projetos gerados e teste
 

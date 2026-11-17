@@ -11,7 +11,7 @@ const S = {
   conv: { origem: 'fifa16', pasta: '', analise: null, pronta: null, usarPronta: true, modo: 'novo', projeto: '', novoId: '', nome: '', filtro: 'todas',
           pecas: {}, opcoes: {} },
   lote: { raiz: '', achados: null, itens: [], filtro: '', inicioIds: 700, modo: 'junto', projetoModo: 'novo', projeto: '',
-          opcoes: { rede: 'quadrada', colisao: 'estadio', cameras: 'ajustar', banners: 'automaticos', luzes: 'padrao', personagens: 'padrao', reservas: 'padrao' } },
+          opcoes: { rede: 'quadrada', colisao: 'estadio', cameras: 'ajustar', sombras: 'tirar', banners: 'automaticos', luzes: 'padrao', personagens: 'padrao', reservas: 'padrao' } },
   exec: null,
 };
 
@@ -98,6 +98,7 @@ function guia() {
     <p><b>Converter PES 2021 → FC 27</b>: o mesmo caminho, com a pasta do estádio do PES 2021 (a do mod, com <span class="mono">Asset\\model\\bg\\st…</span>). A ferramenta lê os modelos, as texturas, as telas, as áreas da torcida e os brilhos das lâmpadas do PES; se os bancos de reservas estiverem do outro lado do campo, o estádio gira meia volta. Os materiais levam o relevo (mapa normal) e o brilho, a rugosidade e o metal (coeficientes) dos mapas do PES. Placas, figurantes, vidros e brilhos do PES não entram. <b>Precisa de teste em partida.</b></p>
     <p><b>Converter em lote</b>: escolha uma pasta, e a ferramenta acha nas subpastas os estádios do FIFA 16 e do PES 2021 (um pacote inteiro, como o Brasil MEGA Stadium Pack, de uma vez). Marque os que quer, ajuste o ID e o nome de cada um, e eles são convertidos um depois do outro, com a receita sugerida pela análise de cada estádio. Num projeto só (o recomendado: no FET só um projeto de estádio fica ativo por vez), cada estádio entra no projeto dos anteriores; um estádio que der erro fica de fora e os outros seguem.</p>
     <p><b>Rede do gol</b>: o El Grandioso tem a rede funda ("véu de noiva"), que só ele e mais quatro estádios do FC 27 usam. Desde a 2.1 o estádio convertido sai com a rede quadrada da maioria dos estádios (dá para voltar à do El Grandioso nas Opções).</p>
+    <p><b>Sombra das luzes da torcida</b>: metade das luzes da torcida do El Grandioso usa uma sombra que o jogo pré-calculou com a arquitetura dele; no estádio convertido ela caía em pedaços soltos da arquibancada e da torcida, à noite. Desde a 2.2 essas luzes iluminam sem ela, como as outras (dá para voltar nas Opções).</p>
     <p><b>Câmeras</b>: todo estádio novo usa o mesmo conjunto de câmeras de replay e de cenas do jogo (torcida, comemoração, entrada), feito para arquibancadas mais longe do campo; numa arquibancada mais perto, algumas câmeras de torcida ficavam atrás ou dentro dela. Desde a 2.1 a ferramenta acha as que a arquibancada nova tapa e as move para onde a vista fica livre, num conjunto próprio do estádio, registrado como os dos estádios do jogo (dá para voltar ao conjunto do jogo nas Opções).</p>
     <p><b>Colisão em volta do campo</b>: o chão e as paredes invisíveis em que a bola bate e os jogadores param. Os do El Grandioso vão até depois da pista de atletismo, e numa arquibancada mais perto do campo os jogadores entravam nela (na comemoração, por exemplo). Desde a 2.1 a ferramenta acha a frente da arquibancada no modelo do estádio novo e põe as paredes ali (dá para voltar à do El Grandioso nas Opções).</p>
     <p><b>Banners dos times</b>: na lista de peças, marque como <b>Banner dos times</b> as faixas e bandeiras do estádio que devem dar lugar aos banners dos times. Elas saem do modelo e os banners dos times do FC 27 entram no lugar delas. No FIFA 16, a análise já marca as peças que ele deixava vazias para os banners dele. No PES 2021, que não marca nada, os banners vão sozinhos para as muretas na frente dos anéis da torcida (ou nas peças que você marcar).</p>
@@ -245,6 +246,8 @@ const REDES_DO_GOL = [['quadrada', 'Quadrada (a da maioria dos estádios do FC 2
 const AJUDA_REDE = 'O El Grandioso usa a rede funda (3,20 m de fundo), que só ele e mais quatro estádios do FC 27 têm; a quadrada (2,29 m) é a da maioria. Até a 2.0 todo estádio convertido saía com a rede do El Grandioso.';
 const COLISOES = [['estadio', 'Paredes na frente da arquibancada (recomendado)'], ['el_grandioso', 'A do El Grandioso']];
 const CAMERAS = [['ajustar', 'Mover as que a arquibancada tapa (recomendado)'], ['genericas', 'As do jogo, sem mudar']];
+const SOMBRAS = [['tirar', 'Sem a sombra do El Grandioso (recomendado)'], ['manter', 'Com a sombra do El Grandioso']];
+const AJUDA_SOMBRAS = 'Metade das luzes da torcida do El Grandioso usa uma sombra que o jogo pré-calculou com a arquitetura dele. No estádio convertido essa sombra cai em pedaços soltos da arquibancada e da torcida, à noite. Recomendado: essas luzes iluminam sem a sombra pré-calculada, como as outras luzes da torcida. Até a 2.1 ficava a sombra do El Grandioso.';
 const AJUDA_CAMERAS = 'Câmeras de replay e de cenas (torcida, comemoração, entrada). O jogo usa o mesmo conjunto em todo estádio novo, feito para arquibancadas mais longe do campo. Recomendado: a ferramenta acha as que a arquibancada nova tapa e as move para onde a vista fica livre, num conjunto próprio do estádio. Até a 2.0 ficavam as do jogo, e algumas câmeras de torcida apareciam atrás ou dentro da arquibancada.';
 const AJUDA_COLISAO = 'O chão e as paredes invisíveis em volta do campo, em que a bola bate e os jogadores param. Recomendado: a ferramenta acha a frente da arquibancada no modelo do estádio novo e põe as paredes ali. A do El Grandioso vai até depois da pista de atletismo: numa arquibancada mais perto do campo, os jogadores entram nela (até a 2.0 era sempre assim).';
 
@@ -292,7 +295,7 @@ function carregarPecas() {
     ajuste: r.ajuste_automatico ?? true, personagens: r.personagens || 'ajustar',
     reservas: r.reservas || 'cadeiras', luzes: r.luzes_torcida || (ehPes() ? 'cobrir' : 'acompanhar'),
     setor: r.torcida?.setor_pes || 'comum', banners: r.banners || 'automaticos', rede: r.rede_gol || 'quadrada',
-    colisao: r.colisao || 'estadio', cameras: r.cameras || 'ajustar',
+    colisao: r.colisao || 'estadio', cameras: r.cameras || 'ajustar', sombras: r.sombras_luzes || 'tirar',
   };
   if (o.cadeiras !== 'fifa16') { o.cor = o.cadeiras; o.cadeiras = 'cor'; }
 }
@@ -325,6 +328,7 @@ function receitaDaTela() {
   r.rede_gol = o.rede;
   r.colisao = o.colisao;
   r.cameras = o.cameras;
+  r.sombras_luzes = o.sombras;
   r.luz = BASE.id;
   if (ehPes()) r.giro = Number(o.giro) || 0;
   const b = receitaBase() || {};
@@ -506,6 +510,8 @@ function cartaoOpcoes() {
   colisao.onchange = () => { o.colisao = colisao.value; };
   const cams = el('select', {}, CAMERAS.map(([k, t]) => el('option', { value: k, selected: o.cameras === k }, t)));
   cams.onchange = () => { o.cameras = cams.value; };
+  const somb = el('select', {}, SOMBRAS.map(([k, t]) => el('option', { value: k, selected: o.sombras === k }, t)));
+  somb.onchange = () => { o.sombras = somb.value; };
   co.corpo.append(el('div', { class: 'grade2' },
     pes ? campo2('Lado dos bancos', giro, `O FC 27 e o El Grandioso têm os bancos de reservas em −Z. A análise achou ${an?.bancos?.cadeiras_em_mais_z ?? 0} cadeiras de banco em +Z e ${an?.bancos?.cadeiras_em_menos_z ?? 0} em −Z, e sugeriu ${an?.giro === 180 ? 'girar' : 'não girar'}.`) : null,
     campo2('Faces', faces, pes
@@ -528,6 +534,7 @@ function cartaoOpcoes() {
     campo2('Rede do gol', rede, AJUDA_REDE),
     campo2('Colisão em volta do campo', colisao, AJUDA_COLISAO),
     campo2('Câmeras', cams, AJUDA_CAMERAS),
+    campo2('Sombra das luzes da torcida', somb, AJUDA_SOMBRAS),
     pes ? campo2('Banners dos times', bann, 'O PES não marca onde ficam os banners dos times. Automático: eles vão para as muretas na frente dos anéis da torcida (faces viradas para o campo, com a torcida logo atrás e acima, acima das placas de publicidade e fora do meio do lado dos bancos), em fileiras de banners de ~2 m de altura, como no El Grandioso. Peças marcadas como Banner dos times na lista têm prioridade.') : null,
     pes ? campo2('Setor marcado no PES', setor, `O PES marca à parte as áreas da torcida com o valor 5 (${fmtInt(an?.torcida?.visitantes_areas ?? 0)} áreas neste estádio; no Camp Nou, o anel inferior atrás de um gol). Torcida comum: elas enchem como o resto. Bloco de visitantes: vira o setor dos visitantes do FC 27, que pode ficar vazio na partida.`) : null,
     campo2('Torcida da casa', lado, pes ? 'O El Grandioso põe a casa em −X. A organizada da casa fica no anel inferior atrás do gol da casa.' : 'O FIFA 16 e o El Grandioso põem a casa em −X.'),
@@ -667,6 +674,7 @@ function renderLote() {
     campo2('Rede do gol', sel('rede', REDES_DO_GOL), AJUDA_REDE),
     campo2('Colisão em volta do campo', sel('colisao', COLISOES), AJUDA_COLISAO),
     campo2('Câmeras', sel('cameras', CAMERAS), AJUDA_CAMERAS),
+    campo2('Sombra das luzes da torcida', sel('sombras', SOMBRAS), AJUDA_SOMBRAS),
     campo2('Banners dos times (PES 2021)', sel('banners', [['automaticos', 'Nas frentes dos anéis da torcida (recomendado)'], ['nenhum', 'Sem banners dos times']]),
       'O PES não marca onde eles ficam: vão sozinhos para as muretas na frente dos anéis da torcida. No FIFA 16, vão para as peças que a análise marca.'),
     campo2('Luzes da torcida à noite', sel('luzes', [['padrao', 'O padrão de cada jogo (recomendado)'], ['cobrir', 'Cobrem toda a torcida'], ['acompanhar', 'Acompanham a torcida']]),
@@ -717,7 +725,7 @@ async function converterLote() {
   if (!m.length) { aviso('Marque pelo menos um estádio.', { tipo: 'aviso' }); return; }
   if (m.some((i) => !i.id || !String(i.nomeNovo).trim())) { aviso('Cada estádio marcado precisa de um ID novo e de um nome.', { tipo: 'aviso' }); return; }
   const o = L.opcoes;
-  const receita = { rede_gol: o.rede, colisao: o.colisao || 'estadio', cameras: o.cameras || 'ajustar', banners: o.banners };
+  const receita = { rede_gol: o.rede, colisao: o.colisao || 'estadio', cameras: o.cameras || 'ajustar', sombras_luzes: o.sombras || 'tirar', banners: o.banners };
   if (o.luzes !== 'padrao') receita.luzes_torcida = o.luzes;
   if (o.personagens !== 'padrao') receita.personagens = o.personagens;
   if (o.reservas !== 'padrao') receita.reservas = o.reservas;
