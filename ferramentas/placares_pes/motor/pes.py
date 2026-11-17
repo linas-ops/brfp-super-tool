@@ -116,6 +116,15 @@ TELAS = {"game2d_score": "Placar", "game2d_scoreDemo": "Placar grande (intervalo
          "resultTeamRecordPes": "Retrospecto dos times"}
 
 
+def titulo_tela(nome):
+    """O nome amigável de uma tela (resultTeamRecordEngland e afins também são o retrospecto)."""
+    if nome in TELAS:
+        return TELAS[nome]
+    if nome.startswith("resultTeamRecord"):
+        return TELAS["resultTeamRecordPes"] + " (" + nome[len("resultTeamRecord"):] + ")"
+    return nome
+
+
 def _dilatar(m, r):
     """Máscara booleana engordada r pixels (para juntar pedaços próximos de uma mesma placa)."""
     try:

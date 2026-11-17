@@ -295,12 +295,16 @@ def api_telas(d):
     pl = placar(d["pasta"])
     out = []
     for _pk, nome in pl.bib.filmes():
-        img = pes.desenhar_tela(pl.bib, nome)
+        try:
+            img = pes.desenhar_tela(pl.bib, nome)
+        except Exception:  # noqa: BLE001 - uma tela que não desenha não tira as outras da lista
+            traceback.print_exc()
+            img = None
         if img is None:
             continue
         mini = img.copy()
         mini.thumbnail((520, 300), Image.LANCZOS)
-        out.append({"nome": nome, "titulo": pes.TELAS.get(nome, nome), "w": img.width, "h": img.height,
+        out.append({"nome": nome, "titulo": pes.titulo_tela(nome), "w": img.width, "h": img.height,
                     "imagem": png_dados(mini)})
     return {"telas": out}
 
@@ -315,9 +319,13 @@ def api_exportar(d):
     os.makedirs(os.path.join(pasta, "recortes"), exist_ok=True)
     n_telas = n_rec = 0
     for _pk, nome in pl.bib.filmes():
-        img = pes.desenhar_tela(pl.bib, nome)
+        try:
+            img = pes.desenhar_tela(pl.bib, nome)
+        except Exception:  # noqa: BLE001
+            traceback.print_exc()
+            img = None
         if img is not None:
-            img.save(os.path.join(pasta, "telas", "%s - %s.png" % (nome, pes.TELAS.get(nome, nome))))
+            img.save(os.path.join(pasta, "telas", "%s - %s.png" % (nome, pes.titulo_tela(nome))))
             n_telas += 1
     for pk in pl.bib.pacotes:
         for r in pk.regioes:
