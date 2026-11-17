@@ -12,7 +12,9 @@ do pacote vai junto, para a substituição do mesmo conjunto de overlays (ver *A
 
 1. **Abra o placar do PES** (Arquivo › Abrir pasta…): a pasta do placar, com `common\menu\licence\game2dPes.bin`, ou a
    pasta de um pacote com vários placares (como o *J-League Scoreboard Package*, com J1, J2, J3…). Cada placar aparece na
-   lista da esquerda. A primeira leitura de cada um leva alguns segundos (as texturas do PES são descomprimidas e ficam
+   lista da esquerda. Placares feitos para uma licença do jogo têm o nome dela no lugar de `Pes` (`game2dEngland.bin`,
+   `game2dEnglandEnter.bin`, `licenceTextureEngland.bin`…) e também são achados; se a mesma pasta tiver mais de uma
+   licença, cada uma aparece separada na lista. A primeira leitura de cada um leva alguns segundos (as texturas do PES são descomprimidas e ficam
    guardadas em `cache\`).
 2. **Confira a prévia.** *No PES* é o placar como o PES desenha, com as caixas onde o jogo escreve os textos marcadas em
    amarelo. *No FC* é o fundo do PES no molde, com textos de exemplo, e a tela inteira de 1920×1080.

@@ -34,7 +34,7 @@ sys.path.insert(0, EDITOR)
 
 import base  # noqa: E402
 
-VERSAO = "1.2"
+VERSAO = "1.2.1"
 GRUPO = "placares_pes"                 # numpy e Pillow
 PREFS = base.Prefs(os.path.join(AQUI, "preferencias.json"), {
     "pasta": "", "molde": None, "x": 64, "y": 48, "escala": 1.0, "alvo": "molde", "alvo_outro": "", "fonte_pes": True,
@@ -222,10 +222,10 @@ def api_pacote(d):
         raise base.ErroUsuario("Pasta não encontrada.")
     achados = pes.achar_placares(pasta) if os.path.isdir(pasta) else [pasta]
     if not achados:
-        raise base.ErroUsuario("Não achei placar do PES nessa pasta (procurei common\\menu\\licence\\game2dPes.bin, "
-                               "também nas subpastas).")
+        raise base.ErroUsuario("Não achei placar do PES nessa pasta (procurei common\\menu\\licence\\game2dPes.bin "
+                               "ou game2d<Licença>.bin, como game2dEngland.bin, também nas subpastas).")
     PREFS.atualizar(pasta=pasta)
-    return {"pasta": pasta, "placares": [{"pasta": p, "nome": os.path.basename(os.path.normpath(p))} for p in achados]}
+    return {"pasta": pasta, "placares": [{"pasta": p, "nome": pes.nome_placar(p)} for p in achados]}
 
 
 def api_placar(d):
@@ -448,7 +448,7 @@ def api_dialogo(d):
     modo = d.get("modo") or "pasta"
     inicial = d.get("inicial") or PREFS.ler().get("pasta") or None
     if modo == "arquivo":
-        p = base.dialogo("abrir", "Escolha o game2dPes.bin do placar", inicial, [("Placar do PES", "*.bin"), ("Todos", "*.*")])
+        p = base.dialogo("abrir", "Escolha o game2dPes.bin (ou game2d<Licença>.bin) do placar", inicial, [("Placar do PES", "*.bin"), ("Todos", "*.*")])
     else:
         p = base.dialogo("pasta", "Escolha a pasta do placar do PES (ou do pacote com vários)", inicial)
     return {"caminho": p}

@@ -25,32 +25,87 @@ CAMPOS = {"teamName_home": "nome_casa", "teamName_away": "nome_fora", "teamScore
           "teamScore_away": "gols_fora"}
 
 
+def licenca_do_bin(nome):
+    """A licença do .bin principal de um placar: 'game2dPes.bin' -> 'Pes', 'game2dEngland.bin' -> 'England'.
+    None para os outros (game2dEnglandEnter.bin, game2dEnglandPk.bin, game2d.bin, game2dReplay.bin…)."""
+    base, ext = os.path.splitext(os.path.basename(nome))
+    if ext.lower() != ".bin" or not base.lower().startswith("game2d") or len(base) <= 6:
+        return None
+    lic = base[6:]
+    if lic.lower().endswith(("enter", "pk")) or lic.lower().startswith("replay"):
+        return None
+    return lic
+
+
+def licencas(arqs):
+    """As licenças com placar entre esses arquivos (Pes primeiro)."""
+    lics = sorted({l for l in (licenca_do_bin(a) for a in arqs) if l}, key=lambda l: (l.lower() != "pes", l.lower()))
+    return lics
+
+
+def _da_licenca(bins, lic, lics):
+    """Os .bin de uma licença (game2d<L>*.bin, licenceTexture<L>.bin…) mais os que não são de licença nenhuma."""
+    def dono(b):
+        s = os.path.splitext(os.path.basename(b))[0].lower()
+        for l in sorted(lics, key=len, reverse=True):
+            if s.startswith("game2d" + l.lower()) or s.endswith(l.lower()):
+                return l
+        return None
+    return [b for b in bins if dono(b) in (lic, None)]
+
+
 def achar_bins(pasta):
-    """Os .bin de um placar: aceita a pasta do placar (com common/menu/licence), a própria licence ou um .bin."""
+    """Os .bin de um placar: aceita a pasta do placar (com common/menu/licence), a própria licence ou o .bin principal
+    (game2d<Licença>.bin, que leva junto os outros da mesma licença). Pasta com mais de uma licença: fica com uma só."""
     if os.path.isfile(pasta):
-        return [pasta]
+        lic = licenca_do_bin(pasta)
+        if not lic:
+            return [pasta]
+        bins = sorted(glob.glob(os.path.join(os.path.dirname(pasta), "*.bin")))
+        return _da_licenca(bins, lic, licencas(bins))
     for sub in (os.path.join("common", "menu", "licence"), os.path.join("menu", "licence"), "licence", ""):
         bins = sorted(glob.glob(os.path.join(pasta, sub, "*.bin")))
         if bins:
-            return bins
+            lics = licencas(bins)
+            return _da_licenca(bins, lics[0], lics) if len(lics) > 1 else bins
     return []
 
 
 def achar_placares(pasta, limite=200):
-    """Pastas com placar do PES dentro de 'pasta' (um pacote pode ter vários: J1, J2, J3…)."""
+    """Placares do PES dentro de 'pasta' (um pacote pode ter vários: J1, J2, J3…). Cada um é a pasta do placar ou,
+    numa licence com mais de uma licença (game2dPes.bin e game2dEngland.bin), o .bin principal de cada uma."""
     achados = []
     for raiz, dirs, arqs in os.walk(pasta):
         dirs.sort()
-        if any(a.lower() == "game2dpes.bin" for a in arqs):
-            base = raiz
-            for _ in range(3):
-                if os.path.basename(base).lower() in ("licence", "menu", "common"):
-                    base = os.path.dirname(base)
-            achados.append(base)
+        lics = licencas(arqs)
+        if lics:
+            if len(lics) > 1:
+                achados += [os.path.join(raiz, "game2d" + l + ".bin") for l in lics
+                            if os.path.isfile(os.path.join(raiz, "game2d" + l + ".bin"))]
+            else:
+                base = raiz
+                for _ in range(3):
+                    if os.path.basename(base).lower() in ("licence", "menu", "common"):
+                        base = os.path.dirname(base)
+                achados.append(base)
             dirs[:] = []
         if len(achados) >= limite:
             break
-    return achados
+    return achados[:limite]
+
+
+def nome_placar(p):
+    """O nome mostrado de um placar achado: a pasta, ou 'pasta (Licença)' quando é o .bin principal."""
+    if os.path.isfile(p):
+        lic = licenca_do_bin(p)
+        if lic:
+            base = os.path.dirname(os.path.abspath(p))
+            for _ in range(3):
+                if os.path.basename(base).lower() in ("licence", "menu", "common"):
+                    base = os.path.dirname(base)
+            return "%s (%s)" % (os.path.basename(base) or lic, lic)
+        return os.path.splitext(os.path.basename(p))[0]
+    return os.path.basename(os.path.normpath(p))
 
 
 TELAS = {"game2d_score": "Placar", "game2d_scoreDemo": "Placar grande (intervalo e fim)",
@@ -331,14 +386,14 @@ class PlacarPes(TelaPes):
         self.pasta = pasta
         self.bins = achar_bins(pasta)
         if not self.bins:
-            raise afp.ErroAfp("Não achei os arquivos do placar (common\\menu\\licence\\game2dPes.bin) nessa pasta.")
+            raise afp.ErroAfp("Não achei os arquivos do placar (common\\menu\\licence\\game2dPes.bin ou "
+                              "game2d<Licença>.bin) nessa pasta.")
         self.bib = afp.Biblioteca(afp.Pacote(b, cache) for b in self.bins)
         self.filme = self.bib.filme(FILME)
         if not self.filme:
             raise afp.ErroAfp("Esse pacote não tem o placar da partida (game2d_score); só tem: " +
                               ", ".join(n for _, n in self.bib.filmes()))
-        nome = os.path.basename(os.path.normpath(pasta))
-        self.nome = os.path.splitext(nome)[0] if os.path.isfile(pasta) else nome
+        self.nome = nome_placar(pasta)
         cena = afp.Cena(self.filme)
         # placar normal: acréscimos escondidos (o relógio também se mexe quando eles aparecem)
         self.pecas = self._preparar(cena.pecas(SEM_ACRESCIMOS))
