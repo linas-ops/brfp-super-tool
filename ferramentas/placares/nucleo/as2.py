@@ -170,14 +170,19 @@ def decodificar(d, p):
         return op, struct.unpack_from("<Q", d, p)[0], p + 8
     if op in (0x87, 0x81, 0x9F):
         return op, struct.unpack_from("<i", d, p)[0], p + 4
-    if op in (0xA2, 0xAE, 0xAF, 0xB0, 0xB1, 0xB2, 0xB3, 0xB5, 0xB9):
+    if op in (0xA2, 0xAE, 0xAF, 0xB0, 0xB1, 0xB2, 0xB3, 0xB9):
         return op, d[p], p + 1
-    if op in (0xA3, 0xB6):
+    # os números do código vêm com sinal: o compilador põe 128 a 255 em 2 bytes e usa o byte 255 como -1
+    if op == 0xB5:
+        return op, struct.unpack_from("<b", d, p)[0], p + 1
+    if op == 0xA3:
         return op, struct.unpack_from("<H", d, p)[0], p + 2
+    if op == 0xB6:
+        return op, struct.unpack_from("<h", d, p)[0], p + 2
     if op == 0xB4:
         return op, struct.unpack_from("<f", d, p)[0], p + 4
     if op == 0xB7:
-        return op, struct.unpack_from("<I", d, p)[0], p + 4
+        return op, struct.unpack_from("<i", d, p)[0], p + 4
     if op == 0x8E:
         nome, npar = struct.unpack_from("<QI", d, p)
         nreg = d[p + 12]
@@ -397,6 +402,7 @@ class Simulador:
                "constante_tamanho": self.constantes.get(tam[1], {}).get("nome") if tam[1] is not None else None}
         cor = args[2] if len(args) > 2 else (UNDEF, None)
         reg["cor"] = _int(cor[0]) if isinstance(cor[0], (int, float)) and not isinstance(cor[0], bool) else None
+        reg["cor_slot"] = cor[1] if reg["cor"] is not None else None
         o.set("__registro", (reg, None))
         if not getattr(self, "externo_nivel", 0):
             self.formatos.append(reg)
@@ -644,6 +650,13 @@ class Simulador:
                 ligada = Funcao(self, nativa=lambda t, a, f=f, alvo=alvo: self.chamar(f, alvo, a), nome="delegate")
                 ligada.dados = f
                 return (ligada, None)
+        if fim == "GetDefaultWidth":
+            # MultiText: a largura da caixa do texto, PROXY_BASE_WIDTH (240) × a escala com que o clipe foi posto.
+            # Pelo cast MultiText(clipe).GetDefaultWidth(), o "this" é o dublê do cast, com o clipe no argumento
+            mt = this.args[0][0] if isinstance(this, Duble) and this.args and isinstance(this.args[0][0], Clipe) \
+                else this
+            if isinstance(mt, Clipe):
+                return (240.0 * _num(self.ler_prop_clipe(mt, "_xscale")) / 100.0, None)
         if fim in ("SetText", "setText", "SetHtmlText", "Initialize", "Init", "SetConfig", "SetTextFormat") and isinstance(this, Clipe):
             cfg = None
             texto = None
@@ -663,7 +676,10 @@ class Simulador:
     def _config_texto(self, cfg):
         # MultiTextConfig.Base(escala, alinhamento v, alinhamento h, TextFormat...) é dublê: procura o TextFormat
         if isinstance(cfg, Duble) and cfg.args:
-            out = {"partes": [a[0].caminho.split(".")[-1] if isinstance(a[0], Duble) else a[0] for a in cfg.args if not isinstance(a[0], Obj) or isinstance(a[0], Duble)]}
+            partes = [a for a in cfg.args if not isinstance(a[0], Obj) or isinstance(a[0], Duble)]
+            out = {"partes": [a[0].caminho.split(".")[-1] if isinstance(a[0], Duble) else a[0] for a in partes],
+                   # de onde vem cada parte no código (H_ALIGN_LEFT → slot do texto), para trocar o alinhamento
+                   "partes_slots": [a[0].slot if isinstance(a[0], Duble) else a[1] for a in partes]}
             for a in cfg.args:
                 if isinstance(a[0], Obj) and a[0].get("__registro"):
                     out["formato"] = a[0].get("__registro")[0]
@@ -1700,18 +1716,20 @@ def editar_numero(apt_d, consts, slot, valor):
         return
     pos = int(resto.split(":")[0])
     v = float(valor)
+    # byte, 2 e 4 bytes com sinal (-128 a 127…); acima do limite com sinal vale o mesmo byte de antes (projetos antigos
+    # gravavam 0 a 255)
     if tipo == "pb":
-        if not (0 <= v <= 255 and v.is_integer()):
-            raise ErroAS("Este número fica num byte do código: use um inteiro de 0 a 255.")
-        apt_d[pos] = int(v)
+        if not (-128 <= v <= 255 and v.is_integer()):
+            raise ErroAS("Este número fica num byte do código: use um inteiro de -128 a 127.")
+        apt_d[pos] = int(v) & 0xFF
     elif tipo == "ps":
-        if not (0 <= v <= 65535 and v.is_integer()):
-            raise ErroAS("Este número fica em 2 bytes do código: use um inteiro de 0 a 65535.")
-        struct.pack_into("<H", apt_d, pos, int(v))
+        if not (-32768 <= v <= 65535 and v.is_integer()):
+            raise ErroAS("Este número fica em 2 bytes do código: use um inteiro de -32768 a 32767.")
+        struct.pack_into("<H", apt_d, pos, int(v) & 0xFFFF)
     elif tipo == "pl":
-        if not (0 <= v <= 0xFFFFFFFF and v.is_integer()):
-            raise ErroAS("Use um inteiro positivo.")
-        struct.pack_into("<I", apt_d, pos, int(v))
+        if not (-0x80000000 <= v <= 0xFFFFFFFF and v.is_integer()):
+            raise ErroAS("Use um inteiro.")
+        struct.pack_into("<I", apt_d, pos, int(v) & 0xFFFFFFFF)
     elif tipo == "pf":
         struct.pack_into("<f", apt_d, pos, v)
     else:

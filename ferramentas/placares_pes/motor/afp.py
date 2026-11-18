@@ -11,6 +11,7 @@ import io
 import os
 import struct
 import sys
+import zlib
 
 import numpy as np
 from PIL import Image, ImageDraw
@@ -116,6 +117,22 @@ class Forma:
 
 # ------------------------------------------------------------------ o pacote TXP2
 
+def desembrulhar(raw):
+    """Tira a compressão "WESYS" que muitos pacotes do PES usam (o mesmo .bin, só que em zlib).
+
+    Cabeçalho de 16 bytes: 3 bytes (00/FF 10 01), "WESYS", tamanho comprimido e tamanho cheio (little-endian)."""
+    if len(raw) >= 16 and raw[3:8] == b"WESYS":
+        comp, cheio = struct.unpack("<II", raw[8:16])
+        try:
+            d = zlib.decompress(raw[16:16 + comp] if comp else raw[16:])
+        except zlib.error as e:
+            raise ErroAfp(f"Pacote comprimido (WESYS) que não consegui abrir: {e}")
+        if cheio and len(d) != cheio:
+            raise ErroAfp("Pacote comprimido (WESYS) incompleto")
+        return desembrulhar(d)
+    return raw
+
+
 def _namp(d, o):
     if not o or d[o:o + 4] != b"NAMP":
         return {}
@@ -193,6 +210,7 @@ class Pacote:
 
     @staticmethod
     def _achar_txp2(raw):
+        raw = desembrulhar(raw)
         if raw[:4] == b"TXP2":
             return raw
         # pacote do PES: contagem, e para cada arquivo (tamanho do cabeçalho, deslocamento, tamanho, nome)
@@ -246,7 +264,12 @@ class Pacote:
         r = self.regiao_por_nome.get(nome)
         if not r:
             return None
-        return self.textura(r["tex"]).crop((int(r["x0"]), int(r["y0"]), int(round(r["x1"])), int(round(r["y1"]))))
+        # alguns recortes vêm com os cantos trocados (x1 < x0, como o plate-yellow-Sub da escalação): vale o retângulo
+        x0, x1 = sorted((r["x0"], r["x1"]))
+        y0, y1 = sorted((r["y0"], r["y1"]))
+        if round(x1) <= int(x0) or round(y1) <= int(y0):
+            return None
+        return self.textura(r["tex"]).crop((int(x0), int(y0), int(round(x1)), int(round(y1))))
 
     def filme(self, nome):
         for f in self.filmes:
@@ -697,7 +720,8 @@ def caixa(bib, p):
         if not pk:
             return None
         r = pk.regiao_por_nome[k]
-        cantos = [(0, 0), (r["x1"] - r["x0"], 0), (0, r["y1"] - r["y0"]), (r["x1"] - r["x0"], r["y1"] - r["y0"])]
+        w, h = abs(r["x1"] - r["x0"]), abs(r["y1"] - r["y0"])
+        cantos = [(0, 0), (w, 0), (0, h), (w, h)]
     elif p["tipo"] == "forma":
         fo = bib.forma(p["ref"])
         if not fo or not fo.pontos:
@@ -793,4 +817,5 @@ if __name__ == "__main__":
         os.makedirs(sys.argv[2], exist_ok=True)
         for r in pk.regioes:
             im = pk.recorte(r["nome"])
-            im.save(os.path.join(sys.argv[2], r["nome"] + ".png"))
+            if im is not None:
+                im.save(os.path.join(sys.argv[2], r["nome"] + ".png"))

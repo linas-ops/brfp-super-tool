@@ -5,13 +5,17 @@
 Converte o placar da partida de um pacote de placares do **PES 2021** para o **EA SPORTS FC**. O desenho do placar do PES
 vai para um placar do FC usado como **molde**, e os textos que o jogo escreve (nomes dos times, placar, relógio,
 acréscimos), as faixas das cores dos times e os cartões vão para os lugares do PES. O resultado é gravado como um
-**projeto do Editor de Placares**: abre lá, em **Editados**, para ajustar e ver a animação.
+**projeto do Editor de Placares**: abre lá, em **Editados**, para ajustar e ver a animação. A **tela de substituição**
+do pacote vai junto, para a substituição do mesmo conjunto de overlays (ver *A substituição*, mais abaixo), e também
+as telas de **pênaltis** e de **gol** (ver *As outras telas*).
 
 ## Como usar
 
 1. **Abra o placar do PES** (Arquivo › Abrir pasta…): a pasta do placar, com `common\menu\licence\game2dPes.bin`, ou a
    pasta de um pacote com vários placares (como o *J-League Scoreboard Package*, com J1, J2, J3…). Cada placar aparece na
-   lista da esquerda. A primeira leitura de cada um leva alguns segundos (as texturas do PES são descomprimidas e ficam
+   lista da esquerda. Placares feitos para uma licença do jogo têm o nome dela no lugar de `Pes` (`game2dEngland.bin`,
+   `game2dEnglandEnter.bin`, `licenceTextureEngland.bin`…) e também são achados; se a mesma pasta tiver mais de uma
+   licença, cada uma aparece separada na lista. A primeira leitura de cada um leva alguns segundos (as texturas do PES são descomprimidas e ficam
    guardadas em `cache\`).
 2. **Confira a prévia.** *No PES* é o placar como o PES desenha, com as caixas onde o jogo escreve os textos marcadas em
    amarelo. *No FC* é o fundo do PES no molde, com textos de exemplo, e a tela inteira de 1920×1080.
@@ -19,9 +23,42 @@ acréscimos), as faixas das cores dos times e os cartões vão para os lugares d
 4. **Escolha onde gravar**: no lugar do próprio molde (a competição que usa aquele placar passa a mostrar o do PES), no
    placar *Generic* (`Generic/overlay_9002.big`) ou outro caminho `data/ui/…/….big`.
 5. **Converter e gravar** (Ctrl+Enter). O arquivo vai para a **pasta de saída do Editor de Placares** (por padrão a
-   `mods\legacy` do Live Editor). Abra o Editor de Placares: o placar está em *Editados*.
+   `mods\legacy` do Live Editor). Abra o Editor de Placares: o placar está em *Editados*. Com *Converter também a
+   substituição* ligado (o padrão, quando o pacote tem essa tela), a substituição é gravada junto: o destino dela aparece
+   embaixo das opções de *Gravar*.
 
 ## O molde
+
+Há dois tipos de molde, e a lista mostra os dois.
+
+### Generic (do jogo)
+
+O placar padrão do próprio FC (`data/ui/game/overlays/Generic/overlay_9002.big`), o primeiro da lista: não depende de
+nenhum mod. É bem diferente do modelo do LTA: o desenho são caixas de cor sem imagem, os textos são componentes
+MultiText que o código cria e formata, e o código põe quase tudo no lugar durante a entrada (constantes como
+`ANIMATE_IN_TEAM_NAME_HOME_Y`, `INIT_SCORE_NORMAL_X_POS`, `TIMER_X_POS`, `ANIM_IN_CARD_Y_POS`). A conversão:
+
+- desenha o placar do PES na imagem do logo do FC (`mcLogoHolder.mcLogoFc`), põe esse clipe atrás dos textos (muda a
+  profundidade dele) e estica a máscara do logo para cobrir o placar inteiro — ele entra subindo, como o logo;
+- esconde as caixas, o título, os escudos, o logo da liga e os ícones do Generic (os que o código volta a mostrar vão
+  também para fora da tela ou da máscara deles);
+- desliga, só no logo do FC e nos textos, a pintura com cor chapada que o código faz ao abrir
+  (`ColorUtil.ChangeColorFlat` com as cores da competição): sem isso a arte vira uma silhueta preta ou branca e os
+  textos ficam com a cor do tema. O nome do método é trocado naquelas chamadas por um que não existe, e elas não fazem
+  nada; as outras (faixas das cores dos times, por exemplo) continuam;
+- leva nomes, gols e os dígitos do relógio para as caixas do PES: a largura de cada MultiText é 240 × a escala dele e
+  o `_y` é o meio da linha; altura, tamanho da letra e fonte vão pelas constantes do código; os nomes ficam
+  centralizados (`H_ALIGN_CENTER`); a cor (clara ou escura, pelo fundo da caixa do PES) vai pela cor de cada clipe de
+  texto, porque a do TextFormat é uma cor do StyleManager e no jogo nem todas as cores do tema existem nele
+  (`COLOR_PURE_WHITE` deixava os nomes pretos);
+- põe as faixas das cores dos times nas placas de cor do PES, os cartões numa faixa logo acima (casa) e logo abaixo
+  (fora) do placar, e o placar agregado à direita, da mesma altura.
+
+Limites do Generic: a placa dos acréscimos do PES não aparece (só o "+3", no lugar dela, ou logo abaixo do relógio
+quando no PES a placa cobre o relógio); com os nomes longos (15 letras) o código alarga o placar e desalinha, então use
+os nomes abreviados; no modo Ultimate Team Pro o código troca o logo do FC por outro e o desenho some.
+
+### Modelo do LTA
 
 O molde é um placar do FC (`…002.big`) com o fundo numa imagem grande e os textos como campos soltos:
 `txtTeamNameHome`/`Away`, `txtTeamScoreHome`/`Away`, `mcClock` (com `txtTenMin`, `txtMin`, `txtColon`, `txtTenSec`,
@@ -33,7 +70,7 @@ do Editor de Placares: **adicione o pack do LTA como fonte no Editor de Placares
 Os moldes com fundo de 1920×1080 (35002, 31002, 32002, 37002…) aceitam o placar em qualquer lugar da tela; nos de fundo
 menor (524×128, 1024×1024) o que ficar fora da imagem não aparece.
 
-## O que a conversão faz
+## O que a conversão faz (modelo do LTA)
 
 - **Fundo**: o desenho do PES (placas fixas, sem os textos) é desenhado na imagem de fundo do molde, na posição da tela
   escolhida. As outras imagens e decorações do molde (vidro, brilhos, faixas) ficam transparentes.
@@ -55,10 +92,73 @@ menor (524×128, 1024×1024) o que ficar fora da imagem não aparece.
   essa fonte, com cada dígito na caixa do dígito do PES. Os nomes continuam com a fonte do molde. O botão *Salvar o
   .ttf…* guarda a fonte onde você quiser.
 
+## A substituição
+
+A tela de substituição do PES (`game2d_memberChange`: a placa com as setas, a caixa do escudo e as caixas de quem entra e
+de quem sai, já em coordenadas da tela de 1920×1080) vai para a substituição do **mesmo conjunto do placar**: o destino
+do placar com `…002.big` trocado por `…021.big` (no Generic, `Generic/overlay_9021.big`; no `overlay_35002.big`, o
+`overlay_35021.big`). O molde é sempre a substituição do Generic do jogo (`Generic/overlay_9021.big`). A conversão:
+
+- desenha a placa do PES (com as setas) na imagem do painel (`mcMoreSubsLT.mcMiddleVector`) e estica a máscara dela
+  (`mcVectorsMask`) para a placa: na entrada a placa aparece de cima para baixo, como o painel do FC;
+- esconde os fundos chapados, o fio, a textura do Ultimate Team e as setas do FC, e desliga a pintura chapada do código
+  na arte e nesses fundos (como no placar Generic);
+- põe o escudo do time na caixa do escudo do PES (`CREST_SIZE` e o lugar do `mcTeamCrest`, com a máscara do escudo);
+- leva quem entra e quem sai (número e nome, em MultiText) para as caixas do PES, pelas constantes
+  `INIT_TEXTS_IN_POS`/`INIT_TEXTS_OUT_POS` (e as de duas trocas, iguais), com a cor que contrasta com cada caixa (clara
+  ou escura, pela cor do clipe de cada grupo) e o tamanho da letra pela altura da caixa;
+- faz o painel aparecer **também com uma troca só**: no FC, com uma troca o código esconde o painel e mostra duas
+  tarjas do componente `LowerThird`, que outras telas também usam. O `nSubsCount > 1` do `SetData` vira `> 0` (troca de
+  um byte do código, conferida pelo Editor de Placares), e as chamadas que rolam as linhas quando a quantidade não é 2
+  nem 3 deixam de fazer efeito (o nome do método, `Animate`, vira um que não existe).
+
+Gravada **fora do Generic** (no `overlay_35021.big`, por exemplo), a classe do código ganha nome próprio
+(`game.overlays.Generic.overlay_35021_PES`): o jogo define cada classe uma vez só, e a cópia modificada do Generic
+brigaria com a original, que as outras competições usam. Mudam o nome curto da classe no código, o nome completo do
+`registerClass` e o nome exportado do clipe da classe; o nome que o construtor passa para a classe base fica igual. O
+mesmo vale para o placar no molde Generic gravado fora do `Generic/overlay_9002.big`.
+
+Limites da substituição: com 2 ou 3 trocas ao mesmo tempo aparecem só a primeira que entra e a primeira que sai (a placa
+do PES tem lugar para uma; as outras linhas ficam fora da máscara); quando o PES escreve o título na placa (o J1, por
+exemplo), a faixa do título fica vazia, porque o FC não escreve título nessa tela; e, com o pack do LTA instalado no jogo,
+os overlays dele que reaproveitam a classe do Generic (`overlay_5021`, `overlay_8021`, `overlay_8002`…) podem se misturar
+com o Generic convertido — nesse caso, grave no arquivo da competição em vez do Generic.
+
+## As outras telas
+
+Cada uma tem um interruptor na seção *Outras telas* (todas ligadas no começo) e uma prévia lado a lado (como o PES
+desenha e como deve ficar no FC). Vão para a tela do **mesmo conjunto do placar**: o destino com `…002.big` trocado pelo
+número da tela (`…003.big` para os pênaltis, `…075.big` para o gol; no Generic, `Generic/overlay_9003.big` e
+`Generic/overlay_9075.big`). O molde é sempre a tela do Generic do jogo; fora do Generic, a classe do código ganha nome
+próprio, como na substituição.
+
+As coordenadas dos filmes do PES são as da tela (1920×1080): as telas largas (pênaltis) ficam centralizadas, na altura
+do placar; as pequenas desenhadas dentro da tela (a tarja de gol, embaixo à esquerda) ficam onde o PES põe; uma pequena
+com o desenho fora da tela fica logo abaixo do placar. No Editor de Placares dá para mover tudo junto (`mcClassOverlay`).
+
+- **Pênaltis** (`game2d_pkScore` → `overlay_9003`): a arte do PES vai na imagem do logo do FC, atrás de tudo; nomes, gols
+  e escudos vão para as caixas do PES (o FC põe os dois times no mesmo x, um embaixo do outro: nas contas do time de
+  fora o código passa a ler constantes livres, e o desvio do Ultimate Team Pro fica desligado); as bolinhas das
+  cobranças (verde, vermelha, neutra, pintadas pelo código) vão para as lâmpadas do PES, e a 6ª, das cobranças
+  alternadas, fica logo depois da 5ª se ali houver desenho do PES. A entrada é a do FC (cada time entra pelo seu lado);
+  na saída a tela some de uma vez.
+- **Gol** (`game2d_goal` → `overlay_9075`): no FC essa é a tela dos **replays** de gol e de expulsão (com um placar
+  pequeno, que some). A arte do PES vai na imagem do ícone da bola, atrás dos textos; o sobrenome do jogador vai na
+  caixa do nome do PES; o lance (GOL, CARTÃO VERMELHO…) e o minuto vão nas caixas do texto e do número do PES, quando o
+  pacote as mostra (quando o pacote escreve o lance no próprio desenho, como o "GOL(S)" da GETV, os dois ficam
+  escondidos). O escudo do time do lance não aparece (essa tela do FC não sabe de que time é o lance). A tela fica
+  parada: aparece e some de uma vez. Pacotes que tiram a tela de gol de cena (levando tudo para longe, como o Globo)
+  ficam sem ela.
+
+Não dá para levar: **cartões**, **estatísticas** e a **tarja do jogador** — no FC elas são desenhadas por componentes
+(`Dropdown`, `LowerThird`) de outro arquivo, que muitas telas usam juntas. **Intervalo/fim**, **narradores** e
+**escalação** ainda não: essas telas do FC não têm uma imagem onde caiba a arte do PES.
+
 ## Limites
 
-- Só o **placar da partida** (`game2d_score`) é convertido. O pacote do PES também tem escalação, substituição, gol,
-  estatísticas e pênaltis (outros filmes do `game2dPes.bin`, `game2dPesEnter.bin`, `game2dPesPk.bin`).
+- São convertidos o **placar da partida** (`game2d_score`), a **substituição** (`game2d_memberChange`), os **pênaltis**
+  (`game2d_pkScore`) e o **gol** (`game2d_goal`). O pacote do PES também tem escalação, intervalo, estatísticas e outras
+  telas (outros filmes do `game2dPes.bin`, `game2dPesEnter.bin`, `game2dPesPk.bin`).
 - Os nomes são escritos pelo FC com a fonte do molde: a fonte dos nomes do PES é do próprio jogo e não vem no pacote.
   Para trocar, use a aba Fontes do Editor de Placares com um .ttf parecido.
 - O logo/escudo da competição do PES (que o jogo põe por licença) não entra.
@@ -73,6 +173,10 @@ menor (524×128, 1024×1024) o que ficar fora da imagem não aparece.
   (`game2dPes-score-plateMain`… em coordenadas dobradas), formas vetoriais **GE2D** e as animações **AFP** (o "Flash"
   da Konami, com sprites, objetos colocados com matriz e cor, quadros e rótulos). O AFP vem com uma tabela de inversão
   de bytes (BSI) que o deixa em little-endian.
+- Alguns pacotes vêm com o `.bin` comprimido: um cabeçalho de 16 bytes com `WESYS` (tamanho comprimido e tamanho cheio)
+  e um fluxo zlib. O conversor abre esses também.
+- Alguns placares trazem peças soltas longe do placar (o logo da TV num canto, faixas na tela inteira). O conversor
+  pega só o grupo de peças em volta dos nomes, gols e relógio; o resto fica de fora.
 - O placar é o filme `game2d_score` (480×129): `window › mainGroup` com as placas, `time_texts` (relógio),
   `losstime` (acréscimos), `teamColor`, `cardNum` e as caixas vazias com nome onde o jogo escreve.
 - O formato AFP/TXP2 foi descrito pelo projeto **bemaniutils** (DragonMinded, domínio público); `motor\afp.py` faz só a
@@ -84,7 +188,8 @@ menor (524×128, 1024×1024) o que ficar fora da imagem não aparece.
 placares_pes\
   servidor.py        servidor local (127.0.0.1:8781) e rotas
   motor\afp.py       leitor do TXP2/AFP do PES: texturas, recortes, formas, filmes e a montagem da cena
-  motor\pes.py       o placar do PES entendido: papel de cada peça (fundo, cores, acréscimos, caixas de texto)
+  motor\pes.py       o placar, a substituição e as outras telas do PES entendidos: papel de cada peça (fundo, cores,
+                     caixas de texto)
   motor\fc.py        a conversão para o molde do FC (operações do Editor de Placares)
   motor\fonte_ttf.py fonte TrueType a partir das imagens dos números (contorno com OpenCV, tabelas escritas à mão)
   web\               interface

@@ -44,9 +44,11 @@
         <div class="soltar-caixa">
           <div class="ic-grande" id="soltar-ic"></div>
           <h2>Abra um placar do PES 2021</h2>
-          <p>A pasta do placar (com <span class="mono">common\menu\licence\game2dPes.bin</span>) ou a de um pacote com
+          <p>A pasta do placar (com <span class="mono">common\menu\licence\game2dPes.bin</span>, ou
+            <span class="mono">game2dEngland.bin</span> e outras licenças) ou a de um pacote com
             vários placares, como o J-League Scoreboard Package. O desenho do placar do PES vai para um placar do FC usado
-            como molde, com os nomes, o placar e o relógio do FC nos lugares do PES.</p>
+            como molde, com os nomes, o placar e o relógio do FC nos lugares do PES; a substituição e as outras telas
+            do pacote (como a dos pênaltis) vão junto.</p>
           <div class="acoes"><button class="btn-primario" id="btn-vazio-pasta"></button></div>
           <small>O resultado é um projeto do Editor de Placares: grava na pasta de saída dele e abre lá para ajustar.</small>
         </div>
@@ -61,8 +63,19 @@
           <div class="previa-img"><img id="img-fc" alt="Placar no FC"></div>
           <div class="previa-tela"><img id="img-tela" alt="Tela do FC (1920×1080)"><span>tela inteira (1920×1080)</span></div>
         </section>
+        <section class="previa-bloco" id="bloco-subst" hidden>
+          <header><h3>Substituição</h3><span class="dica">à esquerda como o PES desenha (em amarelo, as caixas dos nomes; em azul, a do escudo); à direita como deve ficar no FC, com nomes de exemplo</span></header>
+          <div class="previa-par">
+            <div class="previa-img xadrez"><img id="img-subst-pes" alt="Substituição no PES"></div>
+            <div class="previa-img"><img id="img-subst-fc" alt="Substituição no FC"></div>
+          </div>
+        </section>
+        <section class="previa-bloco" id="bloco-extras" hidden>
+          <header><h3>Outras telas</h3><span class="dica">à esquerda como o PES desenha (em amarelo, as caixas dos textos; em azul, as dos escudos; em rosa, o que o FC desenha com as peças dele); à direita como deve ficar no FC, com textos de exemplo</span></header>
+          <div id="extras"></div>
+        </section>
         <section class="previa-bloco">
-          <header><h3>Telas do pacote</h3><span class="dica">tudo o que o pacote do PES traz; por enquanto só o placar é convertido</span>
+          <header><h3>Telas do pacote</h3><span class="dica">tudo o que o pacote do PES traz; as convertidas ficam marcadas</span>
             <button id="btn-exportar" class="btn peq" title="Grava cada tela, cada recorte das texturas e a fonte dos números em PNG/TTF"></button></header>
           <div id="telas" class="telas"></div>
         </section>

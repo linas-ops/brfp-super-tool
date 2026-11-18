@@ -3,8 +3,10 @@
     python servidor.py [--porta 8781] [--sem-janela] [pasta do placar do PES]
 
 Lê um placar do PES 2021 (os .bin de common/menu/licence: game2dPes.bin e companhia) e monta um placar do FC num molde
-do Editor de Placares (um placar do FC com o fundo numa imagem grande e os textos soltos, como os do pack do LTA). O
-resultado é gravado como um projeto do Editor de Placares, na pasta de saída dele: abre lá e continua editando.
+do Editor de Placares (o Generic do jogo, ou um placar com o fundo numa imagem grande e os textos soltos, como os do
+pack do LTA). A tela da substituição do pacote vai junto, na substituição do mesmo conjunto (o Generic/overlay_9021 do
+jogo é o molde). O resultado é gravado como projetos do Editor de Placares, na pasta de saída dele: abre lá e continua
+editando.
 
 O leitor do PES (motor/afp.py e motor/pes.py) usa numpy e Pillow; a parte do FC usa os módulos do próprio Editor de
 Placares (ferramentas/placares/nucleo), em Python padrão.
@@ -32,15 +34,20 @@ sys.path.insert(0, EDITOR)
 
 import base  # noqa: E402
 
-VERSAO = "1.0"
+VERSAO = "1.3.0"
 GRUPO = "placares_pes"                 # numpy e Pillow
 PREFS = base.Prefs(os.path.join(AQUI, "preferencias.json"), {
-    "pasta": "", "molde": None, "x": 64, "y": 48, "escala": 1.0, "alvo": "molde", "alvo_outro": "", "fonte_pes": True})
+    "pasta": "", "molde": None, "x": 64, "y": 48, "escala": 1.0, "alvo": "molde", "alvo_outro": "", "fonte_pes": True,
+    "subst": True, "telas": {}})
 LOCK = threading.RLock()
 MOTOR_OK = {"ok": False, "msg": "verificando…"}
 PLACARES = {}                          # pasta -> PlacarPes
 MOLDES = {"lista": None, "quando": 0, "erro": None}
 GENERIC = "data/ui/game/overlays/Generic/overlay_9002.big"
+GENERIC_SUBST = "data/ui/game/overlays/Generic/overlay_9021.big"     # a substituição do Generic: molde da do PES
+GENERIC_TELA = "data/ui/game/overlays/Generic/overlay_%s.big"        # as outras telas do Generic (fc.TELAS_FC)
+SUBST = {}                             # id da fonte do jogo -> (MoldeSubst, simulação)
+MOLDES_TELA = {}                       # (id da fonte do jogo, arquivo) -> (molde da tela, simulação)
 
 
 def verificar_motor():
@@ -94,11 +101,15 @@ def listar_moldes(forcar=False):
         ED = editor()
         if forcar:
             ED.montar_fontes()
+            SUBST.clear()
+            MOLDES_TELA.clear()
         from nucleo import fontes
         achados = []
         for k in ED._ordem_fontes():
             f = ED.E.fontes[k]
             try:
+                if f.tipo == "jogo" and getattr(f, "j", None) is not None:
+                    f.j.esperar()          # o índice do jogo carrega em segundo plano; sem esperar, a lista vem vazia
                 grupos = fontes.conjuntos(f)
             except Exception:  # noqa: BLE001
                 continue
@@ -108,14 +119,17 @@ def listar_moldes(forcar=False):
                     if not re.search(r"002\.big$", arq, re.I):
                         continue
                     try:
-                        m = fc.Molde(ED._abrir_overlay(f, arq))
+                        m = fc.abrir(ED._abrir_overlay(f, arq))
                     except Exception:  # noqa: BLE001  (não é molde, ou não abriu)
                         continue
                     nome = o.get("nome") or g.get("nome") or ""
                     achados.append({"fonte": f.id, "fonte_nome": ED._nome_fonte(f), "arquivo": arq,
-                                    "nome": nome, "conjunto": g.get("nome") or "", "fundo": m.descricao()["fundo"]})
-        # o Brasileirão do LTA (o mais testado) primeiro, depois os de fundo em tela cheia
-        achados.sort(key=lambda m: (not m["arquivo"].lower().endswith("overlay_35002.big"),
+                                    "nome": nome, "conjunto": g.get("nome") or "", "fundo": m.descricao()["fundo"],
+                                    "tipo": getattr(m, "tipo", "lta")})
+        # o Generic do jogo primeiro (não depende de mod), depois o Brasileirão do LTA (o mais testado do modelo do
+        # LTA) e os de fundo em tela cheia
+        achados.sort(key=lambda m: (m["tipo"] != "generic", m["fonte"] != "jogo",
+                                    not m["arquivo"].lower().endswith("overlay_35002.big"),
                                     m["fundo"]["w"] * m["fundo"]["h"] < 1920 * 1080, m["arquivo"]))
         MOLDES.update(lista=achados, quando=time.time())
         return achados
@@ -128,12 +142,73 @@ def abrir_molde(d):
     if not m:
         lst = listar_moldes()
         if not lst:
-            raise base.ErroUsuario("Não achei nenhum placar do FC que sirva de molde. Adicione o pack do LTA como fonte no "
-                                   "Editor de Placares (Arquivo › Fontes).")
+            raise base.ErroUsuario("Não achei nenhum placar do FC que sirva de molde. Confira a pasta do jogo no Editor "
+                                   "de Placares (o Generic vem do jogo) ou adicione o pack do LTA como fonte "
+                                   "(Arquivo › Fontes).")
         m = lst[0]
     f = ED.fonte(m["fonte"])
+    if f.tipo == "jogo" and getattr(f, "j", None) is not None:
+        f.j.esperar()
     ov = ED._abrir_overlay(f, m["arquivo"])
-    return f, m, ov, fc.Molde(ov)
+    return f, m, ov, fc.abrir(ov)
+
+
+def alvo_tela(alvo, numero):
+    """A tela do mesmo conjunto de overlays do placar: …N002.big -> …N021.big para a substituição (overlay_9021 no
+    Generic), …N003.big para os pênaltis (overlay_9003)… None se o destino do placar não for um …002.big."""
+    m = re.match(r"^(.*overlay_\d+)002\.big$", alvo or "", re.I)
+    return m.group(1) + "%03d.big" % (int(numero) % 1000) if m else None
+
+
+def alvo_subst(alvo):
+    """A substituição do mesmo conjunto de overlays do placar (…N002.big -> …N021.big), ou None."""
+    return alvo_tela(alvo, 9021)
+
+
+def nome_classe(alvo):
+    """Nome próprio para a classe de um overlay do Generic gravado em outro arquivo (ex.: overlay_35021_PES)."""
+    return re.sub(r"\W+", "_", os.path.splitext(os.path.basename(alvo))[0]).strip("_") + "_PES"
+
+
+def fonte_jogo(ED):
+    f = ED.E.fontes.get("jogo")
+    if f is None:
+        raise base.ErroUsuario("A substituição usa a do Generic do jogo como molde: confira a pasta do jogo no Editor "
+                               "de Placares.")
+    if getattr(f, "j", None) is not None:
+        f.j.esperar()
+    return f
+
+
+def molde_subst(ED, fc):
+    """(fonte do jogo, MoldeSubst do Generic/overlay_9021, simulação dele); a simulação fica guardada."""
+    f = fonte_jogo(ED)
+    with LOCK:
+        if f.id not in SUBST:
+            ov = ED._abrir_overlay(f, GENERIC_SUBST)
+            SUBST[f.id] = (fc.MoldeSubst(ov), fc.simular(ov, ED.bibliotecas_anim(), ED.valores_tema()))
+        molde, sim = SUBST[f.id]
+    return f, molde, sim
+
+
+def molde_tela(ED, fc, chave):
+    """(fonte do jogo, arquivo, molde, simulação) de uma das outras telas (fc.TELAS_FC), com a tela do Generic do jogo
+    como molde; o molde e a simulação ficam guardados."""
+    reg = fc.TELAS_FC[chave]
+    f = fonte_jogo(ED)
+    arq = GENERIC_TELA % reg["overlay"]
+    with LOCK:
+        k = (f.id, arq)
+        if k not in MOLDES_TELA:
+            ov = ED._abrir_overlay(f, arq)
+            MOLDES_TELA[k] = (reg["molde"](ov), fc.simular(ov, ED.bibliotecas_anim(), ED.valores_tema()))
+        molde, sim = MOLDES_TELA[k]
+    return f, arq, molde, sim
+
+
+def telas_extras(pl, fc):
+    """[(chave, TelaFilme)] das outras telas do pacote que o conversor sabe levar para o FC."""
+    return [(k, tl) for k, tl in ((k, pl.tela(k)) for k in fc.TELAS_FC) if tl]
 
 
 def placar(pasta):
@@ -176,20 +251,38 @@ def api_pacote(d):
         raise base.ErroUsuario("Pasta não encontrada.")
     achados = pes.achar_placares(pasta) if os.path.isdir(pasta) else [pasta]
     if not achados:
-        raise base.ErroUsuario("Não achei placar do PES nessa pasta (procurei common\\menu\\licence\\game2dPes.bin, "
-                               "também nas subpastas).")
+        raise base.ErroUsuario("Não achei placar do PES nessa pasta (procurei common\\menu\\licence\\game2dPes.bin "
+                               "ou game2d<Licença>.bin, como game2dEngland.bin, também nas subpastas).")
     PREFS.atualizar(pasta=pasta)
-    return {"pasta": pasta, "placares": [{"pasta": p, "nome": os.path.basename(os.path.normpath(p))} for p in achados]}
+    return {"pasta": pasta, "placares": [{"pasta": p, "nome": pes.nome_placar(p)} for p in achados]}
 
 
 def api_placar(d):
+    _afp, _pes, fc = motor()
     pl = placar(d["pasta"])
     img = pl.previa(margem=10)
     campos = {c: [round(v, 1) for v in pl.caixa_campo(c)] for c in
               ("nome_casa", "nome_fora", "gols_casa", "gols_fora", "relogio", "acrescimos") if pl.caixa_campo(c)}
+    sp = pl.substituicao()
+    sub = None
+    if sp:
+        im = sp.previa(margem=10)
+        sub = {"previa": png_dados(im) if im else None, "w": im.width if im else 0, "h": im.height if im else 0,
+               "escudo": bool(sp.caixa_escudo()), "titulo": bool(sp.campo_na_placa("titulo"))}
+    extras = []
+    for chave, tl in telas_extras(pl, fc):
+        try:
+            im = tl.previa(margem=10)
+        except Exception:  # noqa: BLE001  (sem prévia, a tela continua na lista)
+            traceback.print_exc()
+            im = None
+        extras.append({"chave": chave, "titulo": tl.defin["titulo"], "filme": tl.defin["filme"],
+                       "numero": fc.TELAS_FC[chave]["overlay"], "previa": png_dados(im) if im else None,
+                       "w": im.width if im else 0, "h": im.height if im else 0})
     return {"pasta": pl.pasta, "nome": pl.nome, "arquivos": [os.path.basename(b) for b in pl.bins],
             "filmes": [n for _, n in pl.bib.filmes()], "campos": campos,
-            "previa": png_dados(img) if img else None, "w": img.width if img else 0, "h": img.height if img else 0}
+            "previa": png_dados(img) if img else None, "w": img.width if img else 0, "h": img.height if img else 0,
+            "subst": sub, "telas_extras": extras}
 
 
 def api_moldes(d):
@@ -230,8 +323,17 @@ def api_previa(d):
     ttf = num[0] if num else None
     img = fc.previa(pl, molde, S, recorte=False, ttf_numeros=ttf)
     tela = img.resize((960, 540))
+    sp = pl.substituicao()
+    extras = {}
+    for chave, tl in telas_extras(pl, fc):
+        try:
+            extras[chave] = png_dados(fc.previa_tela(tl, fc.matriz_tela(tl, S), fc.TELAS_FC[chave]["exemplos"],
+                                                     ttf_numeros=ttf))
+        except Exception:  # noqa: BLE001
+            traceback.print_exc()
     return {"tela": png_dados(tela), "recorte": png_dados(fc.previa(pl, molde, S, ttf_numeros=ttf)), "molde": m,
-            "pos": pos, "fundo": molde.descricao()["fundo"]}
+            "pos": pos, "fundo": molde.descricao()["fundo"], "subst": png_dados(fc.previa_subst(sp)) if sp else None,
+            "telas_extras": extras}
 
 
 def api_telas(d):
@@ -241,12 +343,16 @@ def api_telas(d):
     pl = placar(d["pasta"])
     out = []
     for _pk, nome in pl.bib.filmes():
-        img = pes.desenhar_tela(pl.bib, nome)
+        try:
+            img = pes.desenhar_tela(pl.bib, nome)
+        except Exception:  # noqa: BLE001 - uma tela que não desenha não tira as outras da lista
+            traceback.print_exc()
+            img = None
         if img is None:
             continue
         mini = img.copy()
         mini.thumbnail((520, 300), Image.LANCZOS)
-        out.append({"nome": nome, "titulo": pes.TELAS.get(nome, nome), "w": img.width, "h": img.height,
+        out.append({"nome": nome, "titulo": pes.titulo_tela(nome), "w": img.width, "h": img.height,
                     "imagem": png_dados(mini)})
     return {"telas": out}
 
@@ -261,9 +367,13 @@ def api_exportar(d):
     os.makedirs(os.path.join(pasta, "recortes"), exist_ok=True)
     n_telas = n_rec = 0
     for _pk, nome in pl.bib.filmes():
-        img = pes.desenhar_tela(pl.bib, nome)
+        try:
+            img = pes.desenhar_tela(pl.bib, nome)
+        except Exception:  # noqa: BLE001
+            traceback.print_exc()
+            img = None
         if img is not None:
-            img.save(os.path.join(pasta, "telas", "%s - %s.png" % (nome, pes.TELAS.get(nome, nome))))
+            img.save(os.path.join(pasta, "telas", "%s - %s.png" % (nome, pes.titulo_tela(nome))))
             n_telas += 1
     for pk in pl.bib.pacotes:
         for r in pk.regioes:
@@ -320,7 +430,7 @@ def api_converter(d):
     if not re.match(r"^data/ui/.+\.big$", alvo, re.I):
         raise base.ErroUsuario("O destino precisa ser um caminho data/ui/…/….big (por exemplo "
                                "data/ui/game/overlays/overlay_35002.big).")
-    consts = fc.constantes_do_codigo(ov, ED.bibliotecas_anim(), ED.valores_tema())
+    sim = fc.simular(ov, ED.bibliotecas_anim(), ED.valores_tema())
     num = _usar_fonte(d, pl)
     numeros = None
     if num:
@@ -329,18 +439,104 @@ def api_converter(d):
         face, chave = face_numeros(pl)
         tema.definir(sai, ED.ler_efetivo, chave, face, ttf=num[0], nome_ttf=face + ".ttf")
         ED._depois_tema()
-        numeros = {"face": face, "avancos": num[1]}
-    ops, resumo = fc.converter(pl, molde, S, consts, numeros)
+        numeros = {"face": face, "chave": tema.limpar_chave(chave), "avancos": num[1]}
+    ops, resumo = fc.converter(pl, molde, S, sim["constantes"], numeros, sim["textos"])
+    if getattr(molde, "tipo", "") == "generic" and alvo.lower() != m["arquivo"].lower():
+        # o código do Generic mudou: em outro arquivo, a classe precisa de nome próprio (ver fc.ops_renomear_classe)
+        ren = fc.ops_renomear_classe(ov, nome_classe(alvo))
+        if ren:
+            ops.update(ren)
+            resumo.append("A classe do código ganhou nome próprio (%s), para não se misturar com a do Generic, que "
+                          "as outras competições usam." % nome_classe(alvo))
     novo = ED._abrir_overlay(f, m["arquivo"])
     lst = list(ops.values())
     novo.aplicar(lst, ED._imagens_das_ops(lst))
     destino = projetos.gravar_saida(sai, alvo, novo.bytes(), ED.desc_fonte(f), m["arquivo"], ops)
+    sub = None
+    if d.get("subst", True) is not False and pl.substituicao():
+        sub = converter_subst(pl, alvo, ED, sai)
+    # as outras telas do pacote (pênaltis…): todas, menos as desmarcadas
+    escolha = d.get("telas") if isinstance(d.get("telas"), dict) else (PREFS.ler().get("telas") or {})
+    extras = [converter_tela(pl, chave, tl, alvo, ED, sai, S, numeros) for chave, tl in telas_extras(pl, fc)
+              if escolha.get(chave, True) is not False]
     if "saida" in ED.E.fontes:
         ED.E.fontes["saida"].atualizar()
     PREFS.atualizar(molde=m, alvo=modo, alvo_outro=d.get("alvo_outro") or "",
-                    fonte_pes=d.get("fonte_pes", True) is not False, **pos)
+                    fonte_pes=d.get("fonte_pes", True) is not False, subst=d.get("subst", True) is not False,
+                    telas={k: v is not False for k, v in escolha.items()}, **pos)
     return {"destino": destino, "alvo": alvo, "resumo": resumo, "operacoes": len(ops), "molde": m,
+            "bytes": os.path.getsize(destino), "subst": sub, "telas": extras}
+
+
+def converter_subst(pl, alvo_placar, ED, sai):
+    """Grava a substituição do pacote na substituição do mesmo conjunto do placar, com a do Generic do jogo como
+    molde. Devolve {destino, alvo, resumo, operacoes, bytes} ou {erro} (o placar já foi gravado: um erro aqui não
+    desfaz o placar)."""
+    _afp, _pes, fc = motor()
+    from nucleo import projetos
+    alvo = alvo_subst(alvo_placar)
+    if not alvo:
+        return {"erro": "Não sei qual é a substituição do destino %s (o conversor acha a do mesmo conjunto trocando "
+                        "…002.big por …021.big). Use o destino do molde ou o Generic." % alvo_placar}
+    try:
+        f, molde, sim = molde_subst(ED, fc)
+        ops, resumo = fc.converter_subst(pl.substituicao(), molde, None, sim["constantes"], sim["formatos"])
+        if alvo.lower() != GENERIC_SUBST.lower():
+            ren = fc.ops_renomear_classe(molde.ov, nome_classe(alvo))
+            if ren:
+                ops.update(ren)
+                resumo.append("A classe do código ganhou nome próprio (%s), para não se misturar com a do Generic, "
+                              "que as outras competições usam." % nome_classe(alvo))
+        novo = ED._abrir_overlay(f, GENERIC_SUBST)
+        lst = list(ops.values())
+        novo.aplicar(lst, ED._imagens_das_ops(lst))
+        destino = projetos.gravar_saida(sai, alvo, novo.bytes(), ED.desc_fonte(f), GENERIC_SUBST, ops)
+    except base.ErroUsuario as ex:
+        return {"erro": str(ex), "alvo": alvo}
+    except Exception as ex:  # noqa: BLE001  (o placar já está gravado: a substituição só avisa)
+        traceback.print_exc()
+        return {"erro": f"Não consegui converter a substituição: {ex}", "alvo": alvo}
+    return {"destino": destino, "alvo": alvo, "resumo": resumo, "operacoes": len(ops),
             "bytes": os.path.getsize(destino)}
+
+
+def converter_tela(pl, chave, tl, alvo_placar, ED, sai, S, numeros):
+    """Grava uma das outras telas do pacote (fc.TELAS_FC: pênaltis…) na tela do mesmo conjunto do placar, com a do
+    Generic do jogo como molde. 'S' é a matriz do placar: a tela vai para o lugar que fc.matriz_tela dá a partir dela.
+    Devolve {chave, titulo, destino, alvo, resumo, operacoes, bytes} ou {chave, titulo, erro} (um erro numa tela não
+    desfaz o que já foi gravado)."""
+    _afp, _pes, fc = motor()
+    from nucleo import projetos
+    reg = fc.TELAS_FC[chave]
+    titulo = tl.defin["titulo"]
+    alvo = alvo_tela(alvo_placar, reg["overlay"])
+    if not alvo:
+        return {"chave": chave, "titulo": titulo,
+                "erro": "Não sei qual é a tela de %s do destino %s (o conversor acha a do mesmo conjunto trocando "
+                        "…002.big por …%03d.big). Use o destino do molde ou o Generic."
+                        % (titulo.lower(), alvo_placar, int(reg["overlay"]) % 1000)}
+    try:
+        f, arq, molde, sim = molde_tela(ED, fc, chave)
+        St = fc.matriz_tela(tl, S)
+        ops, resumo = reg["converter"](tl, molde, St, sim, numeros)
+        resumo.append(fc.descrever_lugar(tl))
+        if alvo.lower() != arq.lower():
+            ren = fc.ops_renomear_classe(molde.ov, nome_classe(alvo))
+            if ren:
+                ops.update(ren)
+                resumo.append("A classe do código ganhou nome próprio (%s), para não se misturar com a do Generic, "
+                              "que as outras competições usam." % nome_classe(alvo))
+        novo = ED._abrir_overlay(f, arq)
+        lst = list(ops.values())
+        novo.aplicar(lst, ED._imagens_das_ops(lst))
+        destino = projetos.gravar_saida(sai, alvo, novo.bytes(), ED.desc_fonte(f), arq, ops)
+    except base.ErroUsuario as ex:
+        return {"chave": chave, "titulo": titulo, "erro": str(ex), "alvo": alvo}
+    except Exception as ex:  # noqa: BLE001  (o placar já está gravado: a tela só avisa)
+        traceback.print_exc()
+        return {"chave": chave, "titulo": titulo, "erro": f"Não consegui converter: {ex}", "alvo": alvo}
+    return {"chave": chave, "titulo": titulo, "destino": destino, "alvo": alvo, "resumo": resumo,
+            "operacoes": len(ops), "bytes": os.path.getsize(destino)}
 
 
 def api_abrir(d):
@@ -352,7 +548,7 @@ def api_dialogo(d):
     modo = d.get("modo") or "pasta"
     inicial = d.get("inicial") or PREFS.ler().get("pasta") or None
     if modo == "arquivo":
-        p = base.dialogo("abrir", "Escolha o game2dPes.bin do placar", inicial, [("Placar do PES", "*.bin"), ("Todos", "*.*")])
+        p = base.dialogo("abrir", "Escolha o game2dPes.bin (ou game2d<Licença>.bin) do placar", inicial, [("Placar do PES", "*.bin"), ("Todos", "*.*")])
     else:
         p = base.dialogo("pasta", "Escolha a pasta do placar do PES (ou do pacote com vários)", inicial)
     return {"caminho": p}

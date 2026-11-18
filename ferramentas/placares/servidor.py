@@ -36,7 +36,7 @@ VERSAO = "2.2"
 # classes do jogo que os placares usam e que ficam em outros arquivos (carregadas para simular as animações)
 BIBLIOTECAS = (("data/ui/artAssets/tacticAnimations/Tactic10.big", ("StyleManager",)),
                ("data/ui/game/components/pitches/PitchAnalysis.big", ("AnimationManager",)))
-OPS_SIMULACAO = ("place", "texto", "const", "const_txt", "fonte_char")
+OPS_SIMULACAO = ("place", "texto", "const", "const_txt", "fonte_char", "codigo", "export")
 MIME = {".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8",
         ".json": "application/json", ".png": "image/png", ".svg": "image/svg+xml", ".ico": "image/x-icon",
         ".ttf": "font/ttf", ".otf": "font/otf", ".woff2": "font/woff2"}

@@ -35,9 +35,9 @@ const editavel = (slot) => !!slot && !doTema(slot);
 
 function limitesSlot(slot) {
   const t = String(slot).split(':')[0];
-  if (t === 'pb') return { min: 0, max: 255, inteiro: true, dica: 'Este número fica num byte do código: inteiro de 0 a 255.' };
-  if (t === 'ps') return { min: 0, max: 65535, inteiro: true, dica: 'Inteiro de 0 a 65535.' };
-  if (t === 'pl') return { min: 0, max: 4294967295, inteiro: true, dica: 'Inteiro positivo.' };
+  if (t === 'pb') return { min: -128, max: 127, inteiro: true, dica: 'Este número fica num byte do código: inteiro de -128 a 127.' };
+  if (t === 'ps') return { min: -32768, max: 32767, inteiro: true, dica: 'Inteiro de -32768 a 32767.' };
+  if (t === 'pl') return { min: -2147483648, max: 2147483647, inteiro: true, dica: 'Inteiro.' };
   return { min: -1e7, max: 1e7, inteiro: false, dica: '' };
 }
 
@@ -373,7 +373,10 @@ export function estiloTexto(no) {
   if (!t || !t.config || !t.config.formato) return null;
   const f = t.config.formato;
   const cor = typeof f.cor === 'number' ? [(f.cor >> 16) & 255, (f.cor >> 8) & 255, f.cor & 255] : null;
-  return { face: faceDaChave(chaveEfetiva(f)), alinh: alinhamentoDe(t.config), cor };
+  const p = t.config.partes || [];
+  const valign = p.includes('V_ALIGN_TOP') ? 'top' : p.includes('V_ALIGN_BOTTOM') ? 'bottom' : p.includes('V_ALIGN_MIDDLE') ? 'middle' : null;
+  return { face: faceDaChave(chaveEfetiva(f)), alinh: alinhamentoDe(t.config), cor,
+    tam: typeof f.tamanho === 'number' ? f.tamanho : null, valign };
 }
 
 function usosDoFormato(fmt) {
