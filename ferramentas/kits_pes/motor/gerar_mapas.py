@@ -9,14 +9,9 @@ Precisa dos modelos de referência em motor/referencia (tirados dos jogos, fora 
 
 Para cada pixel da textura do FC (camisa 2048×2048, calção 1024×512, meião 512×256) acha o ponto do uniforme do PES que
 veste o mesmo lugar do corpo e guarda a UV do PES ali:
-  - tronco, calção e meião: as duas malhas são alinhadas pela caixa de cada parte e cada ponto do FC vai ao ponto mais
-    próximo da superfície do PES com a normal do mesmo lado. Em volta do pescoço o tronco do PES tem o buraco da gola
-    (decote e carcela, em T): ali a UV é interpolada (harmônica) por dentro do buraco, onde o conversor continua o
-    desenho do tronco, em vez de esticar a borda;
-  - gola do FC: não vem do PES (as golas dos dois jogos não têm nada a ver); o conversor pinta com a cor do tronco;
-  - mangas: coordenadas do braço (s = 0 na cava … 1 no punho, medido em cada ângulo entre os laços da cava e do punho;
-    θ = ângulo em volta do braço, 0 no lado de fora, 90° na frente), iguais nos dois jogos mesmo com braços e mangas de
-    tamanhos diferentes. A manga longa do FC (sem malha) segue o molde da curta: mesma volta em v, punho na borda.
+  - camisa: o molde plano do tronco e os dois comprimentos de manga compartilham a correspondência das cavas.
+    As costuras vêm dos vértices 3D comuns. O centro do peito e das costas usa escala uniforme;
+  - calção e meião: projeção na superfície 3D do PES, preferindo triângulos com a mesma orientação.
 Requer numpy, SciPy e Pillow.
 """
 import argparse
@@ -36,11 +31,7 @@ FC_FBX = {"jersey": "jersey_0_0_0_0_1_0_0_mesh.fbx", "shorts": "shorts_0_0_0_mes
 TAMANHOS = {"jersey": (2048, 2048), "shorts": (1024, 512), "socks": (512, 256)}
 # partes gravadas no mapa (para a prévia e para o kit base preencher o que o PES não tem)
 FORA, TRONCO, MANGA_CURTA, MANGA_LONGA, GOLA, DO_BASE = 0, 1, 2, 3, 4, 9
-# manga longa do FC 27 (sem malha no FET): molde traçado pelas texturas dos kits do jogo (Criador de Kits)
-MOLDE_LONGA = [(0.0, 0.342), (0.335, 0.342), (0.356, 0.39), (0.364, 0.46), (0.357, 0.54), (0.338, 0.60), (0.305, 0.640),
-               (0.285, 0.665), (0.0, 0.665)]
 BRACADEIRA = (0.362, 0.950, 0.638, 1.0)       # faixa da braçadeira de capitão na camisa (u0, v0, u1, v1): fica a do kit base
-LIM_PESCOCO = 3.0      # distância (unidades do PES, ~0,6 cm) acima da qual o ponto do FC no pescoço não tem tronco do PES
 PES_PARTES = {"tronco": ["Shirt_Out_mesh_id_1.006"], "manga_curta": ["Sleeves_Short_MESH_sleeve_short_001"],
               "manga_longa": ["Sleeves_Long_mesh_id_0.007"], "gola": ["Collar_01_MESH_collar_901"],
               "calcao": ["Shorts_With_Shirt_Out_MESH_pants_out_sub", "Shorts_Base_MESH_pants_001"],
@@ -107,7 +98,7 @@ def malha_fc(peca):
 
 
 # ------------------------------------------------------------------ geometria
-def rasterizar(T, UV, w, h):
+def rasterizar(T, UV, w, h, margem=0.02):
     """Triângulo (h,w; -1 fora) e baricêntricas de cada pixel da UV (v para cima)."""
     px = np.stack([UV[:, 0] * w - 0.5, (1.0 - UV[:, 1]) * h - 0.5], 1)
     tri = np.full((h, w), -1, np.int32)
@@ -125,7 +116,7 @@ def rasterizar(T, UV, w, h):
         l1 = ((b[1] - c[1]) * (gx - c[0]) + (c[0] - b[0]) * (gy - c[1])) / den
         l2 = ((c[1] - a[1]) * (gx - c[0]) + (a[0] - c[0]) * (gy - c[1])) / den
         l3 = 1 - l1 - l2
-        m = (l1 >= -0.02) & (l2 >= -0.02) & (l3 >= -0.02)
+        m = (l1 >= -margem) & (l2 >= -margem) & (l3 >= -margem)
         if not m.any():
             continue
         yy, xx = gy[m].astype(int), gx[m].astype(int)
@@ -230,7 +221,7 @@ def mapa_superficie(fc, sel, w, h, pes, Vcaixa=None):
     return ok, uv, d
 
 
-# ------------------------------------------------------------------ mangas: coordenadas do braço
+# ------------------------------------------------------------------ bordas das malhas
 def lacos(V, T, escala):
     """Laços da borda da malha (vértices soldados pela posição), maiores primeiro."""
     from scipy.sparse import coo_matrix
@@ -251,172 +242,130 @@ def lacos(V, T, escala):
     return sorted((pos[np.array(g)] for g in grupos.values()), key=lambda p: -len(p))
 
 
-class Braco:
-    """Eixo do braço (da cava ao punho) e os limites da manga em cada ângulo."""
-
-    def __init__(self, V, T, escala, nb=360):
-        a, b = lacos(V, T, escala)[:2]
-        punho, cava = (a, b) if abs(a.mean(0)[0]) > abs(b.mean(0)[0]) else (b, a)
-        self.c = cava.mean(0)
-        e = punho.mean(0) - self.c
-        self.a = e / np.linalg.norm(e)
-        up = np.array([0, 1.0, 0]) - self.a[1] * self.a
-        self.up = up / np.linalg.norm(up)          # lado de fora do braço
-        fr = np.cross(self.a, self.up)
-        self.fr = fr if fr[2] >= 0 else -fr          # frente (+z)
-        grade = (np.arange(nb) + 0.5) / nb * 2 * np.pi - np.pi
-        self.lim = []
-        for L in (cava, punho):
-            s, th = self.param(L)
-            o = np.argsort(th)
-            self.lim.append(np.interp(grade, th[o], s[o], period=2 * np.pi))
-        self.nb = nb
-
-    def param(self, P):
-        X = P - self.c
-        s = X @ self.a
-        r = X - s[:, None] * self.a
-        return s, np.arctan2(r @ self.fr, r @ self.up)
-
-    def srel(self, P):
-        s, th = self.param(P)
-        x = (th + np.pi) / (2 * np.pi) * self.nb - 0.5
-        i0 = np.floor(x).astype(int)
-        f = x - i0
-        lo, hi = (L[i0 % self.nb] * (1 - f) + L[(i0 + 1) % self.nb] * f for L in self.lim)
-        return (s - lo) / np.maximum(hi - lo, 1e-9), th
+# ------------------------------------------------------------------ molde plano da camisa
+def uv_plana(uv, lado):
+    """Coordenadas do molde, da borda da textura para o centro e de cima para baixo."""
+    return np.column_stack((uv[:, 0] if lado < 0 else 1 - uv[:, 0], 1 - uv[:, 1]))
 
 
-NS, NT = 512, 1024
+def costura_aberta(V, T, uv, lado):
+    """Pares de UV do mesmo vértice 3D nos dois lados do corte que abre a peça."""
+    pares = {}
+    for i in np.unique(T):
+        if V[i, 0] * lado > 0:
+            pares.setdefault(tuple(V[i].round(5)), set()).add(tuple(uv[i]))
+    alturas, costas, frente = [], [], []
+    for pos, cantos in sorted(pares.items(), key=lambda item: item[0][1]):
+        a, b = min(cantos, key=lambda p: p[1]), max(cantos, key=lambda p: p[1])
+        if b[1] - a[1] > 0.1:
+            alturas.append(pos[1])
+            costas.append(a)
+            frente.append(b)
+    return np.asarray(alturas), np.asarray(costas), np.asarray(frente)
 
 
-def grade_manga_pes(pes, lado):
-    """UV do PES em cada (s, θ) da manga desse lado (grade NS × NT)."""
-    V, T, UV = pes
-    T = T[np.sign(V[T].mean(1)[:, 0]) == lado]
-    br = Braco(V, T, 1e-3)
-    sr, th = br.srel(V)
-    # desenrola θ nos triângulos que cruzam ±π e rasteriza em [-π, 3π)
-    n = len(V)
-    tt = th[T]
-    Tw = T.copy()
-    volta = (tt.max(1) - tt.min(1)) > np.pi
-    for j in range(3):
-        Tw[volta & (tt[:, j] < 0), j] += n
-    th2, sr2, UV2 = np.concatenate([th, th + 2 * np.pi]), np.concatenate([sr, sr]), np.concatenate([UV, UV])
-    G = np.stack([(th2 + np.pi) / (4 * np.pi), 1 - (sr2 + 0.1) / 1.2], 1)
-    tri, bar = rasterizar(Tw, G, 2 * NT, NS)
+def uv_na_cava(V, T, uv, laco, tolerancia):
+    ids = np.unique(T)
+    d, _ = cKDTree(laco).query(V[ids])
+    pontos = np.unique(uv[ids[d < tolerancia]], axis=0)
+    return pontos[np.argsort(pontos[:, 1])]
+
+
+def molde_manga(malha, lado, tolerancia):
+    V, T, UV = malha
+    T = T[lado * V[T, 0].mean(1) > 0]
+    uv = uv_plana(UV, lado)
+    _, cava = sorted(lacos(V, T, tolerancia)[:2], key=lambda p: -abs(p[:, 0].mean()))
+    _, costas, frente = costura_aberta(V, T, uv, lado)
+    return (uv_na_cava(V, T, uv, cava, tolerancia), costas, frente), cava
+
+
+def fracao(x, a, b):
+    return np.clip((x - a) / (b - a), 0.0, 1.0)
+
+
+def suave(t):
+    return t * t * (3 - 2 * t)
+
+
+def bordo_tronco(costura, cava):
+    _, costas, frente = costura
+    pontos = np.concatenate((costas, cava, frente))
+    return pontos[np.argsort(pontos[:, 1])]
+
+
+def x_da_borda(borda, y):
+    return np.interp(y, borda[:, 1], borda[:, 0])
+
+
+def mapa_tronco(x, y, cost_fc, cava_fc, cost_pes, cava_pes):
+    """Centro com escala uniforme. Nas laterais a UV converge para as costuras de barra, axila e manga."""
+    alt_fc, costas_fc, frente_fc = cost_fc
+    alt_pes, costas_pes, frente_pes = cost_pes
+    altura = fracao(alt_fc, alt_fc[0], alt_fc[-1])
+    altura_pes = fracao(alt_pes, alt_pes[0], alt_pes[-1])
+    # A mesma altura física nos dois lados do corte lateral, também onde o molde das costas é mais estreito.
+    y_fc = np.r_[costas_fc[:, 1], frente_fc[::-1, 1]]
+    y_pes = np.r_[np.interp(altura, altura_pes, costas_pes[:, 1]),
+                  np.interp(altura[::-1], altura_pes, frente_pes[:, 1])]
+    y_costura = np.interp(y, y_fc, y_pes)
+    ombro_fc = (cava_fc[0, 1] + cava_fc[-1, 1]) / 2
+    ombro_pes = (cava_pes[0, 1] + cava_pes[-1, 1]) / 2
+    escala = np.where(y < ombro_fc, (ombro_pes - y_pes[0]) / (ombro_fc - y_fc[0]),
+                      (y_pes[-1] - ombro_pes) / (y_fc[-1] - ombro_fc))
+    bordo_fc = bordo_tronco(cost_fc, cava_fc)
+    largura = 0.5 - x_da_borda(bordo_fc, y)
+    r = fracao(0.5 - x, 0, largura)
+    peso = suave(fracao(r, 0.48, 1))
+    yp = (1 - peso) * (ombro_pes + escala * (y - ombro_fc)) + peso * y_costura
+    # A largura da peça é medida na linha da costura. A altura no interior pode ser
+    # diferente: usar essa altura para buscar a borda dobraria a UV junto à axila.
+    largura_pes = 0.5 - x_da_borda(bordo_tronco(cost_pes, cava_pes), y_costura)
+    y_central = ombro_fc + (yp - ombro_pes) / escala
+    largura_central = escala * (0.5 - x_da_borda(bordo_fc, y_central))
+    xp = 0.5 - (r * largura_central + peso * (largura_pes - largura_central))
+    return np.column_stack((xp, yp))
+
+
+def grade_manga(molde, s, t):
+    """Faixas entre punho e cava. O recorte da axila é absorvido perto das bordas do molde."""
+    cava, superior, inferior = molde
+    superior = superior[np.argsort(superior[:, 0])]
+    inferior = inferior[np.argsort(inferior[:, 0])]
+    y = cava[0, 1] + t * (cava[-1, 1] - cava[0, 1])
+    punho = (1 - t) * superior[0, 0] + t * inferior[0, 0]
+    x = (1 - s) * punho + s * x_da_borda(cava, y)
+    # Cantos de um mesmo s nas duas bordas que se fecham debaixo do braço.
+    xs = (1 - s) * superior[0, 0] + s * cava[0, 0]
+    xi = (1 - s) * inferior[0, 0] + s * cava[-1, 0]
+    dy_sup = np.interp(xs, superior[:, 0], superior[:, 1]) - cava[0, 1]
+    dy_inf = np.interp(xi, inferior[:, 0], inferior[:, 1]) - cava[-1, 1]
+    y = y + dy_sup * suave(fracao(0.4 - t, 0, 0.4)) + dy_inf * suave(fracao(t - 0.6, 0, 0.4))
+    return np.stack((x, y), -1)
+
+
+def transferir_manga(molde_fc, molde_pes, lado, w, h):
+    # Inclui cada vértice da cava para coincidir com o tronco até na ponta da axila.
+    ts = [np.linspace(0, 1, 65)]
+    for cava, _, _ in (molde_fc, molde_pes):
+        ts.append(fracao(cava[:, 1], cava[0, 1], cava[-1, 1]))
+    t = np.unique(np.round(np.concatenate(ts), 9))
+    s, t = np.meshgrid(np.linspace(0, 1, 33), t)
+    dst = uv_plana(grade_manga(molde_fc, s, t).reshape(-1, 2), lado)
+    src = uv_plana(grade_manga(molde_pes, s, t).reshape(-1, 2), lado)
+    idx = np.arange(s.size).reshape(s.shape)
+    a, b, c, d = idx[:-1, :-1], idx[:-1, 1:], idx[1:, :-1], idx[1:, 1:]
+    T = np.concatenate((np.stack((a, b, c), -1), np.stack((c, b, d), -1))).reshape(-1, 3)
+    tri, bar = rasterizar(T, dst, w, h, margem=1e-7)
     ok = tri >= 0
-    g = np.zeros((NS, 2 * NT, 2))
-    t, b = Tw[tri[ok]], bar[ok]
-    g[ok] = b[:, :1] * UV2[t[:, 0]] + b[:, 1:2] * UV2[t[:, 1]] + b[:, 2:] * UV2[t[:, 2]]
-    oka = ok[:, :NT]
-    g = np.where(oka[..., None], g[:, :NT], g[:, NT:])
-    return sangrar(g, oka | ok[:, NT:])
-
-
-def manga_longa_pes(pes, lado, sr, th, n=2048):
-    """UV do PES na manga longa desse lado para os pontos (s, θ) da manga longa do FC.
-    A manga longa do PES é medida na própria UV: em cada linha (v) da ilha, a cava de um lado e o punho do outro, e as
-    linhas são as voltas em torno do braço (as listras ao longo da manga ficam retas, como nos kits do FC). O ângulo de
-    cada linha é o da malha perto da cava, onde a manga longa veste o mesmo lugar que a curta."""
-    V, T, UV = pes
-    T = T[np.sign(V[T].mean(1)[:, 0]) == lado]
-    br = Braco(V, T, 1e-3)
-    idx = np.unique(T)
-    s_v, th_v = br.srel(V[idx])
-    uv = UV[idx]
-    tri, _ = rasterizar(T, UV, n, n)
-    ilha = tri >= 0
-    linhas = np.nonzero(ilha.any(1))[0]
-    xs = [np.nonzero(ilha[y])[0] for y in linhas]
-    umin = np.array([x.min() for x in xs]) / n
-    umax = np.array([x.max() + 1 for x in xs]) / n
-    vl = 1 - (linhas + 0.5) / n                          # v (para cima) de cada linha
-    punho_no_max = np.corrcoef(uv[:, 0], s_v)[0, 1] > 0
-    # ângulo de cada linha, perto da cava
-    perto = s_v < 0.3
-    nb = 48
-    bordas = np.linspace(vl.min(), vl.max(), nb + 1)
-    c, a = [], []
-    for k in range(nb):
-        m = perto & (uv[:, 1] >= bordas[k]) & (uv[:, 1] <= bordas[k + 1])
-        if m.sum() >= 2:
-            c.append((bordas[k] + bordas[k + 1]) / 2)
-            a.append(np.angle(np.exp(1j * th_v[m]).mean()))
-    c, a = np.array(c), np.unwrap(np.array(a))
-    if a[-1] < a[0]:
-        c, a = c[::-1], a[::-1]
-    # θ do FC -> v do PES (θ deslocado de 2π para cair na faixa medida; fora dela, a costura)
-    lo, hi = a[0], a[-1]
-    t = lo + np.mod(th - lo, 2 * np.pi)
-    fora = t > hi
-    t[fora] = np.where(t[fora] - hi < lo + 2 * np.pi - t[fora], hi, lo)
-    v = np.interp(t, a, c)
-    o = np.argsort(vl)
-    u0, u1 = np.interp(v, vl[o], umin[o]), np.interp(v, vl[o], umax[o])
-    cava, punho = (u0, u1) if punho_no_max else (u1, u0)
-    pad = 1.5 / n                                        # meio pixel para dentro da ilha
-    cava = cava + np.sign(punho - cava) * pad
-    punho = punho - np.sign(punho - cava) * pad
-    return np.stack([cava + sr * (punho - cava), v], 1)
-
-
-def na_grade(g, sr, th):
-    iy = np.clip(np.round((sr + 0.1) / 1.2 * NS - 0.5), 0, NS - 1).astype(int)
-    ix = np.round((th + np.pi) / (2 * np.pi) * NT - 0.5).astype(int) % NT
-    return g[iy, ix]
-
-
-def harmonico(mapa, valido, refazer):
-    """Refaz `mapa` nos pixels `refazer` pela média dos vizinhos (Laplace; borda livre fora de `valido`)."""
-    from scipy.sparse import coo_matrix
-    from scipy.sparse.linalg import spsolve
-    h, w = valido.shape
-    ys, xs = np.nonzero(refazer)
-    idx = np.full((h, w), -1, np.int64)
-    idx[ys, xs] = np.arange(len(ys))
-    n = len(ys)
-    lin, col, val = [np.arange(n)], [np.arange(n)], []
-    grau = np.zeros(n)
-    lado = np.zeros((n, mapa.shape[2]))
-    for dy, dx in ((1, 0), (-1, 0), (0, 1), (0, -1)):
-        y2, x2 = ys + dy, xs + dx
-        dentro = (y2 >= 0) & (y2 < h) & (x2 >= 0) & (x2 < w)
-        y2, x2 = np.clip(y2, 0, h - 1), np.clip(x2, 0, w - 1)
-        viz = dentro & valido[y2, x2]
-        grau += viz
-        inc = viz & refazer[y2, x2]
-        lin.append(np.nonzero(inc)[0])
-        col.append(idx[y2, x2][inc])
-        val.append(-np.ones(inc.sum()))
-        fixo = viz & ~refazer[y2, x2]
-        lado[fixo] += mapa[y2[fixo], x2[fixo]]
-    A = coo_matrix((np.concatenate([grau] + val), (np.concatenate(lin), np.concatenate(col))), shape=(n, n)).tocsr()
-    for c in range(mapa.shape[2]):
-        mapa[ys, xs, c] = spsolve(A, lado[:, c])
-
-
-def pescoco_liso(mapa, tronco, dist, raio=500, borda=12):
-    """O tronco do PES tem o buraco da gola (decote e carcela em T), mais fundo que o decote do FC: os pontos do FC
-    que caem nele iam todos para a borda do buraco e esticavam o desenho. Refaz esses pontos (e uma faixa em volta)
-    pela interpolação harmônica da UV. Devolve quantos pixels."""
-    buraco = nd.binary_fill_holes(tronco) & ~tronco
-    lab, n = nd.label(buraco)
-    if not n:
-        return 0
-    pesc = lab == int(np.argmax(nd.sum(buraco, lab, range(1, n + 1)))) + 1
-    perto = nd.distance_transform_edt(~pesc) < raio
-    ruim = nd.binary_opening(tronco & perto & (dist > LIM_PESCOCO), iterations=2)
-    ruim = nd.binary_dilation(ruim, iterations=borda) & tronco
-    if ruim.any():
-        harmonico(mapa, tronco, ruim)
-    return int(ruim.sum())
+    mapa = np.zeros((h, w, 2))
+    mapa[ok] = (bar[ok, :, None] * src[T[tri[ok]]]).sum(1)
+    return ok, mapa
 
 
 def sangrar(mapa, valido):
     """Fora dos pixels válidos, copia o válido mais próximo."""
-    _, (iy, ix) = nd.distance_transform_edt(~valido, return_indices=True)
+    iy, ix = nd.distance_transform_edt(~valido, return_distances=False, return_indices=True)
     return mapa[iy, ix]
 
 
@@ -438,57 +387,47 @@ def camisa(obj, fc, log=print):
     W, H = TAMANHOS["jersey"]
     V, T, UV, ilha = fc
     tronco, mangas, gola = papeis_camisa(V, T, ilha)
+    torso_fc = T[ilha == tronco]
+    Vp, Tp, UVp = malha_pes(obj, PES_PARTES["tronco"])
     mapa = np.zeros((H, W, 2))
     parte = np.zeros((H, W), np.uint8)
-    ok, uv, d = mapa_superficie((V, T, UV), ilha == tronco, W, H, malha_pes(obj, PES_PARTES["tronco"]))
-    mapa[ok], parte[ok] = uv, TRONCO
-    dist = np.zeros((H, W))
-    dist[ok] = d
-    n = pescoco_liso(mapa, ok, dist)
-    log(f"  tronco: {ok.sum()} px, distância mediana {np.median(d):.2f}; {n} px em volta do pescoço refeitos")
-    v_curta = {}
-    for nome, tipo in (("manga_curta", MANGA_CURTA), ("manga_longa", MANGA_LONGA)):
-        pes = malha_pes(obj, PES_PARTES[nome])
-        for lado, i in mangas.items():
+    corpo = rasterizar(torso_fc, UV, W, H, margem=1e-7)[0] >= 0
+    parte[corpo] = TRONCO
+    ys, xs = np.nonzero(corpo)
+    for lado, i in mangas.items():
+        manga_fc, laco_fc = molde_manga((V, T[ilha == i], UV), lado, 1e-5)
+        curta, laco_pes = molde_manga(malha_pes(obj, PES_PARTES["manga_curta"]), lado, 1e-3)
+        longa, _ = molde_manga(malha_pes(obj, PES_PARTES["manga_longa"]), lado, 1e-3)
+        ufc, upes = uv_plana(UV, lado), uv_plana(UVp, lado)
+        cava_fc = uv_na_cava(V, torso_fc, ufc, laco_fc, 1e-5)
+        cava_pes = uv_na_cava(Vp, Tp, upes, laco_pes, 1e-3)
+        cost_fc = costura_aberta(V, torso_fc, ufc, lado)
+        cost_pes = costura_aberta(Vp, Tp, upes, lado)
+        metade = (xs + 0.5 < W / 2) if lado < 0 else (xs + 0.5 >= W / 2)
+        x, y = xs[metade], ys[metade]
+        u = (x + 0.5) / W
+        pontos = mapa_tronco(u if lado < 0 else 1 - u, (y + 0.5) / H, cost_fc, cava_fc, cost_pes, cava_pes)
+        mapa[y, x] = uv_plana(pontos, lado)
+
+        # Na textura de manga longa do FC a cava encosta no tronco. Os punhos e as duas
+        # bordas sob o braço foram medidos nas texturas de referência (2048 px).
+        superior = np.array([[0, 700], [600, 700]]) / 2048
+        inferior = np.array([[0, 1340], [590, 1340]]) / 2048
+        molde_longo = (cava_fc, np.vstack((superior, cava_fc[0])), np.vstack((inferior, cava_fc[-1])))
+        for tipo, destino, origem in ((MANGA_CURTA, manga_fc, curta), (MANGA_LONGA, molde_longo, longa)):
+            ok, uv = transferir_manga(destino, origem, lado, W, H)
             if tipo == MANGA_CURTA:
-                g = grade_manga_pes(pes, lado)
-                sel = ilha == i
-                ok, pos, _ = pontos_fc(V, T, UV, sel, W, H)
-                br = Braco(V, T[sel], 1e-5)
-                sr, th = br.srel(pos)
-                mapa[ok], parte[ok] = na_grade(g, np.clip(sr, 0, 1), th), MANGA_CURTA
-                # volta da manga em cada linha (v relativo), para a manga longa
-                ys = np.nonzero(ok)[0]
-                v = (ys + 0.5) / H
-                vr = (v - v.min()) / (v.max() - v.min())
-                b = np.clip((vr * 64).astype(int), 0, 63)
-                med = np.unwrap([np.angle(np.exp(1j * th[b == j]).mean()) for j in range(64)])
-                v_curta[lado] = ((np.arange(64) + 0.5) / 64, med)
-                log(f"  manga curta {'esquerda' if lado > 0 else 'direita'}: {ok.sum()} px")
-            else:
-                from PIL import Image, ImageDraw
-                poli = np.array(MOLDE_LONGA)
-                if lado > 0:
-                    poli = np.stack([1 - poli[:, 0], poli[:, 1]], 1)
-                im = Image.new("L", (W, H), 0)
-                ImageDraw.Draw(im).polygon([(a * W, b * H) for a, b in poli], fill=255)
-                dentro = np.asarray(im) > 127
-                ys, xs = np.nonzero(dentro)
-                u, v = (xs + 0.5) / W, (ys + 0.5) / H
-                uu = u if lado < 0 else 1 - u
-                borda = np.array(MOLDE_LONGA)[1:-1]
-                ua = np.interp(v, borda[:, 1], borda[:, 0])
-                sr = np.clip((ua - uu) / ua, 0, 1)
-                vr = (v - MOLDE_LONGA[0][1]) / (MOLDE_LONGA[-1][1] - MOLDE_LONGA[0][1])
-                th = np.interp(vr, *v_curta[lado])
-                livre = parte[ys, xs] == FORA
-                mapa[ys[livre], xs[livre]] = manga_longa_pes(pes, lado, sr[livre], th[livre])
-                parte[ys[livre], xs[livre]] = MANGA_LONGA
-                log(f"  manga longa {'esquerda' if lado > 0 else 'direita'}: {livre.sum()} px")
-    if gola is not None:                # não vem do PES: o conversor pinta com a cor do tronco
-        ok, _, _ = pontos_fc(V, T, UV, ilha == gola, W, H)
+                exata = rasterizar(T[ilha == i], UV, W, H, margem=1e-7)[0] >= 0
+                faltam = exata & ~ok
+                if faltam.any():
+                    uv[faltam] = sangrar(uv, ok)[faltam]
+                ok = exata
+            ok &= parte == FORA
+            mapa[ok], parte[ok] = uv[ok], tipo
+        log(f"  tronco e mangas registrados na cava do lado {lado}")
+    if gola is not None:
+        ok = rasterizar(T[ilha == gola], UV, W, H, margem=1e-7)[0] >= 0
         parte[ok & (parte == FORA)] = GOLA
-        log(f"  gola: {ok.sum()} px")
     u0, v0, u1, v1 = BRACADEIRA
     parte[int(v0 * H):int(v1 * H), int(u0 * W):int(u1 * W)] = DO_BASE
     return mapa, parte
@@ -539,9 +478,11 @@ def gerar(saida, log=print):
     for peca, fn in pecas.items():
         log(f"{peca}…")
         mapa, parte = fn(obj, malha_fc(peca), log)
-        valido = parte != FORA
-        cheio = sangrar(mapa, valido)
-        esc = sangrar(escala_pes(cheio, parte), valido)
+        # Na camisa a sangria usa a cor final, inclusive na braçadeira e na gola.
+        cheio = mapa if peca == "jersey" else sangrar(mapa, parte != FORA)
+        esc = escala_pes(cheio, parte)
+        if peca != "jersey":
+            esc = sangrar(esc, parte != FORA)
         q = np.clip(np.round(cheio * 65535), 0, 65535).astype(np.int32)
         # delta ao longo das linhas: comprime ~4×
         dados[f"{peca}_du"] = np.diff(q[..., 0], axis=1, prepend=0).astype(np.int16)
@@ -556,7 +497,7 @@ def gerar(saida, log=print):
     Vt, Tt, UVt = malha_pes(obj, PES_PARTES["tronco"])
     tr = nd.binary_closing(rasterizar(Tt, UVt, 2048, 2048)[0] >= 0, iterations=2)
     dados["pes_buraco"] = np.packbits(nd.binary_fill_holes(tr) & ~tr, axis=1)
-    dados["versao"] = np.array(2)
+    dados["versao"] = np.array(3)
     os.makedirs(os.path.dirname(os.path.abspath(saida)), exist_ok=True)
     np.savez_compressed(saida, **dados)
     log(f"gravado {saida} ({os.path.getsize(saida) / 1e6:.1f} MB) em {time.time() - t0:.0f} s")

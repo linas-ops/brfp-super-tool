@@ -3,9 +3,8 @@
 O kit do PES tem as três peças (camisa com mangas curtas e longas, gola, calção e meião) numa textura só; no FC 27 cada
 peça tem a sua (jersey 2048×2048, shorts 1024×512, socks 512×256) e outra UV. A correspondência pixel a pixel foi
 calculada uma vez pela superfície 3D dos dois uniformes (gerar_mapas.py) e vem pronta em mapas/mapas_pes2021_fc27.npz:
-cada pixel do FC sabe de que ponto da textura do PES ele veste o mesmo lugar do corpo, então as proporções (listras,
-escudo, patrocínio, números nas mangas) saem certas. Onde o FC encolhe a textura, a cor é filtrada (mipmap) para não
-serrilhar.
+na camisa, o molde das mangas e do tronco compartilha as costuras e o centro do peito usa uma escala uniforme.
+Onde o FC encolhe a textura, a cor é filtrada por mipmap.
 
 Os mapas de tecido (normal, coeff, taa, weave), o escudo, a marca, a braçadeira e o hotspot vêm de um kit base do FC 27
 exportado pelo FET (qualquer kit: só a cor é trocada).
@@ -124,6 +123,30 @@ def preencher_fora(img, cobertos):
     return img[iy, ix]
 
 
+def continuar_ombros(img, out, decote, margem, janela):
+    """Continua até a gola faixas que já chegam horizontalmente de cada ombro."""
+    ys = np.flatnonzero(decote.any(1))
+    esquerda = decote[ys].argmax(1)
+    direita = decote.shape[1] - 1 - decote[ys, ::-1].argmax(1)
+    perfis = []
+    for limite, sinal in ((esquerda, -1), (direita, 1)):
+        xs = limite[:, None] + sinal * (margem + 1 + np.arange(janela))
+        faixa = img[ys[:, None], np.clip(xs, 0, img.shape[1] - 1)]
+        cor = np.median(faixa, axis=1)
+        # Listras transversais variam entre linhas e persistem ao longo de cada linha.
+        variacao = np.ptp(np.percentile(cor, [10, 90], axis=0), axis=0).max()
+        ruido = np.percentile(np.abs(faixa - cor[:, None]), 90)
+        perfis.append((cor, variacao > max(24, 4 * ruido)))
+    if not any(ativo for _, ativo in perfis):
+        return
+    for i, y in enumerate(ys):
+        xs = np.flatnonzero(decote[y])
+        t = ((xs - esquerda[i]) / max(1, direita[i] - esquerda[i]))[:, None]
+        e, d = (cor[i] if ativo else out[y, xs] for cor, ativo in perfis)
+        borda = min(1.0, i / janela, (len(ys) - 1 - i) / janela)
+        out[y, xs] = (1 - borda) * out[y, xs] + borda * ((1 - t) * e + t * d)
+
+
 def tapar_buraco(img, buraco, margem=3, janela=16):
     """Buraco da gola no tronco do PES: em cima o decote (onde o kit do PES desenha a gola: sempre refeito) e embaixo
     a carcela (refeita só quando o desenho dela não é o do tronco em volta). Ali sobe o desenho do tronco da frente,
@@ -152,6 +175,7 @@ def tapar_buraco(img, buraco, margem=3, janela=16):
         abaixo = img[y0:y0 + janela, x] if y0 < h else img[max(0, ys[0] - margem - janela):max(0, ys[0] - margem), x]
         if len(abaixo):
             out[ys, x] = np.median(abaixo, 0)
+    continuar_ombros(img, out, buraco & ~carcela, margem, janela)
     return out
 
 
@@ -159,7 +183,7 @@ def cor_dominante(px):
     """Cor mais comum (média dos pixels do tom mais frequente)."""
     q = np.clip(px, 0, 255).astype(np.int64) // 16
     k = q[:, 0] * 256 + q[:, 1] * 16 + q[:, 2]
-    return px[k == np.bincount(k).argmax()].mean(0)
+    return px[k == np.bincount(k).argmax()].mean(0, dtype=np.float64).astype(np.float32)
 
 
 def _na_textura(masc, h, w):
@@ -209,13 +233,28 @@ def amostrar_mip(niv, uv, pegada):
     return out
 
 
-def converter_texturas(img, progresso=lambda m: None):
-    """Textura do PES (H×W×3, 0–255) -> {peca: H×W×3 float32} no layout do FC 27 (sem a braçadeira)."""
+def finalizar_camisa(rgb, parte, camisa_base):
+    """Cor do tecido no fundo do atlas, com sangria local após montar gola e braçadeira."""
+    from scipy import ndimage
+    tecido = cor_dominante(rgb[parte == TRONCO])
+    rgb[(parte == FORA) | (parte == GOLA) | (parte == DO_BASE)] = tecido
+    if camisa_base is not None:
+        faixa = parte == DO_BASE
+        base = redimensionar(ler_imagem(camisa_base)[..., :3], rgb.shape[1], rgb.shape[0])
+        rgb[faixa] = base[faixa]
+    dist, (iy, ix) = ndimage.distance_transform_edt(parte == FORA, return_indices=True)
+    borda = (dist > 0) & (dist <= 16 * rgb.shape[0] / 2048)
+    rgb[borda] = rgb[iy[borda], ix[borda]]
+
+
+def converter_texturas(img, progresso=lambda m: None, camisa_base=None):
+    """Textura do PES -> cores no layout do FC 27. A braçadeira vem da camisa base, se fornecida."""
     M = mapas()
     h, w = img.shape[:2]
     fator = max(w, h) / 2048.0
-    rgb = tapar_buraco(img[..., :3].astype(np.float32), _na_textura(M["buraco"], h, w), max(1, round(3 * fator)), max(4, round(16 * fator)))
-    niv = piramide(preencher_fora(rgb, _na_textura(M["ilhas"], h, w)))
+    buraco = _na_textura(M["buraco"], h, w)
+    rgb = tapar_buraco(img[..., :3].astype(np.float32), buraco, max(1, round(3 * fator)), max(4, round(16 * fator)))
+    niv = piramide(preencher_fora(rgb, _na_textura(M["ilhas"], h, w) | buraco))
     out = {}
     for peca in PECAS:
         progresso(f"Montando {'a' if peca == 'jersey' else 'o'} {NOME_PECA[peca]}")
@@ -224,12 +263,17 @@ def converter_texturas(img, progresso=lambda m: None):
         uv = m["uv"].reshape(-1, 2)
         peg = m["escala"].reshape(-1) * fator
         cor = np.empty((H * W, 3), np.float32)
-        for i0 in range(0, H * W, BLOCO):
-            cor[i0:i0 + BLOCO] = amostrar_mip(niv, uv[i0:i0 + BLOCO].astype(np.float64), peg[i0:i0 + BLOCO])
+        if peca == "jersey":
+            usados = np.flatnonzero(np.isin(m["parte"], (TRONCO, MANGA_CURTA, MANGA_LONGA)))
+            for i0 in range(0, len(usados), BLOCO):
+                idx = usados[i0:i0 + BLOCO]
+                cor[idx] = amostrar_mip(niv, uv[idx].astype(np.float64), peg[idx])
+            finalizar_camisa(cor.reshape(H, W, 3), m["parte"], camisa_base)
+        else:
+            for i0 in range(0, H * W, BLOCO):
+                bloco = slice(i0, i0 + BLOCO)
+                cor[bloco] = amostrar_mip(niv, uv[bloco].astype(np.float64), peg[bloco])
         out[peca] = cor.reshape(H, W, 3)
-        gola = m["parte"] == GOLA
-        if gola.any():                 # a gola do FC não vem do PES: fica com a cor do tronco
-            out[peca][gola] = cor_dominante(out[peca][m["parte"] == TRONCO])
     return out
 
 
@@ -294,18 +338,12 @@ def converter(entrada, base, saida, teamid, time_, tipo="home", variacao=0, escu
         avisos.append(f"A textura tem {w}×{h}: a do kit do PES é quadrada (2048×2048 ou 1024×1024). Confira o resultado.")
     elif max(w, h) < 1024:
         avisos.append(f"Textura pequena ({w}×{h}): o resultado fica borrado (o FC usa a camisa em 2048×2048).")
-    cores = converter_texturas(img, lambda m: progresso(0.1, m))
+    cores = converter_texturas(img, lambda m: progresso(0.1, m), camisa_base=arqs["jersey"])
     feitos, previas = [], {}
     os.makedirs(pasta, exist_ok=True)
     for i, peca in enumerate(PECAS):
         progresso(0.55 + 0.1 * i, f"Gravando {'a' if peca == 'jersey' else 'o'} {NOME_PECA[peca]}")
         rgb = cores[peca]
-        if peca == "jersey":
-            parte = mapas()[peca]["parte"]
-            do_base = parte == DO_BASE
-            if do_base.any():          # braçadeira de capitão: fica a do kit base
-                b = redimensionar(ler_imagem(arqs[peca])[..., :3], rgb.shape[1], rgb.shape[0])
-                rgb[do_base] = b[do_base]
         dst = os.path.join(pasta, peca, f"{peca}_{suf}_color.png")
         gravar_png(rgb, dst)
         feitos.append(dst)

@@ -308,10 +308,9 @@ function desenharPropriedades() {
   p.append(s2);
   const s3 = secao('Como funciona', 'ajuda', [el('div', { class: 'mudo', style: { lineHeight: '1.55', fontSize: '12px' }, html: `
     O kit do PES tem camisa, mangas (curtas e longas), gola, calção e meião numa textura só; no FC 27 cada peça tem a sua textura e
-    outra UV. A correspondência foi medida nos uniformes em 3D dos dois jogos: cada pixel do FC pega a cor do ponto do kit do PES que
-    veste o mesmo lugar do corpo, então listras, escudo, patrocínios e logos das mangas ficam no mesmo lugar e na mesma proporção.<br><br>
-    As mangas são medidas em volta do braço (da cava ao punho), porque os braços dos dois jogos têm tamanhos diferentes; onde o FC
-    encolhe a textura (calção e meião) a cor é filtrada para não serrilhar.<br><br>
+    outra UV. Na camisa, o centro do peito e das costas mantém a proporção da arte. O ajuste de largura acontece nas laterais.
+    As mangas curtas e longas acompanham a costura do tronco para dar continuidade ao desenho dos ombros.<br><br>
+    O calção e o meião seguem a superfície dos modelos 3D. A cor é filtrada onde a textura encolhe.<br><br>
     Do kit base do FC 27 vêm o relevo do tecido (normal, coeff, taa, weave), a braçadeira de capitão e o hotspot; o escudo e a marca
     do kit base são apagados, porque o kit do PES já traz os seus desenhados. Os números e nomes nas costas são os do jogo (kitnumbers).` })], false);
   s3.dataset.k = 'ajuda';
@@ -627,8 +626,9 @@ function atalhos() {
 function sobre() {
   dialogoSobre({ nome: 'Conversor de Kits PES → FC', versao: S.versao, html: `
     Converte kits do PES 2021 (a textura única com camisa, mangas, gola, calção e meião) em kits do FC 27: camisa, calção e meião
-    no layout do jogo, refeitos pela superfície 3D dos uniformes dos dois jogos, na pasta do kit no formato do FET, com o tecido e
+    no layout do jogo e na pasta do kit no formato do FET, com o tecido e
     o hotspot de um kit base.<br><br>
+    <b>1.2</b> — correspondência das costuras nos ombros e escala uniforme para a arte central da camisa.<br><br>
     <b>1.0</b> — lista de kits com time, tipo e variação, kit base, pasta dos kits, escudo/marca do kit base apagados ou mantidos,
     prévia plana e em 3D (com as referências do pacote completo), arrastar e soltar.<br><br>
     Ainda não testado no jogo.` });

@@ -1,12 +1,10 @@
-# Conversor de Kits PES → FC — versão 1.1
+# Conversor de Kits PES → FC — versão 1.2
 
 Converte kits do **PES 2021** em kits do **FC 27**.
 
 O kit do PES tem tudo numa textura só: camisa (frente e costas), mangas curtas e longas, gola, calção e meião. No FC 27
 cada peça tem a sua textura (`jersey` 2048×2048, `shorts` 1024×512, `socks` 512×256), com outra UV e outras proporções.
-O conversor refaz as três texturas do FC a partir da do PES, com as listras, o escudo, os patrocínios, os logos das
-mangas e os detalhes do calção e do meião no mesmo lugar do corpo e na mesma proporção, e grava a pasta do kit no
-formato que o FET exporta e importa.
+O conversor refaz as três texturas do FC a partir da arte do PES e grava a pasta do kit no formato que o FET exporta e importa.
 
 ## Usar
 
@@ -45,15 +43,17 @@ A correspondência entre as duas texturas foi medida uma vez nos uniformes em 3D
 UV do jogo e as malhas de camisa, calção e meião do FC 27 exportadas pelo FET) e vem pronta em
 `motor/mapas/mapas_pes2021_fc27.npz`: para cada pixel do FC, o ponto da textura do PES que veste o mesmo lugar do corpo.
 
-- **Tronco, calção e meião**: as duas malhas são alinhadas parte por parte e cada ponto do FC vai ao ponto mais
-  próximo da superfície do PES (do mesmo lado: frente com frente, costas com costas).
+- **Tronco**. O centro do peito e das costas usa a mesma escala nos dois eixos. O ajuste às larguras de cada molde
+  acontece nas laterais, usando os vértices que se encontram quando a camisa está vestida.
+- **Calção e meião**. A cor vem do ponto mais próximo da superfície 3D correspondente no PES.
 - **Pescoço e gola**: a gola do PES não tem nada a ver com a do FC, então não é copiada. O tronco do PES tem um buraco
   em T no decote (onde fica a gola e a carcela, e onde o kit do PES desenha a gola): ali o conversor continua o desenho
-  do tronco, coluna por coluna, até o decote do FC, sem esticar a borda. A gola do FC sai lisa, na cor predominante da
+  do tronco até o decote do FC. Faixas horizontais detectadas nos ombros continuam até a gola. A gola do FC sai lisa, na cor predominante da
   camisa, para pôr a gola do FC à mão.
-- **Mangas**: os braços dos dois jogos têm tamanhos diferentes, então as mangas são medidas em volta do braço (da cava ao
-  punho, e o ângulo em volta dele). A manga longa do FC (que não tem malha no FET) segue a volta da manga curta, e a do
-  PES é lida linha a linha na UV: as listras ao longo da manga ficam retas, como nos kits do FC.
+- **Mangas**. O tronco e as mangas usam os mesmos pontos da cava. Cada comprimento lê a sua própria arte no PES.
+  Na manga longa do FC, o contorno do punho e das bordas sob o braço segue as texturas de referência.
+- **Fundo da camisa**. O desenho avança 16 pixels além de cada ilha UV para proteger as costuras durante a filtragem.
+  O restante do fundo usa a cor predominante do tecido.
 - **Braçadeira de capitão**: a faixa da braçadeira na textura da camisa fica a do kit base.
 - Onde o FC encolhe a textura (calção e meião, que no FC têm menos pixels), a cor é filtrada (mipmap) para não serrilhar;
   fora das ilhas da UV do PES a borda é repetida, para o fundo não vazar.
