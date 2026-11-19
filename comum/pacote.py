@@ -32,7 +32,7 @@ RAIZ_ZIP = "BRFP Super Tool"
 # pastas e arquivos deste computador (em qualquer nível, fora de runtime/); .worktrees e .claude são cópias de trabalho
 PASTAS_FORA = {".perfil_janela", "dados", "cache", "__pycache__", "exportados", "saida", "autosalvo", "downloads",
                "backups", "work", ".git", ".vscode", ".idea", ".worktrees", ".claude",
-               "projetos"}  # projetos: edições salvas do Editor de Placares (ferramentas/placares/projetos)
+               "projetos"}  # projetos: salvos pelo usuário (Editor de Placares, Criador de Ligas e Times)
 ARQUIVOS_FORA = {"preferencias.json", "componentes_locais.json", "addon.ini", "addon.log", "local.json", "thumbs.db",
                  "desktop.ini", ".git"}
 EXTENSOES_FORA = (".pyc", ".pyo", ".tmp", ".parcial", ".log", ".bak")

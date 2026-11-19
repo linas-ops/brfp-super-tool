@@ -88,13 +88,71 @@ def _sem_inicial(nome):
     return re.sub(r"^[A-Za-zÀ-ÿ]{1,2}\.\s*", "", nome or "")       # "R. Rios" -> "Rios"
 
 
-# nomes de países que mudam entre as fontes e o banco (nations.nationname)
-ALIAS_NACOES = {"usa": "united states", "south korea": "korea republic", "korea south": "korea republic", "korea north": "korea dpr",
-                "ivory coast": "cote d ivoire", "czechia": "czech republic", "bosnia": "bosnia and herzegovina",
-                "bosnia herzegovina": "bosnia and herzegovina", "dr congo": "congo dr", "north macedonia": "fyr macedonia",
-                "turkiye": "turkey", "tuerkiye": "turkey", "cape verde islands": "cape verde", "cabo verde": "cape verde",
-                "china": "china pr", "ireland": "republic of ireland", "st kitts nevis": "st kitts and nevis",
-                "holland": "netherlands"}
+# nomes do mesmo país que mudam entre as fontes (Transfermarkt, sofifa, PES, API-Football) e o banco
+# (nations.nationname, que também muda de um banco para outro: "Holland" ou "Netherlands"…). Já normalizados.
+GRUPOS_NACOES = (
+    ("united states", "usa", "united states of america"),
+    ("korea republic", "south korea", "korea south", "republic of korea"),
+    ("korea dpr", "north korea", "korea north", "dpr korea"),
+    ("cote d ivoire", "ivory coast"),
+    ("czech republic", "czechia"),
+    ("bosnia and herzegovina", "bosnia herzegovina", "bosnia"),
+    ("congo dr", "dr congo", "democratic republic of the congo", "congo kinshasa", "zaire"),
+    ("congo", "republic of the congo", "congo brazzaville", "people s republic of the congo"),
+    ("north macedonia", "fyr macedonia", "macedonia"),
+    ("turkey", "turkiye", "tuerkiye"),
+    ("cape verde islands", "cape verde", "cabo verde"),
+    ("china pr", "china", "people s republic of china"),
+    ("chinese taipei", "taiwan"),
+    ("republic of ireland", "ireland"),
+    ("holland", "netherlands"),
+    ("gambia", "the gambia"),
+    ("sao tome e principe", "sao tome and principe"),
+    ("eswatini", "swaziland"),
+    ("hong kong", "hongkong"),
+    ("macau", "macao"),
+    ("brunei darussalam", "brunei"),
+    ("timor leste", "east timor"),
+    ("kyrgyzstan", "kyrgyz republic"),
+    ("iran", "ir iran"),
+    ("syria", "syrian arab republic"),
+    ("laos", "lao pdr"),
+    ("vietnam", "viet nam"),
+    ("palestine", "state of palestine"),
+    ("russia", "russian federation"),
+    ("moldova", "republic of moldova"),
+    ("south sudan", "southern sudan"),
+    ("st kitts and nevis", "st kitts nevis", "saint kitts and nevis"),
+    ("st vincent and the grenadines", "st vincent grenadinen", "st vincent grenadines", "saint vincent and the grenadines"),
+    ("st lucia", "saint lucia"),
+    ("us virgin islands", "american virgin islands", "united states virgin islands"),
+    ("turks and caicos islands", "turks and caicosinseln", "turks caicos islands"),
+    ("cook islands", "cookinseln"),
+    ("curacao", "netherlands antilles"),
+    ("tahiti", "french polynesia"),
+    ("germany", "east germany gdr", "saarland"),
+)
+
+# apelido -> o 1º nome do grupo (para comparar nomes de país de duas fontes)
+ALIAS_NACOES = {a: g[0] for g in GRUPOS_NACOES for a in g[1:]}
+
+
+def nomes_da_nacao(nome):
+    """O nome normalizado e os outros nomes conhecidos do mesmo país, nessa ordem."""
+    n = norm(nome)
+    g = next((g for g in GRUPOS_NACOES if n in g), ())
+    return [n] + [x for x in g if x != n]
+
+
+def com_apelidos(out):
+    """Põe no {nome normalizado: id} os outros nomes do mesmo país (vale nos dois sentidos: o banco pode ter
+    "Holland" e a fonte "Netherlands", ou o contrário)."""
+    for g in GRUPOS_NACOES:
+        alvo = next((out[x] for x in g if x in out), None)
+        if alvo is not None:
+            for x in g:
+                out.setdefault(x, alvo)
+    return out
 
 
 def mapa_nacoes(banco):
@@ -104,10 +162,7 @@ def mapa_nacoes(banco):
         out[norm(d["nationname"])] = d["nationid"]
         if d.get("isocountrycode"):
             out["iso:" + d["isocountrycode"].upper()] = d["nationid"]
-    for apelido, nome in ALIAS_NACOES.items():
-        if nome in out and apelido not in out:
-            out[apelido] = out[nome]
-    return out
+    return com_apelidos(out)
 
 
 def nacoes_de(mapa, nomes):

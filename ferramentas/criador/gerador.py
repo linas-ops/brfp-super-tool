@@ -51,6 +51,15 @@ _VIZ = {0: {}, 2: {3: 1, 8: 3, 12: 3}, 3: {2: 1, 12: 4, 5: 4, 7: 4}, 5: {10: 3, 
 GRUPO_SELECAO = {0: "GK", 7: "LB", 8: "LB", 5: "CB", 3: "RB", 2: "RB", 16: "LM", 27: "LM", 12: "RM", 23: "RM", 10: "CM", 14: "CM",
                  18: "CM", 21: "ST", 25: "ST"}
 SELECAO_PADRAO = {"GK": (3, 5), "LB": (2, 4), "CB": (6, 8), "RB": (2, 4), "LM": (2, 4), "CM": (6, 10), "RM": (2, 4), "ST": (5, 8)}
+_GRUPOS_API = {"G": {"GK"}, "D": {"LB", "CB", "RB"}, "M": {"LM", "CM", "RM"}, "F": {"LM", "RM", "ST"}}
+
+
+def grupos_do_convocado(a):
+    """Grupos do SQUAD_SELECTION em que um convocado da fonte (ainda sem ficha no jogo) pode entrar: o da posição dele na
+    Transfermarkt; na API-Football (só goleiro/defensor/meia/atacante), os do setor."""
+    if a.get("posicao_tm") is not None:
+        return {GRUPO_SELECAO.get(int(a["posicao_tm"]), "CM")}
+    return set(_GRUPOS_API.get(a.get("posicao_api"), ()))
 PROFUNDIDADE = {30: "Recuada", 50: "Equilibrada", 65: "Alta", 90: "Agressiva"}
 SAIDA_BOLA = {1: "Passe curto", 2: "Equilibrada", 3: "Bola longa"}
 # capacidade típica do estádio pelo nível do time (mediana dos times do banco)
@@ -260,6 +269,7 @@ class Projeto:
         self.nivel_valor = None
         self._nomes_times = None
         self.clubes_mexidos = set()    # clubes do banco que perderam jogadores para times novos (escalação refeita)
+        self.selecoes_mexidas = set()  # seleções do banco que perderam um jogador que mudou de nação (escalação refeita)
         self.excluidos = []            # jogadores tirados do último elenco preparado (para a prévia)
         self._ref_fichas = None        # fim da temporada de um elenco antigo (fichas daquela época)
 
@@ -305,19 +315,7 @@ class Projeto:
             self.confed[d["nationid"]] = d.get("confederation")
             if d.get("isocountrycode"):
                 out["iso:" + d["isocountrycode"].upper()] = d["nationid"]
-        for apelido, nome in (("usa", "united states"), ("korea republic", "korea republic"), ("south korea", "korea republic"),
-                              ("ivory coast", "cote d ivoire"), ("czech republic", "czech republic"), ("czechia", "czech republic"),
-                              ("bosnia", "bosnia and herzegovina"), ("congo dr", "dr congo"), ("dr congo", "congo dr"),
-                              ("north macedonia", "fyr macedonia"), ("turkiye", "turkey"), ("cape verde islands", "cape verde"),
-                              ("china pr", "china pr"), ("china", "china pr"), ("ireland", "republic of ireland"),
-                              ("korea south", "korea republic"), ("korea north", "korea dpr"), ("cote d ivoire", "cote d ivoire"),
-                              ("bosnia herzegovina", "bosnia and herzegovina"), ("turkiye", "turkey"), ("tuerkiye", "turkey"),
-                              ("dr congo", "congo dr"), ("congo", "congo"), ("cabo verde", "cape verde"),
-                              ("united states", "united states"), ("st kitts nevis", "st kitts and nevis"),
-                              ("chinese taipei", "chinese taipei"), ("kyrgyzstan", "kyrgyzstan"), ("curacao", "curacao")):
-            if N_norm(nome) in out and N_norm(apelido) not in out:
-                out[N_norm(apelido)] = out[N_norm(nome)]
-        return out
+        return K.com_apelidos(out)          # "Netherlands" -> Holland, "Cape Verde" -> Cape Verde Islands…
 
     def nacao(self, nome, codigo=None):
         if codigo and "iso:" + codigo.upper() in self.nacoes:
@@ -1068,7 +1066,8 @@ class Projeto:
             j["no_banco"] = self.ja_no_banco(j, genero) if not dados.get("selecao") else None
             pos, origem = N.posicao_principal(j)
             j["pos"], j["pos_origem"] = pos, origem
-            self._ficha(j, aj, (fichas_pes or {}).get(str(j["id"])), clube_fonte)
+            self._ficha(j, aj, (fichas_pes or {}).get(str(j["id"])),
+                        ((j.get("clube_tm") or {}).get("nome") or clube_fonte) if dados.get("selecao") else clube_fonte)
             if not j["no_banco"] and j.get("ficha_id_ea") and not dados.get("selecao"):
                 j["no_banco"] = self._no_banco_por_id(j)       # nome diferente no banco, mas o mesmo ID da EA
             fi = j.get("ficha_usada")
@@ -1514,7 +1513,7 @@ class Projeto:
                 "ficha_aviso": j.get("ficha_aviso"),
                 "foto": j.get("foto"), "minutos": st.get("minutos") or 0, "jogos": st.get("jogos") or 0,
                 "nota_api": st.get("nota"), "gols": st.get("gols") or 0, "capitao": bool(j.get("capitao") or j.get("capitao_tm")),
-                "valor": j.get("valor"), "no_banco": j.get("no_banco"), "usar_db": j.get("usar_db"),
+                "valor": j.get("valor"), "no_banco": j.get("no_banco"), "usar_db": j.get("usar_db"), "outra_nacao": j.get("outra_nacao"),
                 "atr": dict(j.get("atr") or {}), "atr_manual": j.get("atr_manual") or [],
                 "aparencia": j.get("aparencia") or {}, "aparencia_origem": j.get("aparencia_origem")}
 
@@ -1527,10 +1526,60 @@ class Projeto:
                 return d["teamid"]
         return None
 
+    def _mesmo_jogador(self, a, genero):
+        """playerid do jogador do banco que é este convocado com outra nacionalidade (dupla nacionalidade, nação trocada):
+        o mesmo nascimento e o nome batendo. Sem nascimento na fonte, ou na dúvida, None."""
+        nasc = N.dias(a.get("nascimento"))
+        if nasc is None:
+            return None
+        idx = self.indice_jogadores()
+        for _, pid in idx.buscar(a.get("nome"), a.get("primeiro") or "", a.get("sobrenome") or "", a.get("nascimento"), None,
+                                 genero=str(genero), minimo=0.9):
+            if str(idx.info[pid]["nascimento"]) == str(nasc) and idx.nome_bate(pid, a.get("nome"), a.get("primeiro") or "",
+                                                                                 a.get("sobrenome") or ""):
+                return pid
+        return None
+
+    _SEM_CLUBE = re.compile(r"without club|retired|career break|unknown|vereinslos|karriereende|sem clube|livre", re.I)
+
+    def _clube_do_convocado(self, j, genero):
+        """teamid do clube do convocado (o da Transfermarkt), se o clube estiver no banco; None (Passes Livres) se não
+        estiver, se ele estiver sem clube ou se a fonte não disser."""
+        ct = j.get("clube_tm") or {}
+        nome = ct.get("nome")
+        if not nome or str(ct.get("id") or "") in ("515", "123", "75") or self._SEM_CLUBE.search(nome):
+            return None
+        cache = getattr(self, "_clubes_conv", None)
+        if cache is None:
+            cache = self._clubes_conv = {}
+        k = (nome, str(genero), str(ct.get("id") or ""))
+        if k not in cache:
+            cache[k] = self.clube_por_nome(nome, genero, ct.get("id"))
+        return cache[k]
+
+    def _mudar_nacao(self, j, nacao, teamid):
+        """Jogador do banco que joga por esta seleção com outra nacionalidade no banco: passa a ser da nação dela e sai
+        de outra seleção do banco em que estivesse (a escalação dela é refeita ao Gerar)."""
+        pid = str(j["playerid"])
+        self.alterar("players", {"nationality": nacao}, playerid=pid)
+        for d in self.atuais("teamplayerlinks", playerid=pid):
+            if self.liga_de.get(d["teamid"]) in LIGA_SELECOES.values() and d["teamid"] != str(teamid):
+                self.remover("teamplayerlinks", playerid=pid, teamid=d["teamid"])
+                self.selecoes_mexidas.add(d["teamid"])
+
     def criar_selecao(self, dados, nivel, genero=0, ajustes=None, extra=None):
-        """Seleção (cria ou atualiza): convocação da API casada com os jogadores do banco + os melhores da nação no
-        banco até cumprir o SQUAD_SELECTION. extra: nacao, limites {grupo: (min, max)}, idade_maxima, criar_faltantes,
-        tatica, tecnico, teamid (manual, só ao criar), modelo, internationals (objeto de internationals.py)."""
+        """Seleção (cria ou atualiza): convocação da fonte casada com os jogadores do banco + os melhores da nação no
+        banco até cumprir o SQUAD_SELECTION. extra: nacao, limites {grupo: (min, max)}, idade_maxima, criar_modo
+        ("auto", "todos" ou "nenhum") e criar {api_id: bool} (um por um), incluir, excluir_db, tatica, tecnico, teamid
+        (manual, só ao criar), modelo, nivel_manual, previa.
+
+        Convocados que não estão no banco: no automático, quando a nação tem poucos jogadores no banco (só com eles a
+        seleção não chega a 11, ou não fecha o mínimo de uma posição em que há convocado fora do banco), todos são criados — na Transfermarkt com a nota
+        pelo valor de mercado e pela idade, como nos clubes — e cada um vai para o clube dele, se o clube estiver no
+        banco, ou para os Passes Livres (Sem Contrato). Quem já está no banco com outra nacionalidade (mesmo nome e
+        nascimento) entra como ele mesmo e passa a ser da nação da seleção, em vez de ganhar uma cópia. Na prévia
+        (previa), uma seleção com menos de 11 volta incompleta (para escolher o que criar); ao Gerar, ela para com a
+        explicação."""
         ajustes = ajustes or {}
         ex = extra or {}
         tm = dados["time"]
@@ -1549,6 +1598,7 @@ class Projeto:
             lid = self.liga_de.get(d["teamid"])
             if lid not in LIGA_SELECOES.values():
                 clube_de.setdefault(d["playerid"], d["teamid"])
+        lenda = lambda pid: self.liga_de.get(clube_de.get(pid)) in LIGAS_LENDAS  # noqa: E731
 
         def jog_db(pid, origem, numero=None, api=None):
             l = idx.linhas[pid]
@@ -1562,11 +1612,14 @@ class Projeto:
                     "nacao": info["nacao"], "altura": g("height"), "peso": g("weight"), "pe": g("preferredfoot"), "atr": atr,
                     "numero": numero, "stats": {}, "foto": (api or {}).get("foto"), "clube": nomes_time.get(clube_de.get(pid)),
                     "pos_origem": "banco"}
-        # 1. convocação da API casada com o banco
-        pool, faltam, usados = [], [], set()
+        excluir_db = {str(x) for x in ex.get("excluir_db") or []}
+        # 1. convocação da fonte casada com o banco: um jogador da nação; sem ele, quem tem o mesmo nome e nascimento com
+        #    outra nacionalidade no banco (ele mesmo, não uma cópia: passa a ser da nação da seleção)
+        pool, faltam, usados, tirados = [], [], set(), []
         for a in dados.get("jogadores") or []:
             aj = ajustes.get(str(a["id"])) or {}
             if aj.get("excluir"):
+                tirados.append({"id": a["id"], "nome": a.get("nome"), "foto": a.get("foto")})
                 continue
             if aj.get("playerid_banco"):
                 pid = str(aj["playerid_banco"])
@@ -1574,64 +1627,101 @@ class Projeto:
             else:
                 cand = idx.buscar(a.get("nome"), a.get("primeiro", ""), a.get("sobrenome", ""), a.get("nascimento"), a.get("idade"),
                                   nacao, genero, minimo=0.6, so_nacao=True)
-            cand = [x for x in cand if x[1] not in usados and self.liga_de.get(clube_de.get(x[1])) not in LIGAS_LENDAS]
-            if cand:
-                pid = cand[0][1]
-                usados.add(pid)
-                j = jog_db(pid, "convocado", a.get("numero"), a)
-                j["casamento"] = cand[0][0]
-                pool.append(j)
-            else:
+            cand = [x for x in cand if x[1] not in usados and not lenda(x[1])]
+            if not cand and aj.get("usar_db") is not False:
+                pid = self._mesmo_jogador(a, genero)
+                if pid and pid not in usados and not lenda(pid):
+                    cand = [(1.0, pid)]
+            if not cand:
                 faltam.append(a)
+                continue
+            pid = cand[0][1]
+            usados.add(pid)
+            if pid in excluir_db:                          # tirado da seleção à mão: fica fora (e não é criado)
+                continue
+            j = jog_db(pid, "convocado", a.get("numero"), a)
+            j["casamento"] = cand[0][0]
+            if str(j["nacao"]) != nacao:
+                j["outra_nacao"], j["nacao"] = str(j["nacao"]), nacao
+            pool.append(j)
         # 2. jogadores escolhidos à mão (do banco)
         for pid in ex.get("incluir") or []:
             pid = str(pid)
             if pid in idx.info and pid not in usados:
                 usados.add(pid)
                 pool.append(jog_db(pid, "manual"))
-        excluir_db = {str(x) for x in ex.get("excluir_db") or []}
         pool = [j for j in pool if str(j["playerid"]) not in excluir_db]
-        # 3. completar pelo banco até o mínimo de cada grupo (os melhores da nação, até a idade máxima)
+        # 3. os melhores da nação no banco (até a idade máxima) que completam o mínimo de cada grupo
         grupo = lambda j: GRUPO_SELECAO.get(j["pos"], "CM")  # noqa: E731
-        cont = collections.Counter(grupo(j) for j in pool)
         reserva = sorted((i for pid, i in idx.info.items() if i["nacao"] == nacao and str(i["genero"]) == str(genero)
                           and pid not in usados and pid not in excluir_db and (i["idade"] or 99) <= idade_max
                           and self.liga_de.get(clube_de.get(pid)) not in ("382", "383", *LIGAS_LENDAS)),
                          key=lambda i: -i["overall"])
-        for g, (mn, mx) in limites.items():
-            for i in reserva:
-                if cont[g] >= mn:
-                    break
-                if GRUPO_SELECAO.get(i["pos"], "CM") == g and i["playerid"] not in usados:
-                    usados.add(i["playerid"])
-                    pool.append(jog_db(i["playerid"], "completado"))
-                    cont[g] += 1
-        # 4. respeitar o máximo de cada grupo (saem primeiro os completados, depois os de nota mais baixa)
+
+        def completar(base):
+            cont = collections.Counter(grupo(j) for j in base)
+            entra = []
+            for g, (mn, _) in limites.items():
+                for i in reserva:
+                    if cont[g] >= mn:
+                        break
+                    if GRUPO_SELECAO.get(i["pos"], "CM") == g and i["playerid"] not in usados:
+                        entra.append(i)
+                        cont[g] += 1
+            return entra, cont
+        # 4. convocados que não estão no banco: "todos", "nenhum" ou o automático — todos quando a nação tem poucos
+        #    jogadores no banco (só com eles a seleção não chega a 11, ou fica abaixo do mínimo de uma posição em que há
+        #    convocado fora do banco: criar só quem não ajuda em nada, numa seleção que já fecha, não vale a pena)
+        so_banco, cont_banco = completar(pool)
+        n_banco = len(pool) + len(so_banco)                # a seleção só com jogadores do banco
+        abaixo = {g for g, (mn, _) in limites.items() if cont_banco[g] < mn}
+        poucos = n_banco < 11 or any(abaixo & grupos_do_convocado(a) for a in faltam)
+        modo = ex.get("criar_modo") or ("todos" if ex.get("criar_faltantes") else "auto")
+        padrao = modo == "todos" or (modo == "auto" and poucos)
+        escolhidos = ex.get("criar") or {}
+        criar = lambda a: bool(escolhidos.get(str(a["id"]), padrao))  # noqa: E731
+        criados = [dict(a, stats={}, nacionalidade=a.get("nacionalidade") or self.nome_nacao.get(nacao)) for a in faltam if criar(a)]
+        if criados:
+            ref = None                                     # Transfermarkt: a nota pelo valor de mercado e pela idade
+            if dados.get("fonte") != "transfermarkt":      # API-Football: perto dos que entram pelo banco
+                base_ov = sorted((x["overall"] for x in pool + so_banco), reverse=True)
+                ref = (base_ov[min(len(base_ov) - 1, 18)] if base_ov else int(nivel) - 6) + 1.8
+            novos = self._preparar_jogadores({"time": tm, "jogadores": criados, "selecao": True, "fonte": dados.get("fonte"),
+                                              "modo": dados.get("modo"), "data_ref": dados.get("data_ref"),
+                                              "temporada_nome": dados.get("temporada_nome")},
+                                             ref, genero, ajustes, ex.get("fotos"), ex.get("fichas_pes"))
+            for j in novos:
+                fid = str(j.get("ficha_id_ea") or "")
+                if (fid and not j.get("playerid_ea") and fid in idx.info and fid not in usados and not lenda(fid)
+                        and str(idx.info[fid]["nascimento"]) == str(N.dias(j.get("nascimento")))
+                        and (ajustes.get(str(j["id"])) or {}).get("usar_db") is not False):
+                    # o ID da EA (sofifa) desse convocado já é dele no banco, com outro nome: ele mesmo, não uma cópia
+                    a = next(x for x in criados if str(x["id"]) == str(j["id"]))
+                    faltam = [x for x in faltam if str(x["id"]) != str(j["id"])]
+                    usados.add(fid)
+                    if fid in excluir_db:
+                        continue
+                    jj = jog_db(fid, "convocado", a.get("numero"), a)
+                    jj["casamento"] = 1.0
+                    if str(jj["nacao"]) != nacao:
+                        jj["outra_nacao"], jj["nacao"] = str(jj["nacao"]), nacao
+                    pool.append(jj)
+                    continue
+                j.update(origem="novo", existente=False, nacao_manual=j.get("nacao_manual") or nacao)
+                pool.append(j)
+        # 5. completar pelo banco até o mínimo de cada grupo (os criados contam)
+        entra, _ = completar(pool)
+        for i in entra:
+            usados.add(i["playerid"])
+            pool.append(jog_db(i["playerid"], "completado"))
+        # 6. máximo de cada grupo: saem primeiro os completados, depois os escolhidos, por fim os convocados de nota menor
         for g, (mn, mx) in limites.items():
             dos = [j for j in pool if grupo(j) == g]
             if len(dos) > mx:
-                dos.sort(key=lambda j: (j["origem"] == "convocado", j["origem"] == "manual", j["overall"]))
+                dos.sort(key=lambda j: (j["origem"] in ("convocado", "novo"), j["origem"] == "manual", j["overall"]))
                 for j in dos[:len(dos) - mx]:
                     pool.remove(j)
-        # 5. convocados que não estão no banco: criados (sem clube) os escolhidos — "criar os que faltam" marca todos e
-        # cada um pode ser marcado ou desmarcado (criar = {api_id: bool})
-        escolhidos = ex.get("criar") or {}
-        criar = lambda a: escolhidos.get(str(a["id"]), bool(ex.get("criar_faltantes")))  # noqa: E731
-        criados = []
-        if any(criar(a) for a in faltam):
-            base_ov = sorted((j["overall"] for j in pool), reverse=True)
-            ref = base_ov[min(len(base_ov) - 1, 18)] if base_ov else int(nivel) - 6
-            for a in faltam:
-                if not criar(a):
-                    continue
-                a = dict(a, nacionalidade=self.nome_nacao.get(nacao), stats={})
-                criados.append(a)
-            novos = self._preparar_jogadores({"time": tm, "jogadores": criados}, ref + 1.8, genero, ajustes, ex.get("fotos"),
-                                             ex.get("fichas_pes"))
-            for j in novos:
-                j.update(origem="novo", existente=False, nacao_manual=j.get("nacao_manual") or nacao)
-                pool.append(j)
-        for j in pool:                                      # ajustes de nota/posição/camisa valem para a seleção
+        for j in pool:                                      # número e capitão escolhidos valem para os do banco
             aj = ajustes.get(str(j["id"])) or ajustes.get(f"db{j['playerid']}") or {}
             if j.get("existente"):
                 if aj.get("camisa"):
@@ -1640,9 +1730,20 @@ class Projeto:
                     j["capitao_manual"] = True
         cont = collections.Counter(grupo(j) for j in pool)
         falta_grupo = {g: mn - cont[g] for g, (mn, _) in limites.items() if cont[g] < mn}
-        if len(pool) < 11:
-            raise ValueError(f"{tm['nome']}: só {len(pool)} jogadores — a nação tem poucos jogadores no banco.")
-        # 6. time: o que já existe (atualiza) ou um novo a partir de uma seleção-modelo
+        incompleta = len(pool) < 11
+        if incompleta and not ex.get("previa"):
+            raise ValueError(f"{tm['nome']}: só {len(pool)} jogador(es) na seleção — são precisos 11. Na prévia, crie os convocados "
+                             "que não estão no banco ou ponha jogadores do banco.")
+        if not existente and not ex.get("nivel_manual") and pool:
+            top = sorted((j["overall"] for j in pool), reverse=True)[:14]
+            nivel = round(sum(top) / len(top), 1)          # seleção nova: o nível é o do elenco montado
+        # 7. destino dos criados: o clube deles, se o clube estiver no banco; senão os Passes Livres (Sem Contrato)
+        for j in pool:
+            if not j.get("existente"):
+                j["clube_destino"] = self._clube_do_convocado(j, genero)
+                j["clube"] = (self.nome_time(j["clube_destino"]) if j["clube_destino"] else "Passes Livres") \
+                    if (j["clube_destino"] or genero == 0) else "sem clube"
+        # 8. time: o que já existe (atualiza) ou um novo a partir de uma seleção-modelo
         tat = dict(ex.get("tatica") or {})
         if existente:
             teamid = existente
@@ -1662,31 +1763,73 @@ class Projeto:
             for j in pool:
                 if not j.get("numero") and str(j["playerid"]) in antes:
                     j["numero"] = antes[str(j["playerid"])]
-        titulares, reservas, ordem = self._escalacao(pool, vagas)
+        titulares, reservas, ordem = self._escalacao(pool, vagas, parcial=incompleta)
+        nome = (self.nome_nacao.get(nacao) or tm["nome"]) if not ajustes.get("_time_nome") else ajustes["_time_nome"]
+        nao_encontrados = []
+        for a in faltam:
+            aj = ajustes.get(str(a["id"])) or {}
+            dest = self._clube_do_convocado(a, genero)
+            nao_encontrados.append({"id": a["id"], "nome": a.get("nome"), "idade": a.get("idade"), "pos": a.get("posicao_api"),
+                                    "criar": criar(a), "clube": self.nome_time(dest) if dest else None,
+                                    "clube_fonte": (a.get("clube_tm") or {}).get("nome"), "usar_db_recusado": aj.get("usar_db") is False})
+        trocas = [j for j in pool if j.get("outra_nacao")]
+        criados_ok = [j for j in pool if j.get("origem") == "novo"]
+        res = {"teamid": teamid, "selecao": True, "atualiza": bool(existente), "nacao": nacao, "nome": nome, "api_id": tm["id"],
+               "fonte": dados.get("fonte") or "apifootball", "logo": tm.get("logo"), "modelo": modelo, "modelo_formacao": mod_form,
+               "formacao": fo_mod.get("formationname"), "formacao_api": dados.get("formacao"), "formacoes_api": dados.get("formacoes") or {},
+               "nivel": round(nivel, 1), "genero": genero, "jogadores": [self._publico(j) for j in ordem], "estadio": None,
+               "grupos": {g: {"n": cont.get(g, 0), "min": mn, "max": mx} for g, (mn, mx) in limites.items()},
+               "falta_grupo": falta_grupo, "nao_encontrados": nao_encontrados, "excluidos": tirados,
+               "criar_modo": modo, "poucos": poucos, "incompleta": incompleta,
+               "banco_sozinho": {"jogadores": n_banco,
+                                 "abaixo": {g: f"{cont_banco[g]}/{mn}" for g, (mn, _) in limites.items() if cont_banco[g] < mn}},
+               "avisos": list(dados.get("avisos") or [])}
+        if criados_ok:
+            nos_clubes = sum(1 for j in criados_ok if j.get("clube_destino"))
+            res["avisos"].append(f"{len(criados_ok)} convocado(s) que não estão no banco serão criados: {nos_clubes} no clube deles "
+                                 f"(clube no banco) e {len(criados_ok) - nos_clubes} nos Passes Livres (Sem Contrato).")
+        if trocas:
+            res["avisos"].append(f"{len(trocas)} jogador(es) do banco com outra nacionalidade entram na seleção e passam a ser de "
+                                 f"{self.nome_nacao.get(nacao) or nacao}: " + ", ".join(
+                                     f"{j['nome']} ({self.nome_nacao.get(j['outra_nacao']) or j['outra_nacao']})" for j in trocas[:8])
+                                 + ("…" if len(trocas) > 8 else "") + ".")
+        if falta_grupo:
+            res["avisos"].append("Abaixo do mínimo: " + ", ".join(f"{g} {cont[g]}/{limites[g][0]}" for g in falta_grupo) +
+                                 " (a nação não tem mais jogadores no banco nessas posições).")
+        fora = [a for a in faltam if not criar(a)]
+        if fora:
+            res["avisos"].append(f"{len(fora)} convocado(s) não estão no banco e não serão criados: "
+                                 f"{', '.join(a.get('nome') or '?' for a in fora[:6])}{'…' if len(fora) > 6 else ''}. "
+                                 "Marque quem criar ou escolha o jogador do banco.")
+        if incompleta:                                     # prévia: só a lista, para escolher o que criar (nada é gravado)
+            res.update(geral=round(sum(j["overall"] for j in titulares) / len(titulares)) if titulares else 0, cores=self._cores(dados),
+                       tecnico=None, tatica={"profundidade": None, "saida": None, "auto": {}, "manual": {}})
+            return res
+        takers = self._cobradores(titulares)
+        forca = ex.get("forca") if (existente or ex.get("nivel_manual")) else (nivel - 76.0) / 4.0
+        auto = tatica_auto(forca, fo_mod.get("formationname"))
+        prof = int(tat.get("profundidade") or auto["profundidade"])
+        saida = int(tat.get("saida") or auto["saida"])
+        notas_lin = self._notas_time(titulares, vagas)
+        cores = self._cores(dados)
         for j in ordem:
             if not j.get("existente"):
                 # o convocado criado vai para o clube dele, se o clube estiver no banco; senão, Passes Livres (Sem Contrato)
-                clube = self.clube_por_nome((j.get("clube_tm") or {}).get("nome"), genero, (j.get("clube_tm") or {}).get("id"))
+                clube = j.get("clube_destino")
                 self._linhas_jogador(j, clube or TIME_SEM_CONTRATO, genero)
                 if clube or genero == 0:
                     alvo = clube or TIME_SEM_CONTRATO
-                    usados = {d["jerseynumber"] for d in self.atuais("teamplayerlinks", teamid=alvo)} | \
-                             {d["jerseynumber"] for d in self.novas_de("teamplayerlinks", teamid=alvo)}
-                    num = "99" if not clube else str(next((k for k in range(2, 99) if str(k) not in usados), 99))
+                    usados_n = {d["jerseynumber"] for d in self.atuais("teamplayerlinks", teamid=alvo)} | \
+                               {d["jerseynumber"] for d in self.novas_de("teamplayerlinks", teamid=alvo)}
+                    num = "99" if not clube else str(next((k for k in range(2, 99) if str(k) not in usados_n), 99))
                     sc = self.linha_vazia("teamplayerlinks")
                     sc.update(teamid=alvo, playerid=str(j["playerid"]), jerseynumber=num, position="29", form="3",
                               artificialkey=str(self.ids("tpl", "teamplayerlinks", "artificialkey").novo()))
                     self.novas["teamplayerlinks"].append(sc)
                     if clube:
                         self.clubes_mexidos.add(clube)          # a escalação do clube é refeita (o novo fica no banco)
-                j["clube"] = (self.nome_time(clube) if clube else "Passes Livres") if (clube or genero == 0) else "sem clube"
-        takers = self._cobradores(titulares)
-        auto = tatica_auto(ex.get("forca"), fo_mod.get("formationname"))
-        prof = int(tat.get("profundidade") or auto["profundidade"])
-        saida = int(tat.get("saida") or auto["saida"])
-        notas_lin = self._notas_time(titulares, vagas)
-        cores = self._cores(dados)
-        nome = (self.nome_nacao.get(nacao) or tm["nome"]) if not ajustes.get("_time_nome") else ajustes["_time_nome"]
+            elif j.get("outra_nacao"):
+                self._mudar_nacao(j, nacao, teamid)
         if existente:
             self.remover("teamplayerlinks", teamid=teamid)
             valores = {"overallrating": notas_lin["geral"], "attackrating": notas_lin["ataque"], "midfieldrating": notas_lin["meio"],
@@ -1751,25 +1894,9 @@ class Projeto:
             self.texto(f"TeamName_Abbr3_{teamid}", (tm.get("sigla") or nome[:3]).upper()[:3])
         for j in ordem:
             self.novas["teamplayerlinks"].append(self._vinculo(teamid, j, titulares, reservas, vagas))
-        res = {"teamid": teamid, "selecao": True, "atualiza": bool(existente), "nacao": nacao, "nome": nome, "api_id": tm["id"],
-               "fonte": dados.get("fonte") or "apifootball",
-               "logo": tm.get("logo"), "modelo": modelo, "modelo_formacao": mod_form, "formacao": fo_mod.get("formationname"),
-               "formacao_api": dados.get("formacao"), "formacoes_api": dados.get("formacoes") or {},
-               "tatica": {"profundidade": prof, "saida": saida, "auto": auto, "manual": {k: v for k, v in tat.items() if v}},
-               "nivel": round(nivel, 1), "geral": notas_lin["geral"], "genero": genero,
-               "jogadores": [self._publico(j) for j in ordem], "cores": cores, "tecnico": tec, "estadio": None,
-               "grupos": {g: {"n": cont.get(g, 0), "min": mn, "max": mx} for g, (mn, mx) in limites.items()},
-               "falta_grupo": falta_grupo, "nao_encontrados": [{"id": a["id"], "nome": a.get("nome"), "idade": a.get("idade"),
-                                                                "pos": a.get("posicao_api"), "criar": criar(a)} for a in faltam],
-               "avisos": list(dados.get("avisos") or [])}
-        if falta_grupo:
-            res["avisos"].append("Abaixo do mínimo: " + ", ".join(f"{g} {cont[g]}/{limites[g][0]}" for g in falta_grupo) +
-                                 " (a nação não tem mais jogadores no banco nessas posições).")
-        fora = [a for a in faltam if not criar(a)]
-        if fora:
-            res["avisos"].append(f"{len(fora)} convocado(s) não estão no banco e não serão criados: "
-                                 f"{', '.join(a.get('nome') or '?' for a in fora[:6])}{'…' if len(fora) > 6 else ''}. "
-                                 "Marque quem criar ou escolha o jogador do banco.")
+        res.update(tatica={"profundidade": prof, "saida": saida, "auto": auto, "manual": {k: v for k, v in tat.items() if v}},
+                   geral=notas_lin["geral"], cores=cores, tecnico=tec,
+                   jogadores=[self._publico(j) for j in ordem])  # depois das linhas: nação, aparência e posições dos criados
         self.selecoes.append({"teamid": teamid, "nacao": nacao, "nome": nome, "genero": genero, "nivel": nivel, "novo": not existente,
                               "confederacao": self.confed.get(nacao)})
         self.resumo.append(res)

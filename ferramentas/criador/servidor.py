@@ -13,7 +13,8 @@ API-Football e atualiza o que já existe (elencos, participantes das ligas).
    banco com a API (atualizar.py).
 5. Grava um banco novo (cópia do importado + linhas novas, alteradas e removidas), as tabelas em .txt, o idioma, o
    internationals.txt (seleções novas) e as imagens (saida.py); as fotos podem seguir para o Criador de Minifaces.
-O projeto fica em cache\\projeto.json (sobrevive a fechar a ferramenta).
+O projeto aberto fica em cache\\projeto.json (sobrevive a fechar a ferramenta); Projeto › Salvar grava uma cópia com
+tudo o que foi coletado num arquivo (padrão: projetos\\) e Abrir volta a ela sem coletar de novo.
 """
 import argparse
 import copy
@@ -63,7 +64,7 @@ def exige_motor():
         raise base.ErroUsuario(MOTOR["msg"])
 
 
-VERSAO = "2.5"
+VERSAO = "2.6"
 PREFS = base.Prefs(os.path.join(AQUI, "preferencias.json"), {
     "saida": "", "espalhamento": 1.25, "escalacoes": 5, "modo": "temporada", "perfis_faltantes": 10, "baixar_imagens": True,
     "classificacao": True, "jogador_inicio": 460000, "time_inicio": 150000, "liga_inicio": 3000, "visual": "proprio",
@@ -105,23 +106,40 @@ def tm_status(forcar=False):
             _TM_STATUS["v"] = {"modo": TM.modo(), "erro": str(ex)}
         _TM_STATUS["t"] = time.time()
     return _TM_STATUS["v"]
-P = {"itens": [], "sel": None, "atualizacoes": [], "selecoes_pares": {}}
-TAREFA = {"ativa": False, "tipo": None, "msg": "", "feito": 0, "total": 0, "erro": None, "fim": 0, "resultado": None}
+P = {"itens": [], "sel": None, "atualizacoes": [], "selecoes_pares": {}, "arquivo": None, "alterado": False}
+TAREFA ={"ativa": False, "tipo": None, "msg": "", "feito": 0, "total": 0, "erro": None, "fim": 0, "resultado": None}
 PES.ao_esperar = lambda s: TAREFA.update(msg=f"PES: o pesdb.net pediu uma pausa de {s} s (limite de pedidos do site)…")
 _PERFIL = {"sig": None, "perfil": None, "ligas": None, "nacoes": None}
 FEM = re.compile(r"\b(women|womens|feminin[oa]|femenin[oa]|fem\.?|ladies|frauen|w)\b|\(w\)|\bwfc\b|\bgirls\b", re.I)
 
 
 # ------------------------------------------------------------------ projeto (persistido)
+# O projeto aberto fica em cache\projeto.json (gravado a cada mudança: sobrevive a fechar a ferramenta). "Salvar
+# projeto" grava uma cópia com tudo o que foi coletado (elencos, fotos analisadas, fichas, conferências) num arquivo
+# escolhido — por padrão em ferramentas\criador\projetos — e "Abrir projeto" volta a ele sem coletar de novo.
+PASTA_PROJETOS = os.path.join(AQUI, "projetos")
+FORMATO_PROJETO = "brfp-criador-ligas-times"
+MAX_RECENTES = 8
+
+
 def carregar_projeto():
     try:
         with open(ARQ_PROJETO, encoding="utf-8") as f:
             d = A.consertar(json.load(f))          # projetos de antes guardaram nomes com acento quebrado pela API
         P.update(itens=d.get("itens") or [], sel=d.get("sel"), atualizacoes=d.get("atualizacoes") or [],
-                 selecoes_pares=d.get("selecoes_pares") or {})
+                 selecoes_pares=d.get("selecoes_pares") or {}, arquivo=d.get("arquivo"), alterado=bool(d.get("alterado")))
     except (OSError, ValueError):
         return
-    for it in P["itens"]:
+    _migrar(P["itens"])
+
+
+def _migrar(itens):
+    """Projetos de versões antigas (do cache ou de um arquivo salvo) no formato de agora; o nível dos times coletados é
+    refeito (a regra pode ter mudado)."""
+    for it in itens:
+        if it.get("selecao") or (it.get("tipo") == "time" and (it.get("api") or {}).get("selecao")):
+            so = it.setdefault("sel_opcoes", {"incluir": [], "excluir_db": []})
+            so.setdefault("criar_modo", criar_modo(so))   # 2.6: "auto" (cria quando a nação tem poucos no banco) / todos / nenhum
         lid_tm = (it.get("liga_api") or it.get("api") or {}).get("id")
         if eh_tm(it) and it.get("temporada") and not it.get("temporada_nome") and lid_tm:   # "2025" -> "2026" (Brasil)
             c = TM.do_cache(f"competitions/{lid_tm}/seasons") or {}
@@ -150,14 +168,216 @@ def carregar_projeto():
                 pass
 
 
-def gravar_projeto():
+def _revisar_nacoes(itens=None):
+    """Seleções postas no projeto sem a nação reconhecida (até a 2.5 o nome do país não batia entre a fonte e o banco
+    em vários casos: "Cape Verde" x "Cape Verde Islands", "Netherlands" x "Holland"…): tenta de novo. True se mudou."""
+    if not MOTOR["ok"] or not dados.banco_atual():
+        return False
+    mudou = False
+    for it in P["itens"] if itens is None else itens:
+        if not it.get("selecao") or it.get("nacao"):
+            continue
+        tm = it.get("api") or {}
+        try:
+            nacao = nacao_de(re.sub(r"\s+W$", "", tm.get("nome") or ""), None) or nacao_de(tm.get("pais"))
+            if not nacao:
+                continue
+            it["nacao"] = nacao
+            if not it.get("nivel_manual"):
+                nivel, motivo = nivel_selecao(nacao, _genero(it))
+                it.update(nivel=nivel, nivel_auto=nivel, nivel_base=nivel, nivel_offset=0, nivel_motivo=motivo)
+            nome_pt = next((n["nome"] for n in nacoes_db() if n["id"] == str(nacao)), None)
+            if nome_pt and it.get("nome") == tm.get("nome"):         # o nome não foi trocado à mão
+                it["nome"] = nome_pt + (" (feminina)" if it.get("feminino") and not eh_tm(it) else "")
+            mudou = True
+        except Exception:  # noqa: BLE001
+            traceback.print_exc()
+    return mudou
+
+
+_GRAVANDO = threading.Lock()
+
+
+def gravar_projeto(mudou=True):
+    """Grava o projeto aberto no cache. mudou=False: só a seleção do item (o projeto salvo continua igual)."""
     os.makedirs(os.path.dirname(ARQ_PROJETO), exist_ok=True)
     with LOCK:
+        if mudou:
+            P["alterado"] = True
         txt = json.dumps({"itens": P["itens"], "sel": P["sel"], "atualizacoes": P["atualizacoes"],
-                          "selecoes_pares": P.get("selecoes_pares") or {}}, ensure_ascii=False)
-    with open(ARQ_PROJETO + ".tmp", "w", encoding="utf-8") as f:
-        f.write(txt)
-    os.replace(ARQ_PROJETO + ".tmp", ARQ_PROJETO)
+                          "selecoes_pares": P.get("selecoes_pares") or {}, "arquivo": P.get("arquivo"),
+                          "alterado": bool(P.get("alterado"))}, ensure_ascii=False)
+    with _GRAVANDO:                                        # a coleta grava de outra thread
+        with open(ARQ_PROJETO + ".tmp", "w", encoding="utf-8") as f:
+            f.write(txt)
+        os.replace(ARQ_PROJETO + ".tmp", ARQ_PROJETO)
+
+
+def _nome_projeto(caminho):
+    n = os.path.basename(caminho or "")
+    return n[:-5] if n.lower().endswith(".json") else n
+
+
+def _nome_sugerido():
+    """Nome do arquivo para salvar um projeto novo: a liga, a seleção ou o time (e quantos mais)."""
+    its = P["itens"]
+    ligas = [x for x in its if x["tipo"] == "liga"]
+    times = [x for x in its if x["tipo"] == "time" and not x.get("liga_item")]
+    sels = [x for x in times if x.get("selecao")]
+    if len(ligas) == 1 and not times:
+        n = f"{ligas[0]['nome']} {ligas[0].get('temporada_nome') or ligas[0].get('temporada') or ''}".strip()
+    elif sels and len(sels) == len(times) and not ligas:
+        n = sels[0]["nome"] if len(sels) == 1 else f"Seleções ({len(sels)})"
+    elif its:
+        principal = (ligas or times)[0]
+        resto = len(ligas) + len(times) - 1
+        n = principal["nome"] + (f" e mais {resto}" if resto else "")
+    else:
+        n = "Atualizações do banco"
+    n = re.sub(r'[<>:"/\\|?*\x00-\x1f]+', " ", n).strip(" .") or "Projeto"
+    return f"{n[:80]}.json"
+
+
+def _recentes():
+    vistos, out = set(), []
+    for c in PREFS.ler().get("projetos_recentes") or []:
+        if isinstance(c, str) and c.lower() not in vistos and os.path.isfile(c):
+            vistos.add(c.lower())
+            out.append({"caminho": c, "nome": _nome_projeto(c)})
+    return out[:MAX_RECENTES]
+
+
+def _lembrar_recente(caminho):
+    rec = [caminho] + [c for c in PREFS.ler().get("projetos_recentes") or [] if isinstance(c, str) and c.lower() != caminho.lower()]
+    PREFS.atualizar(projetos_recentes=rec[:MAX_RECENTES])
+
+
+def projeto_publico():
+    arq = P.get("arquivo")
+    return {"arquivo": arq, "nome": _nome_projeto(arq) if arq else None, "alterado": bool(P.get("alterado")),
+            "existe": bool(arq and os.path.isfile(arq)), "recentes": _recentes(), "pasta": PASTA_PROJETOS}
+
+
+def api_projeto_salvar(d):
+    """Salva o projeto (com tudo o que foi coletado) no arquivo dele; "como" (ou um projeto que nunca foi salvo) pergunta
+    onde. d["caminho"]: grava direto nesse arquivo (sem diálogo)."""
+    with LOCK:
+        if not P["itens"] and not P["atualizacoes"]:
+            raise base.ErroUsuario("O projeto está vazio: ponha uma liga, um time ou uma seleção antes de salvar.")
+        atual = P.get("arquivo")
+    destino = d.get("caminho") or (None if d.get("como") else atual)
+    if not destino:
+        os.makedirs(PASTA_PROJETOS, exist_ok=True)
+        pasta = os.path.dirname(atual) if atual and os.path.isdir(os.path.dirname(atual)) else PASTA_PROJETOS
+        destino = base.dialogo("salvar", "Salvar o projeto do Criador de Ligas e Times", pasta,
+                               tipos=[("Projeto do Criador de Ligas e Times", "*.json")],
+                               nome=os.path.basename(atual) if atual else _nome_sugerido(), extensao="json")
+        if not destino:
+            return {"cancelado": True, **estado_payload()}
+    if not destino.lower().endswith(".json"):
+        destino += ".json"
+    with LOCK:
+        conteudo = {"formato": FORMATO_PROJETO, "versao": 1, "ferramenta": f"Criador de Ligas e Times {VERSAO}",
+                    "salvo_em": datetime.datetime.now().isoformat(timespec="seconds"),
+                    "itens": P["itens"], "sel": P["sel"], "atualizacoes": P["atualizacoes"],
+                    "selecoes_pares": P.get("selecoes_pares") or {}}
+        txt = json.dumps(conteudo, ensure_ascii=False)
+    try:
+        os.makedirs(os.path.dirname(os.path.abspath(destino)), exist_ok=True)
+        with open(destino + ".tmp", "w", encoding="utf-8") as f:
+            f.write(txt)
+        os.replace(destino + ".tmp", destino)
+    except OSError as ex:
+        raise base.ErroUsuario(f"Não deu para gravar {destino}: {ex.strerror or ex}")
+    with LOCK:
+        P.update(arquivo=destino, alterado=False)
+    _lembrar_recente(destino)
+    gravar_projeto(mudou=False)
+    return {"salvo": destino, "nome": _nome_projeto(destino), **estado_payload()}
+
+
+def _ler_arquivo_projeto(caminho):
+    try:
+        with open(caminho, encoding="utf-8") as f:
+            d = A.consertar(json.load(f))
+    except OSError as ex:
+        raise base.ErroUsuario(f"Não deu para abrir {caminho}: {ex.strerror or ex}")
+    except ValueError:
+        raise base.ErroUsuario(f"{os.path.basename(caminho)} não é um projeto do Criador de Ligas e Times (o arquivo não é um JSON válido).")
+    if not isinstance(d, dict) or not isinstance(d.get("itens"), list) or (d.get("formato") not in (None, FORMATO_PROJETO)):
+        raise base.ErroUsuario(f"{os.path.basename(caminho)} não é um projeto do Criador de Ligas e Times. (O projeto.json que o "
+                               "Gerar grava na pasta do banco é só o mapa dos IDs; o projeto se salva em Projeto › Salvar projeto.)")
+    return d
+
+
+def api_projeto_abrir(d):
+    """Abre um projeto salvo no lugar do aberto — ou, com "juntar", põe os itens dele no projeto aberto (os que já estão
+    ficam como estão). d["caminho"]: um recente (sem diálogo)."""
+    if TAREFA["ativa"]:
+        raise base.ErroUsuario("Espere a tarefa em andamento terminar para abrir outro projeto.")
+    juntar = bool(d.get("juntar"))
+    caminho = d.get("caminho")
+    if not caminho:
+        atual = P.get("arquivo")
+        pasta = os.path.dirname(atual) if atual and os.path.isdir(os.path.dirname(atual)) else PASTA_PROJETOS
+        os.makedirs(PASTA_PROJETOS, exist_ok=True)
+        caminho = base.dialogo("abrir", "Juntar um projeto salvo ao aberto" if juntar else "Abrir um projeto do Criador de Ligas e Times",
+                               pasta, tipos=[("Projeto do Criador de Ligas e Times", "*.json"), ("Todos", "*.*")])
+        if not caminho:
+            return {"cancelado": True, **estado_payload()}
+    if not os.path.isfile(caminho):
+        raise base.ErroUsuario(f"O arquivo não existe mais: {caminho}")
+    dd = _ler_arquivo_projeto(caminho)
+    novos, repetidos = [], 0
+    with LOCK:
+        pares = P.get("selecoes_pares") or {}
+        for fonte, m in (dd.get("selecoes_pares") or {}).items():   # pares de seleções achados: um cache, somam
+            pares.setdefault(fonte, {}).update({k: v for k, v in (m or {}).items() if k not in pares.get(fonte, {})})
+        if juntar:
+            ids = {x["id"] for x in P["itens"]}
+            for it in dd.get("itens") or []:
+                if it.get("id") in ids:
+                    repetidos += 1
+                    continue
+                novos.append(it)
+                ids.add(it["id"])
+            P["itens"] += novos
+            ja = {a["id"] for a in P["atualizacoes"]}
+            P["atualizacoes"] += [a for a in dd.get("atualizacoes") or [] if a.get("id") not in ja]
+            if novos and not P["sel"]:
+                P["sel"] = novos[0]["id"]
+            P["selecoes_pares"] = pares
+        else:
+            novos = list(dd.get("itens") or [])
+            P.update(itens=novos, sel=dd.get("sel"), atualizacoes=dd.get("atualizacoes") or [], selecoes_pares=pares,
+                     arquivo=caminho, alterado=False)
+            if P["sel"] and not any(x["id"] == P["sel"] for x in P["itens"]):
+                P["sel"] = None
+    try:
+        _migrar(novos)
+        _revisar_nacoes(novos)
+    except Exception:  # noqa: BLE001  (sem banco ou sem o motor: o nível fica o salvo)
+        traceback.print_exc()
+    _lembrar_recente(caminho)
+    gravar_projeto(mudou=juntar)
+    return {"aberto": caminho, "nome": _nome_projeto(caminho), "juntados": len(novos) if juntar else None,
+            "repetidos": repetidos, **estado_payload()}
+
+
+def api_projeto_novo(_):
+    """Projeto vazio (o cache das fontes e os pares de seleções achados continuam)."""
+    if TAREFA["ativa"]:
+        raise base.ErroUsuario("Espere a tarefa em andamento terminar.")
+    with LOCK:
+        P.update(itens=[], sel=None, atualizacoes=[], arquivo=None, alterado=False)
+    gravar_projeto(mudou=False)
+    return estado_payload()
+
+
+def api_projeto_recente_tirar(d):
+    PREFS.atualizar(projetos_recentes=[c for c in PREFS.ler().get("projetos_recentes") or []
+                                       if isinstance(c, str) and c.lower() != str(d.get("caminho") or "").lower()])
+    return estado_payload()
 
 
 def item(iid):
@@ -323,7 +543,10 @@ def custo_item(it):
     try:
         if eh_tm(it):
             op = PREFS.ler()
-            return CT.estimar(TM, it["api"]["id"], it.get("temporada"), "atual" if it.get("selecao") else (it.get("modo") or "temporada"),
+            if it.get("selecao"):                          # a convocação não busca estatísticas nem escalações
+                conv = it.get("convocacao")
+                return CT.estimar(TM, it["api"]["id"], conv, "temporada" if conv else "atual", {"estatisticas": False, "escalacoes": 0})
+            return CT.estimar(TM, it["api"]["id"], it.get("temporada"), it.get("modo") or "temporada",
                               {"estatisticas": op.get("tm_estatisticas"), "escalacoes": it.get("escalacoes") or 0})
         if it.get("selecao"):
             return C.estimar_selecao(API, it["api"]["id"], it["temporada"], it.get("escalacoes") or 0)
@@ -350,11 +573,13 @@ def estado_payload():
             "calibracao": N.carregar_coef() if MOTOR["ok"] else {}, "calibracao_tm": N.carregar_coef_tm() if MOTOR["ok"] else {},
             "motor": {"ok": MOTOR["ok"], "msg": MOTOR["msg"], "instalar": not MOTOR["ok"]},
             "fotos_ok": _aparencia_disponivel(), "sofifa": F.sofifa().estado(), "pes_base": F.pes_local().estado(),
-            "pes_versoes": [{"id": v, "nome": n} for v, n, _ in F.VERSOES_PES]}
+            "pes_versoes": [{"id": v, "nome": n} for v, n, _ in F.VERSOES_PES], "projeto": projeto_publico()}
 
 
 def api_inicio(_):
     tem = dados.banco_atual() and MOTOR["ok"]
+    if tem and _revisar_nacoes():
+        gravar_projeto(mudou=False)
     return {"versao": VERSAO, **estado_payload(), "ligas_db": ligas_db() if tem else [], "nacoes": nacoes_db() if tem else [],
             "formacoes": _formacoes() if tem else [], "estadios": _estadios() if tem else []}
 
@@ -504,7 +729,7 @@ def _novo_time(tm, liga, temporada, modo, liga_item=None, feminino=None):
                 "nome": nome_pt or tm["nome"], "nivel": nivel, "nivel_auto": nivel, "nivel_base": nivel, "nivel_offset": 0,
                 "nivel_manual": False, "nivel_motivo": motivo, "divisao": 1, "nacao": nacao, "liga_item": None,
                 "destino": G.LIGA_SELECOES[gen], "estado": "pendente", "erro": None, "dados": None, "ajustes": {}, "modelo": None,
-                "feminino": fem, "sel_opcoes": {"criar_faltantes": False, "incluir": [], "excluir_db": []}}
+                "feminino": fem, "sel_opcoes": {"criar_modo": "auto", "incluir": [], "excluir_db": []}}
     if selecao:
         nacao = nacao_de(re.sub(r"\s+W$", "", tm.get("nome") or ""), None) or nacao_de(tm.get("pais"))
         nivel, motivo = nivel_selecao(nacao, gen) if nacao else (62.0, "nação não encontrada")
@@ -515,7 +740,7 @@ def _novo_time(tm, liga, temporada, modo, liga_item=None, feminino=None):
                 "nivel_auto": nivel, "nivel_base": nivel, "nivel_offset": 0, "nivel_manual": False, "nivel_motivo": motivo,
                 "divisao": 1, "nacao": nacao, "liga_item": None, "destino": G.LIGA_SELECOES[gen], "estado": "pendente",
                 "erro": None, "dados": None, "ajustes": {}, "modelo": None, "feminino": fem,
-                "sel_opcoes": {"criar_faltantes": False, "incluir": [], "excluir_db": []}}
+                "sel_opcoes": {"criar_modo": "auto", "incluir": [], "excluir_db": []}}
     nacao = nacao_de(tm.get("pais") or liga.get("pais"), liga.get("codigo_pais") if (tm.get("pais") == liga.get("pais")) else None)
     nivel, div, motivo = nivel_sugerido(liga, nacao, gen)
     return {"id": f"{pre}T{tm['id']}-{temporada}", "tipo": "time", "selecao": False, "fonte": fonte, "api": tm, "liga_api": liga,
@@ -592,7 +817,7 @@ def api_adicionar_times(d):
             raise base.ErroUsuario("Esse(s) time(s) já estão no projeto." if repetidos else "Nenhum time escolhido.")
         P["sel"] = novos[-1]["id"] if len(novos) == 1 else P["sel"] or novos[0]["id"]
     gravar_projeto()
-    return {**estado_payload(), "adicionados": len(novos), "repetidos": repetidos}
+    return {**estado_payload(), "adicionados": len(novos), "repetidos": repetidos, "ids": [x["id"] for x in novos]}
 
 
 def api_remover(d):
@@ -612,6 +837,8 @@ def api_remover(d):
 
 
 def api_limpar(_):
+    if TAREFA["ativa"]:
+        raise base.ErroUsuario("Espere a tarefa em andamento terminar.")
     with LOCK:
         P.update(itens=[], sel=None, atualizacoes=[])
     gravar_projeto()
@@ -621,7 +848,7 @@ def api_limpar(_):
 def api_selecionar(d):
     with LOCK:
         P["sel"] = d.get("id")
-    gravar_projeto()
+    gravar_projeto(mudou=False)
     return estado_payload()
 
 
@@ -781,16 +1008,19 @@ def api_ajustar(d):
         if d.get("limpar"):
             it["ajustes"] = {}
     gravar_projeto()
-    return api_previa({"id": d["id"]})
+    return {**api_previa({"id": d["id"]}), "projeto": projeto_publico()}     # o "•" de mudança não salva
 
 
 def api_selecao(d):
     """Seleção: incluir/excluir jogadores do banco, casar um convocado com um jogador do banco, criar os que faltam."""
     with LOCK:
         it = item(d["id"])
-        so = it.setdefault("sel_opcoes", {"criar_faltantes": False, "incluir": [], "excluir_db": []})
-        if "criar_faltantes" in d:
-            so["criar_faltantes"] = bool(d["criar_faltantes"])
+        so = it.setdefault("sel_opcoes", {"criar_modo": "auto", "incluir": [], "excluir_db": []})
+        if "criar_faltantes" in d:                          # (antes da 2.6) True = todos, False = nenhum
+            d.setdefault("criar_modo", "todos" if d["criar_faltantes"] else "nenhum")
+        if d.get("criar_modo") in ("auto", "todos", "nenhum"):
+            so["criar_modo"] = d["criar_modo"]
+            so.pop("criar_faltantes", None)
             so["criar"] = {}                                # "criar todos"/"nenhum" desfaz as escolhas de um por um
         if "criar_um" in d:                                 # {api_id, criar}: este convocado é criado ou não
             so.setdefault("criar", {})[str(d["criar_um"]["api_id"])] = bool(d["criar_um"].get("criar"))
@@ -812,7 +1042,7 @@ def api_selecao(d):
             else:
                 a.pop("playerid_banco", None)
     gravar_projeto()
-    return api_previa({"id": d["id"]})
+    return {**api_previa({"id": d["id"]}), "projeto": projeto_publico()}     # o "•" de mudança não salva
 
 
 def api_times_db(_):
@@ -1094,7 +1324,14 @@ def _genero(it):
     return 1 if it.get("feminino") else 0
 
 
-def _extra(it, op=None):
+def criar_modo(so):
+    """O que fazer com os convocados que não estão no banco: "auto" (cria todos quando a nação tem poucos jogadores no
+    banco), "todos" ou "nenhum". Projetos de antes da 2.6 só tinham criar_faltantes (falso = o automático de agora)."""
+    so = so or {}
+    return so.get("criar_modo") or ("todos" if so.get("criar_faltantes") else "auto")
+
+
+def _extra(it, op=None, previa=False):
     op = op or PREFS.ler()
     ex = {"modelo": it.get("modelo"), "visual": op.get("visual") or "proprio", "posicao_tabela": it.get("posicao_tabela"),
           "teamid": it.get("teamid"), "tatica": it.get("tatica") or {}, "tecnico": it.get("tecnico") or {},
@@ -1104,15 +1341,18 @@ def _extra(it, op=None):
         intl = dados.internationals_atual()
         so = it.get("sel_opcoes") or {}
         ex.update(nacao=it.get("nacao"), limites=intl.squad() if intl else None, idade_maxima=intl.idade_maxima() if intl else 35,
-                  criar_faltantes=so.get("criar_faltantes"), criar=so.get("criar") or {}, incluir=so.get("incluir") or [],
-                  excluir_db=so.get("excluir_db") or [],
+                  criar_modo=criar_modo(so), criar=so.get("criar") or {}, incluir=so.get("incluir") or [],
+                  excluir_db=so.get("excluir_db") or [], nivel_manual=bool(it.get("nivel_manual")), previa=previa,
                   forca=(float(it.get("nivel") or 76) - 76.0) / 4.0)
     return ex
 
 
-def _criar(pj, it, destino):
+def _criar(pj, it, destino, previa=False):
     if it.get("selecao"):
-        return pj.criar_selecao(it["dados"], float(it.get("nivel") or 70), _genero(it), it.get("ajustes") or {}, _extra(it))
+        if not it.get("nacao"):
+            _revisar_nacoes([it])
+        return pj.criar_selecao(it["dados"], float(it.get("nivel") or 70), _genero(it), it.get("ajustes") or {},
+                                _extra(it, previa=previa))
     aj = dict(it.get("ajustes") or {})
     if it.get("nome") and it["nome"] != (it.get("api") or {}).get("nome"):      # nome trocado no painel do item
         aj.setdefault("_time_nome", it["nome"])
@@ -1131,7 +1371,7 @@ def api_previa(q):
         lig = item(it["liga_item"])
         destino = lig.get("destino") if lig.get("destino") not in (None, "nova") else "0"
     try:
-        r = _criar(pj, it, destino)
+        r = _criar(pj, it, destino, previa=True)
     except ValueError as ex:
         if str(ex).startswith(G.MENOS_DE_11):
             return {"id": it["id"], "time": None, "menos11": {"msg": str(ex)[len(G.MENOS_DE_11):]}}
@@ -1167,6 +1407,14 @@ def api_gerar(d):
         sem = [it["nome"] for it in times if not it.get("dados")]
         if sem:
             raise base.ErroUsuario(f"Faltam os dados de {len(sem)} time(s) ({', '.join(sem[:4])}{'…' if len(sem) > 4 else ''}). Use Coletar primeiro.")
+        por_nacao = {}                                     # duas seleções da mesma nação (ex.: da Transfermarkt e da API, ou
+        for it in times:                                   # juntadas de outro projeto) gravariam o mesmo time duas vezes
+            if it.get("selecao") and it.get("nacao"):
+                por_nacao.setdefault((str(it["nacao"]), _genero(it)), []).append(it["nome"])
+        dup = [n for n in por_nacao.values() if len(n) > 1]
+        if dup:
+            raise base.ErroUsuario("Há duas seleções da mesma nação no projeto: " + "; ".join(" e ".join(n) for n in dup[:3]) +
+                                   ". Tire uma delas antes de gerar.")
     op = PREFS.ler()
     pasta = d.get("pasta") or op.get("saida")
     if not pasta:
@@ -1205,10 +1453,12 @@ def _gerar(pasta, nome, itens, atualizacoes):
             else:
                 destino = it.get("destino") or G.LIGA_RDM.get(_genero(it), "76")
             _criar(pj, it, destino)
-        if pj.clubes_mexidos:                              # clubes do banco que perderam jogadores para os times novos
+        if pj.clubes_mexidos or pj.selecoes_mexidas:       # times do banco que perderam (ou ganharam) jogadores
             import atualizar as U
             for tid in sorted(pj.clubes_mexidos - {G.TIME_SEM_CONTRATO}):
                 U.reescalar(pj, tid)                       # com menos de 11, entram jogadores sem contrato
+            for tid in sorted(pj.selecoes_mexidas):        # seleção que perdeu quem passou a jogar por outra nação
+                U.reescalar(pj, tid, completar=False)
         TAREFA.update(msg="Gravando o banco…", feito=len(times))
         r = S.gravar(pj, pasta, nome, dados.idioma_atual(), bool(op.get("baixar_imagens")),
                      progresso=lambda m, f=None: TAREFA.update(msg=m), internationals=dados.internationals_atual())
@@ -1701,7 +1951,7 @@ def api_atualizar_selecoes_projeto(d):
         if novos:
             P["sel"] = novos[0]
     gravar_projeto()
-    return {**estado_payload(), "adicionados": len(novos), "repetidos": repetidos, "sem_par": sem_par}
+    return {**estado_payload(), "adicionados": len(novos), "repetidos": repetidos, "sem_par": sem_par, "ids": novos}
 
 
 def api_atualizar_sugestao(q):
@@ -1939,7 +2189,8 @@ ROTAS_POST = {k: _protegido(v) for k, v in {
     "atualizar_conferir_varias": api_atualizar_conferir_varias, "atualizar_casar_selecoes": api_atualizar_casar_selecoes,
     "atualizar_selecoes_projeto": api_atualizar_selecoes_projeto, "atualizar_casar_individual": api_atualizar_casar_individual,
     "sofifa_baixar": api_sofifa_baixar, "sofifa_importar": api_sofifa_importar, "sofifa_novas": api_sofifa_novas, "buscar_pes": api_buscar_pes,
-    "pes_baixar": api_pes_baixar}.items()}
+    "pes_baixar": api_pes_baixar, "projeto_salvar": api_projeto_salvar, "projeto_abrir": api_projeto_abrir,
+    "projeto_novo": api_projeto_novo, "projeto_recente_tirar": api_projeto_recente_tirar}.items()}
 _G, _P = base.rotas_componentes("criador", ao_concluir=carregar_motor)
 ROTAS_GET.update(_G)
 ROTAS_POST.update(_P)

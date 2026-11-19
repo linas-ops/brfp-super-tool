@@ -61,6 +61,7 @@ function aplicar(e) {
   desenharStatus();
   if (ativa) acompanhar();
   if (S.tarefaAntes && !ativa) fimTarefa(e.tarefa);
+  else if (S.vistaGrupo && S.aba !== 'atualizar') desenharGrupo(S.vistaGrupo);
   else if (mudouSel && S.aba !== 'atualizar') desenharPrincipal();
   S.tarefaAntes = !!ativa;
 }
@@ -221,8 +222,10 @@ async function adicionarTimeBuscado(t, temporada, fonte) {
   const x = await tentar(() => api('adicionar_times', { times: [t], liga, temporada }));
   if (!x) return;
   aplicar(x);
-  aviso(`${t.nome} no projeto`, { tipo: 'sucesso', detalhe: 'Avulso (sem liga): escolha o destino no painel da direita e colete os dados.' });
+  aviso(`${t.nome} no projeto`, { tipo: 'sucesso', tempo: 6000, detalhe: 'Avulso (sem liga): escolha o destino no painel da direita e colete os dados.', acao: acaoColetar(x.ids) });
 }
+// botão "Coletar agora" do aviso de itens que acabaram de entrar no projeto
+const acaoColetar = (ids) => (ids?.length ? { rotulo: 'Coletar agora', fn: () => { if (S.e.tarefa.ativa) aviso('Espere a tarefa em andamento terminar', { tipo: 'aviso' }); else coletar(ids); } } : null);
 
 async function adicionarSelecaoTm(pais) {
   const r = await tentar(() => api('selecao_tm?pais=' + encodeURIComponent(pais)));
@@ -232,7 +235,7 @@ async function adicionarSelecaoTm(pais) {
   aplicar(x);
   desenharApi();
   desenharPrincipal();
-  aviso(`${r.time.nome} no projeto`, { tipo: 'sucesso', tempo: 2600, detalhe: 'Seleção com a convocação atual da Transfermarkt. Colete os dados no topo.' });
+  aviso(`${r.time.nome} no projeto`, { tipo: 'sucesso', tempo: 6000, detalhe: 'Seleção com a convocação atual da Transfermarkt.', acao: acaoColetar(x.ids) });
 }
 
 function temporadasLiberadas() {
@@ -334,11 +337,12 @@ async function adicionarLiga(l, temporada, ids) {
   const r = await tentar(() => api('adicionar_liga', { liga: l, temporada, ids }));
   if (!r) return;
   S.marcados = new Set();
+  S.vistaGrupo = null;
   aplicar(r);
   S.aba = 'projeto';
   desenharAbas();
   desenharPrincipal();
-  aviso(`${l.nome} ${l.temporada_nome || temporada || ''} no projeto`, { tipo: 'sucesso', detalhe: 'Agora colete os dados (botão Coletar no topo).' });
+  aviso(`${l.nome} ${l.temporada_nome || temporada || ''} no projeto`, { tipo: 'sucesso', tempo: 6000, detalhe: ids ? 'Os times marcados viram uma liga do projeto.' : 'Todos os times viram uma liga do projeto.', acao: acaoColetar(r.sel ? [r.sel] : null) });
 }
 async function adicionarTimes(ids) {
   const nv = S.nav;
@@ -349,34 +353,154 @@ async function adicionarTimes(ids) {
   aplicar(r);
   desenharApi();
   desenharPrincipal();
-  aviso(`${r.adicionados} no projeto`, { tipo: 'sucesso', tempo: 2600, detalhe: r.repetidos?.length ? `Já estavam: ${r.repetidos.join(', ')}` : '' });
+  const sels = times.filter((t) => t.selecao).length;
+  aviso(sels === times.length ? `${r.adicionados} seleção(ões) no projeto` : `${r.adicionados} time(s) no projeto`, { tipo: 'sucesso', tempo: 6000,
+    detalhe: r.repetidos?.length ? `Já estavam: ${r.repetidos.join(', ')}` : 'Colete agora ou depois, pelo cabeçalho do grupo na aba Projeto.', acao: acaoColetar(r.ids) });
 }
 
-// ---------------------------------------------------------------- projeto (lista)
+// ---------------------------------------------------------------- projeto (arquivo salvo, lista e grupos)
+const proj = () => S.e?.projeto || {};
+const temConteudo = () => !!(S.e.itens.length || (S.e.atualizacoes || []).length);
+const naoSalvo = () => temConteudo() && (!!proj().alterado || !proj().arquivo);
+// grupos da lista sem liga: seleções e times avulsos (cada um com "coletar todos" e uma página própria)
+const grupoDe = (x) => (x.tipo !== 'time' || x.liga_item ? null : x.selecao ? 'selecoes' : 'avulsos');
+const GRUPOS = {
+  selecoes: { titulo: 'Seleções', todos: 'todas as seleções', btn: 'Coletar todas', um: 'Seleção', ic: 'mundo' },
+  avulsos: { titulo: 'Times avulsos', todos: 'todos os times avulsos', btn: 'Coletar todos', um: 'Time', ic: 'escudo' },
+};
+const doGrupo = (chave) => S.e.itens.filter((x) => grupoDe(x) === chave);
+function custoTexto(its) {
+  const tm = its.filter(ehTm).reduce((s, t) => s + (t.custo || 0), 0);
+  const ap = its.filter((x) => !ehTm(x)).reduce((s, t) => s + (t.custo || 0), 0);
+  return [tm ? `≈${tm} pedido(s) na Transfermarkt` : null, ap ? `≈${ap} chamada(s) na API-Football` : null].filter(Boolean).join(' e ') || 'sem custo';
+}
+async function coletarDeNovo(ids, titulo) {
+  if (S.e.tarefa.ativa) { aviso('Espere a tarefa em andamento terminar', { tipo: 'aviso' }); return; }
+  const its = S.e.itens.filter((x) => ids.includes(x.id) || ids.includes(x.liga_item)).filter((x) => x.tipo === 'time');
+  if (!its.length) return;
+  if (!await confirmar(titulo, `${its.length} item(ns): os dados são buscados de novo na fonte (${its.some((x) => !ehTm(x)) ? 'na API-Football gasta chamadas de novo' : 'na Transfermarkt não há limite diário'}). Os ajustes feitos à mão continuam.`, { rotulo: 'Coletar de novo' })) return;
+  coletar(ids, true);
+}
+function coletarGrupo(chave, refazer = false) {
+  const g = GRUPOS[chave];
+  const its = doGrupo(chave);
+  if (refazer) return coletarDeNovo(its.map((x) => x.id), `Coletar de novo ${g.todos}?`);
+  const falta = its.filter((x) => x.estado !== 'pronto');
+  if (falta.length) coletar(falta.map((x) => x.id));
+}
+function abrirGrupo(chave) {
+  S.vistaGrupo = chave;
+  if (S.aba === 'atualizar') trocarAba('projeto');
+  desenharProjeto();
+  desenharPropriedades();
+  desenharPrincipal();
+}
+
+async function salvarProjeto(como = false) {
+  if (!temConteudo()) { aviso('O projeto está vazio', { tipo: 'info', detalhe: 'Ponha uma liga, um time ou uma seleção antes de salvar.' }); return false; }
+  const r = await tentar(() => api('projeto_salvar', { como: !!como }));
+  if (!r) return false;
+  aplicar(r);
+  if (r.cancelado) return false;
+  aviso(`Projeto salvo: ${r.nome}`, { tipo: 'sucesso', tempo: 3000, detalhe: r.salvo });
+  return true;
+}
+// antes de trocar o projeto aberto: salvar as mudanças? (true = pode seguir)
+async function guardarMudancas(acao) {
+  if (!naoSalvo()) return true;
+  const pj = proj();
+  const r = await modal({ titulo: pj.arquivo ? `Salvar as mudanças de “${esc(pj.nome)}”?` : 'Salvar o projeto aberto?',
+    texto: `${acao} troca o projeto aberto: ${pj.arquivo ? 'as mudanças que não foram salvas se perdem' : 'ele ainda não foi salvo e se perde (o que foi baixado continua no cache)'}.`,
+    botoes: [{ rotulo: 'Cancelar', valor: null }, { rotulo: 'Não salvar', classe: 'btn-fantasma perigo', valor: 'descartar' }, { rotulo: 'Salvar', classe: 'btn-primario', padrao: true, valor: 'salvar' }] }).promessa;
+  if (!r) return false;
+  return r === 'salvar' ? salvarProjeto(false) : true;
+}
+function depoisDeTrocarProjeto(r) {
+  S.marcadosProj.clear();
+  S.vistaGrupo = null;
+  S.previa = {};
+  aplicar(r);
+  S.aba = 'projeto';
+  desenharAbas();
+  desenharPrincipal();
+}
+async function abrirProjeto(caminho = null) {
+  if (S.e.tarefa.ativa) { aviso('Espere a tarefa em andamento terminar', { tipo: 'aviso' }); return; }
+  if (!await guardarMudancas('Abrir outro projeto')) return;
+  const r = await tentar(() => api('projeto_abrir', { caminho }));
+  if (!r) { if (caminho) aplicar(await tentar(() => api('estado'))); return; }   // um recente que sumiu sai da lista
+  if (r.cancelado) { aplicar(r); return; }
+  depoisDeTrocarProjeto(r);
+  const n = S.e.itens.filter((x) => x.tipo === 'time');
+  aviso(`Projeto aberto: ${r.nome}`, { tipo: 'sucesso', tempo: 3500, detalhe: `${n.length} time(s)/seleção(ões), ${n.filter((x) => x.estado === 'pronto').length} com dados coletados.` });
+}
+async function juntarProjeto() {
+  if (S.e.tarefa.ativa) { aviso('Espere a tarefa em andamento terminar', { tipo: 'aviso' }); return; }
+  const r = await tentar(() => api('projeto_abrir', { juntar: true }));
+  if (!r) return;
+  aplicar(r);
+  if (r.cancelado) return;
+  S.aba = 'projeto';
+  desenharAbas();
+  desenharPrincipal();
+  aviso(r.juntados ? `${r.juntados} item(ns) de ${r.nome} no projeto` : `Nada novo em ${r.nome}`, { tipo: r.juntados ? 'sucesso' : 'info', tempo: 4000, detalhe: r.repetidos ? `${r.repetidos} já estavam no projeto e ficaram como estavam.` : 'Com os dados que já tinham sido coletados.' });
+}
+async function novoProjeto() {
+  if (S.e.tarefa.ativa) { aviso('Espere a tarefa em andamento terminar', { tipo: 'aviso' }); return; }
+  if (!await guardarMudancas('Começar um projeto novo')) return;
+  const r = await tentar(() => api('projeto_novo', {}));
+  if (r) depoisDeTrocarProjeto(r);
+}
+function cabProjeto() {
+  const pj = proj();
+  const vazio = !temConteudo();
+  return el('div', { class: 'proj-arquivo' },
+    el('span', { class: 'ic', html: icone('arquivo', 15) }),
+    el('span', { class: 'txt', title: pj.arquivo || 'Ainda não foi salvo: Projeto › Salvar projeto (Ctrl+S)' },
+      el('b', {}, pj.nome || (vazio ? 'Projeto vazio' : 'Projeto sem nome'), naoSalvo() ? el('span', { class: 'alterado', title: 'Mudanças não salvas' }, ' •') : null),
+      el('small', {}, pj.arquivo ? (pj.alterado ? 'mudanças não salvas' : 'salvo') : vazio ? 'abra um projeto salvo ou comece pela aba API' : 'ainda não salvo')),
+    el('button', { class: 'btn-icone peq', title: 'Abrir um projeto salvo… (Ctrl+O)', disabled: S.e.tarefa.ativa, onclick: () => abrirProjeto(), html: icone('pastaAberta', 15) }),
+    el('button', { class: 'btn-icone peq', title: 'Salvar o projeto, com tudo o que foi coletado (Ctrl+S)', disabled: vazio, onclick: () => salvarProjeto(), html: icone('salvar', 15) }));
+}
+function listaRecentes() {
+  const pj = proj();
+  const rec = (pj.recentes || []).filter((r) => r.caminho !== pj.arquivo);
+  if (!rec.length) return null;
+  return el('div', { class: 'recentes' }, el('div', { class: 'painel-cab' }, el('h2', {}, 'Projetos recentes')),
+    ...rec.map((r) => el('button', { class: 'link-linha', title: r.caminho, disabled: S.e.tarefa.ativa, onclick: () => abrirProjeto(r.caminho) }, el('span', { html: icone('arquivo', 14) }), el('span', { class: 'cresce' }, r.nome))));
+}
+
 function desenharProjeto() {
   const p = $('#esq-projeto');
   p.innerHTML = '';
   const its = S.e.itens;
+  p.append(cabProjeto());
   if (!its.length) {
-    p.append(el('div', { class: 'arvore-vazia' }, 'Projeto vazio. Na aba API, escolha uma competição e adicione a liga inteira, times avulsos ou seleções.'));
+    p.append(el('div', { class: 'arvore-vazia' }, 'Projeto vazio. Na aba API, escolha uma competição e adicione a liga inteira, times avulsos ou seleções — ou abra um projeto salvo (Projeto › Abrir projeto).'), listaRecentes() || '');
     return;
   }
   const lista = el('div', { class: 'arvore' });
   const mp = S.marcadosProj;
+  const ativa = S.e.tarefa.ativa;
   for (const id of [...mp]) if (!its.some((x) => x.id === id)) mp.delete(id);
   if (mp.size) {
+    const marc = its.filter((x) => mp.has(x.id));
+    const timesMarc = marc.flatMap((x) => (x.tipo === 'liga' ? its.filter((t) => t.liga_item === x.id) : [x]));
+    const pend = timesMarc.filter((x) => x.estado !== 'pronto');
     lista.append(el('div', { class: 'barra-lote' }, el('span', {}, `${mp.size} marcado(s)`),
       el('span', { class: 'acoes-linha' }, el('button', { class: 'btn-fantasma peq', onclick: () => { mp.clear(); desenharProjeto(); } }, 'Desmarcar'),
+        el('button', { class: 'btn peq', disabled: ativa || !timesMarc.length, title: pend.length ? `Coleta os ${pend.length} marcados que ainda não têm dados (${custoTexto(pend)})` : 'Os marcados já têm dados: coleta de novo',
+          onclick: () => (pend.length ? coletar([...mp]) : coletarDeNovo([...mp], `Coletar de novo os ${mp.size} marcados?`)) }, icone(pend.length ? 'baixar' : 'recarregar', 12), pend.length ? `Coletar ${pend.length}` : 'Coletar de novo'),
         el('button', { class: 'btn-perigo peq', onclick: () => removerVarios([...mp]) }, icone('apagar', 12), 'Tirar do projeto'))));
   }
   const marca = (i) => {
-    const ch = el('input', { type: 'checkbox', class: 'marca-proj', title: 'Marcar para tirar vários do projeto de uma vez' });
+    const ch = el('input', { type: 'checkbox', class: 'marca-proj', title: 'Marcar para coletar ou tirar vários do projeto de uma vez' });
     ch.checked = mp.has(i.id);
     ch.onclick = (ev) => ev.stopPropagation();
     ch.onchange = () => { if (ch.checked) mp.add(i.id); else mp.delete(i.id); desenharProjeto(); };
     return ch;
   };
-  const linha = (i, filho = false) => el('div', { class: `it-proj marcavel ${filho ? 'filho' : ''} ${S.e.sel === i.id ? 'foco' : ''} ${mp.has(i.id) ? 'marcado' : ''}`, role: 'button', tabindex: 0, onclick: () => selecionar(i.id),
+  const linha = (i, filho = false) => el('div', { class: `it-proj marcavel ${filho ? 'filho' : ''} ${S.e.sel === i.id && !S.vistaGrupo ? 'foco' : ''} ${mp.has(i.id) ? 'marcado' : ''}`, role: 'button', tabindex: 0, onclick: () => selecionar(i.id),
     oncontextmenu: (ev) => { ev.preventDefault(); menuItem(i, ev.clientX, ev.clientY); } },
   marca(i),
   i.tipo === 'liga' ? el('span', { html: icone('trofeu', 14) }) : el('span', { class: `est ${i.estado}`, title: { pendente: 'sem dados', coletando: 'coletando…', pronto: 'dados coletados', erro: i.erro || 'erro' }[i.estado] }),
@@ -390,14 +514,25 @@ function desenharProjeto() {
     lista.append(linha(i));
     for (const t of its.filter((x) => x.liga_item === i.id)) lista.append(linha(t, true));
   }
-  const soltos = its.filter((x) => x.tipo === 'time' && !x.liga_item && !x.selecao);
+  // seleções e times avulsos: cabeçalho que abre a página do grupo, com "Coletar todas" (ou de novo, se todas já têm dados)
+  const cabGrupo = (chave, grupo) => {
+    const g = GRUPOS[chave];
+    const falta = grupo.filter((x) => x.estado !== 'pronto');
+    return el('div', { class: `painel-cab cab-grupo ${S.vistaGrupo === chave ? 'foco' : ''}` },
+      el('button', { class: 'link-grupo', title: `Ver ${g.todos}: dados, nível e coleta`, onclick: () => abrirGrupo(chave) }, el('h2', {}, `${g.titulo} (${grupo.length})`)),
+      falta.length
+        ? el('button', { class: 'btn-fantasma peq', disabled: ativa, title: `${falta.length === grupo.length ? `Coleta ${g.todos}` : `Coleta ${falta.length} sem dados`} (${custoTexto(falta)})`, onclick: () => coletarGrupo(chave) },
+          icone('baixar', 12), falta.length === grupo.length ? g.btn : `Coletar ${falta.length}`)
+        : el('button', { class: 'btn-fantasma peq', disabled: ativa, title: `Todas já têm dados: coletar de novo ${g.todos}`, onclick: () => coletarGrupo(chave, true) }, icone('recarregar', 12), 'De novo'));
+  };
+  const soltos = doGrupo('avulsos');
   if (soltos.length) {
-    lista.append(el('div', { class: 'painel-cab', style: { padding: '8px 10px 4px' } }, el('h2', {}, 'Times avulsos')));
+    lista.append(cabGrupo('avulsos', soltos));
     for (const t of soltos) lista.append(linha(t));
   }
-  const sels = its.filter((x) => x.selecao);
+  const sels = doGrupo('selecoes');
   if (sels.length) {
-    lista.append(el('div', { class: 'painel-cab', style: { padding: '8px 10px 4px' } }, el('h2', {}, 'Seleções')));
+    lista.append(cabGrupo('selecoes', sels));
     for (const t of sels) lista.append(linha(t));
   }
   p.append(lista);
@@ -406,9 +541,15 @@ function desenharProjeto() {
 }
 
 function menuItem(i, x, y) {
+  const g = grupoDe(i);
+  const grupo = g ? doGrupo(g) : [];
+  const falta = grupo.filter((t) => t.estado !== 'pronto');
+  const ativa = S.e.tarefa.ativa;
   abrirMenu([
     { cabecalho: i.nome },
-    { rotulo: i.tipo === 'liga' ? 'Coletar os times da liga' : (i.estado === 'pronto' ? 'Coletar de novo' : 'Coletar'), icone: 'baixar', fn: () => coletar([i.id], i.estado === 'pronto') },
+    { rotulo: i.tipo === 'liga' ? 'Coletar os times da liga' : (i.estado === 'pronto' ? 'Coletar de novo' : 'Coletar'), icone: 'baixar', desabilitado: ativa, fn: () => coletar([i.id], i.estado === 'pronto') },
+    g && grupo.length > 1 ? { rotulo: falta.length ? `${GRUPOS[g].btn} (${falta.length} sem dados)` : `Coletar de novo ${GRUPOS[g].todos}`, icone: falta.length ? 'baixar' : 'recarregar', desabilitado: ativa, fn: () => coletarGrupo(g, !falta.length) } : null,
+    g ? { rotulo: `Ver ${GRUPOS[g].todos}`, icone: 'lista', fn: () => abrirGrupo(g) } : null,
     { rotulo: 'Analisar as fotos', icone: 'rosto', desabilitado: !S.e.fotos_ok, fn: () => analisarFotos([i.id]) },
     '-',
     { rotulo: 'Tirar do projeto', icone: 'apagar', fn: () => remover(i) },
@@ -417,6 +558,7 @@ function menuItem(i, x, y) {
 }
 
 async function selecionar(id) {
+  S.vistaGrupo = null;
   aplicar(await tentar(() => api('selecionar', { id })));
   desenharPrincipal();
 }
@@ -440,6 +582,7 @@ async function remover(i) {
 // ---------------------------------------------------------------- centro
 async function desenharPrincipal() {
   if (S.aba === 'atualizar') return desenharAtualizacao();
+  if (S.vistaGrupo) return desenharGrupo(S.vistaGrupo);
   const i = itemSel();
   if (!i) return telaInicial();
   if (i.tipo === 'liga') return desenharLiga(i);
@@ -491,6 +634,42 @@ function desenharLiga(i) {
   el('div', { class: 'cartao-corpo justo' }, el('table', { class: 'tabela times-liga' }, el('thead', {}, el('tr', {}, ...['Time', 'Dados', 'Tabela', 'Nível', tm ? 'Pedidos' : 'Chamadas', ''].map((h) => el('th', {}, h)))), tb))));
 }
 
+// página de um grupo (todas as seleções ou todos os times avulsos do projeto): dados, nível e coletar todos de uma vez
+function desenharGrupo(chave) {
+  const p = $('#principal');
+  const g = GRUPOS[chave];
+  const its = doGrupo(chave);
+  if (!its.length) { S.vistaGrupo = null; desenharProjeto(); return desenharPrincipal(); }
+  p.innerHTML = '';
+  const falta = its.filter((x) => x.estado !== 'pronto');
+  const ativa = S.e.tarefa.ativa;
+  const sel = chave === 'selecoes';
+  p.append(el('div', { class: 'cab-time' }, el('div', { class: 'ic-c', html: icone(g.ic, 40) }),
+    el('div', {}, el('h1', {}, g.titulo), el('div', { class: 'sub' }, `${its.length} no projeto · ${its.length - falta.length} com dados${sel ? ' · convocação atual' : ''}`))));
+  p.append(el('div', { class: 'estatisticas', style: { margin: '6px 0 14px' } },
+    ...[[`${its.length - falta.length}/${its.length}`, 'com dados'], [fmt(its.reduce((s, x) => s + (x.estado === 'pronto' ? x.jogadores || 0 : 0), 0)), 'jogadores coletados'],
+      [falta.length, 'sem dados'], [its.filter((x) => x.estado === 'erro').length, 'com erro']]
+      .map(([v, k]) => el('div', { class: 'estatistica' }, el('b', {}, String(v)), el('span', {}, k)))));
+  if (falta.length) p.append(nota(`Coletar ${falta.length === its.length ? g.todos : `as ${falta.length} sem dados`}: ${esc(custoTexto(falta))}. O que já foi baixado fica no cache e não gasta de novo.`, 'info'));
+  if (sel) p.append(nota('Na prévia de cada seleção: os convocados que não estão no banco são criados quando a nação tem poucos jogadores lá (Automático), ou sempre (Criar todos); cada um vai para o clube dele, se o clube estiver no banco, ou para os Passes Livres.', 'info'));
+  const tb = el('tbody');
+  for (const t of its) {
+    tb.append(el('tr', { onclick: () => selecionar(t.id), style: { cursor: 'pointer' } },
+      el('td', {}, el('img', { src: im(t.api?.logo), alt: '' }), t.nome, t.feminino ? el('span', { class: 'selo-f', title: 'Feminino' }, 'F') : null),
+      el('td', {}, curtaFonte(t)),
+      el('td', { title: t.estado === 'erro' ? t.erro || '' : '' }, el('span', { class: `est ${t.estado}`, style: { display: 'inline-block', marginRight: '6px' } }),
+        { pendente: 'sem dados', coletando: 'coletando…', pronto: `${t.jogadores} jogadores`, erro: 'erro' }[t.estado]),
+      el('td', { class: 'num' }, t.nivel ?? '—'),
+      el('td', { class: 'num' }, t.estado === 'pronto' ? '0' : String(t.custo ?? '—')),
+      el('td', {}, el('button', { class: 'btn-icone peq', disabled: ativa, title: t.estado === 'pronto' ? 'Coletar de novo' : sel ? 'Coletar só esta' : 'Coletar só este', onclick: (ev) => { ev.stopPropagation(); coletar([t.id], t.estado === 'pronto'); }, html: icone('baixar', 13) }))));
+  }
+  p.append(el('div', { class: 'cartao' }, el('header', {}, el('div', {}, el('h3', {}, g.titulo), el('p', { class: 'dica' }, 'Clique numa linha para ver a prévia.')),
+    el('div', { class: 'acoes-linha' },
+      el('button', { class: 'btn-primario peq', disabled: !falta.length || ativa, onclick: () => coletarGrupo(chave) }, icone('baixar', 12), falta.length === its.length || !falta.length ? g.btn : `Coletar as ${falta.length} sem dados`),
+      el('button', { class: 'btn peq', disabled: ativa || falta.length === its.length, title: `Busca de novo ${g.todos} (as que já têm dados também)`, onclick: () => coletarGrupo(chave, true) }, icone('recarregar', 12), 'Coletar de novo'))),
+  el('div', { class: 'cartao-corpo justo' }, el('table', { class: 'tabela times-liga' }, el('thead', {}, el('tr', {}, ...[g.um, 'Fonte', 'Dados', 'Nível', 'Custo', ''].map((h) => el('th', {}, h)))), tb))));
+}
+
 async function desenharTime(i) {
   const p = $('#principal');
   p.innerHTML = '';
@@ -513,7 +692,7 @@ async function desenharTime(i) {
   const corpo = el('div', { id: 'corpo-previa' }, el('div', { class: 'vazio' }, 'Gerando a prévia…'));
   p.append(corpo);
   const r = await tentar(() => api('previa?id=' + encodeURIComponent(i.id)));
-  if (!r || S.e.sel !== i.id) { if (!r) corpo.innerHTML = ''; return; }
+  if (!r || S.e.sel !== i.id || S.vistaGrupo || !corpo.isConnected) { if (!r) corpo.innerHTML = ''; return; }   // já foi para outra tela
   if (r.menos11) {
     corpo.innerHTML = '';
     corpo.append(el('div', { class: 'cartao' }, el('header', {}, el('div', {}, el('h3', {}, 'Elenco com menos de 11'), el('p', { class: 'dica' }, r.menos11.msg))),
@@ -572,6 +751,10 @@ function desenharPrevia(i, t, corpo) {
   if (tm && t.posse) est.splice(est.length - 1, 0, [`${Math.round(t.posse)}%`, 'posse média']);
   corpo.append(el('div', { class: 'estatisticas', style: { margin: '6px 0 12px' } },
     ...est.map(([v, k]) => el('div', { class: 'estatistica' }, el('b', {}, String(v)), el('span', {}, k)))));
+  if (t.selecao && t.incompleta) {                       // seleção com menos de 11: só o que dá para escolher (criar ou pôr do banco)
+    for (const a of t.avisos || []) corpo.append(nota(esc(a), 'alerta'));
+    return desenharPreviaSelecao(i, t, corpo);
+  }
   corpo.append(el('div', { class: 'cartoes-time' }, cartaoTecnico(i, t), cartaoTatica(i, t), cartaoEstadio(i, t),
     el('div', { class: 'cartao mini' }, el('header', {}, el('div', {}, el('h3', {}, 'Uniformes'), el('p', { class: 'dica' }, tm ? 'cores do clube na Transfermarkt' : 'cores das escalações da API'))),
       el('div', { class: 'cartao-corpo' }, el('span', { class: 'cores', title: 'casa · fora · goleiro' }, cor(t.cores.casa[0]), cor(t.cores.casa[1]), el('span', { style: { width: '8px' } }), cor(t.cores.fora[0]), cor(t.cores.fora[1]), el('span', { style: { width: '8px' } }), cor(t.cores.goleiro[0]))))));
@@ -747,25 +930,51 @@ function selectNacao(valor, fn, classe = '') {
   return s;
 }
 
+const SETOR = { G: 'goleiro', D: 'defensor', M: 'meia', F: 'atacante' };
+const MODOS_CRIAR = [
+  ['auto', 'Automático', 'Cria todos quando a nação tem poucos jogadores no banco: só com eles a seleção não chega a 11, ou fica abaixo do mínimo de uma posição em que há convocado fora do banco'],
+  ['todos', 'Criar todos', 'Cria todos os convocados que não estão no banco'],
+  ['nenhum', 'Não criar', 'Só jogadores do banco (dá para marcar convocados um por um na lista)']];
+const clubeFonte = (n) => (/^(without club|sem clube|vereinslos)$/i.test(n || '') ? 'sem clube' : n);
+
 function desenharPreviaSelecao(i, t, corpo) {
   const so = t.sel_opcoes || {};
+  const modo = t.criar_modo || 'auto';
+  const ne = t.nao_encontrados || [];
+  const nCriar = ne.filter((a) => a.criar).length;
+  const bs = t.banco_sozinho || {};
+  const abaixo = Object.entries(bs.abaixo || {}).map(([g, v]) => `${g} ${v}`).join(', ');
+  const destino = t.genero ? 'sem clube' : 'os Passes Livres (Sem Contrato)';
+  let explica;
+  if (!ne.length) explica = 'Todos os convocados já estão no banco.';
+  else if (modo === 'todos') explica = `Os ${ne.length} convocado(s) que não estão no banco são criados${nCriar < ne.length ? ` (menos os ${ne.length - nCriar} desmarcados na lista)` : ''}.`;
+  else if (modo === 'nenhum') explica = nCriar ? `Só os ${nCriar} marcados na lista são criados; o resto da seleção vem do banco.` : 'Nenhum convocado de fora do banco é criado: a seleção é completada com jogadores do banco.';
+  else if (t.poucos) explica = `A nação tem poucos jogadores no banco: só com eles, a seleção teria ${bs.jogadores ?? 0} jogador(es)${abaixo ? ` e ficaria abaixo do mínimo em ${abaixo}` : ''}. Por isso os ${ne.length} convocado(s) que não estão no banco são criados${nCriar < ne.length ? ` (menos os ${ne.length - nCriar} desmarcados)` : ''}.`;
+  else explica = `O banco já fecha a seleção, então os ${ne.length} convocado(s) que não estão no banco ficam fora${nCriar ? `, menos os ${nCriar} marcados na lista` : ''} (para criá-los, escolha Criar todos).`;
   const grupos = el('div', { class: 'grupos-sel' }, ...Object.entries(t.grupos || {}).map(([g, v]) => el('span', { class: `grupo ${v.n < v.min ? 'baixo' : v.n > v.max ? 'alto' : 'ok'}`, title: `mínimo ${v.min}, máximo ${v.max}` }, el('b', {}, g), `${v.n}`, el('small', {}, ` ${v.min}–${v.max}`))));
   corpo.append(el('div', { class: 'cartao' }, el('header', {}, el('div', {}, el('h3', {}, t.atualiza ? 'Seleção que já existe no banco: o elenco é substituído' : 'Seleção nova (entra na liga de seleções e no internationals.txt)'),
     el('p', { class: 'dica' }, `Convocados casados com o banco + os melhores da nação até o mínimo de cada posição (SQUAD_SELECTION${S.e.internationals ? ' do internationals importado' : ', padrão'}).`))),
-  el('div', { class: 'cartao-corpo' }, grupos,
-    interruptor({ titulo: 'Criar todos os convocados que não estão no banco', descricao: 'Entram sem clube (Sem Contrato), com nota estimada pela seleção. Dá para escolher um por um na lista abaixo.', marcado: so.criar_faltantes, aoMudar: (v) => selecao(i.id, { criar_faltantes: v }) }).el)));
-  const ne = t.nao_encontrados || [];
+  el('div', { class: 'cartao-corpo col-gap' },
+    t.incompleta ? nota(`Só ${t.jogadores.length} jogador(es) na seleção: são precisos 11 para gerar. Escolha <b>Automático</b> ou <b>Criar todos</b>, marque convocados na lista ou ponha jogadores do banco.`, 'erro') : null,
+    grupos,
+    campo('Convocados que não estão no banco', seg(modo, MODOS_CRIAR, (v) => selecao(i.id, { criar_modo: v }))),
+    el('div', { class: 'mudo peq-txt' }, explica, nCriar ? ` Cada criado vai para o clube dele, se o clube estiver no banco; senão, para ${destino}.` : ''))));
   if (ne.length) {
-    const nCriar = ne.filter((a) => a.criar).length;
-    corpo.append(el('div', { class: 'cartao' }, el('header', {}, el('div', {}, el('h3', {}, `Convocados que não achei no banco (${ne.length})`), el('p', { class: 'dica' }, `Marque quem criar (${nCriar} de ${ne.length}) ou escolha o jogador do banco que corresponde. Os desmarcados ficam fora da seleção.`)),
-      el('div', { class: 'acoes-linha' }, el('button', { class: 'btn-fantasma peq', disabled: nCriar === ne.length, onclick: () => selecao(i.id, { criar_faltantes: true }) }, 'Marcar todos'),
-        el('button', { class: 'btn-fantasma peq', disabled: !nCriar, onclick: () => selecao(i.id, { criar_faltantes: false }) }, 'Nenhum'))),
+    corpo.append(el('div', { class: 'cartao' }, el('header', {}, el('div', {}, el('h3', {}, `Convocados que não estão no banco (${ne.length})`),
+      el('p', { class: 'dica' }, `${nCriar} de ${ne.length} serão criados. Desmarque quem não criar, ou diga quem ele é no banco (Escolher no banco…).`)),
+    el('div', { class: 'acoes-linha' }, el('button', { class: 'btn-fantasma peq', disabled: modo === 'todos' && nCriar === ne.length, onclick: () => selecao(i.id, { criar_modo: 'todos' }) }, 'Criar todos'),
+      el('button', { class: 'btn-fantasma peq', disabled: modo === 'nenhum' && !nCriar, onclick: () => selecao(i.id, { criar_modo: 'nenhum' }) }, 'Nenhum'))),
     el('div', { class: 'cartao-corpo' }, ...ne.map((a) => {
-      const ch = el('input', { type: 'checkbox', title: 'Criar este jogador (novo, sem clube)' });
+      const ch = el('input', { type: 'checkbox', title: 'Criar este jogador' });
       ch.checked = !!a.criar;
       ch.onchange = () => selecao(i.id, { criar_um: { api_id: a.id, criar: ch.checked } });
-      return el('div', { class: 'linha-faltante' }, el('label', { class: 'faltante-criar' }, ch, el('span', {}, `${a.nome} · ${a.idade ?? '?'} anos · ${a.pos || '?'}`), el('small', { class: 'mudo' }, a.criar ? ' — será criado' : ' — fica fora')),
-        el('button', { class: 'btn peq', onclick: () => escolherJogadorDb(i, t, { casar: a }) }, icone('busca', 12), 'Escolher no banco…'));
+      const cf = clubeFonte(a.clube_fonte);
+      return el('div', { class: `linha-faltante ${a.criar ? 'vai-criar' : ''}` },
+        el('label', { class: 'faltante-criar' }, ch, el('span', {}, `${a.nome} · ${a.idade ?? '?'} anos · ${SETOR[a.pos] || a.pos || '?'}${cf ? ` · ${cf}` : ''}`),
+          el('small', { class: 'mudo' }, a.criar ? ` — será criado → ${a.clube || (t.genero ? 'sem clube' : 'Passes Livres')}` : ' — fica fora')),
+        el('div', { class: 'acoes-linha' },
+          a.usar_db_recusado ? el('button', { class: 'btn-fantasma peq', title: 'Ele já está no banco (mesmo nome e nascimento, outra nacionalidade): usar o do banco em vez de criar outro', onclick: () => ajustar(i.id, a.id, { usar_db: null }) }, icone('ligar', 12), 'Usar o do banco') : null,
+          el('button', { class: 'btn peq', onclick: () => escolherJogadorDb(i, t, { casar: a }) }, icone('busca', 12), 'Escolher no banco…')));
     }))));
   }
   const tb = el('tbody');
@@ -777,13 +986,23 @@ function desenharPreviaSelecao(i, t, corpo) {
     const cap = el('input', { type: 'radio', name: 'capitao', title: 'Capitão' });
     cap.checked = !!(t.ajustes?.[String(chave)]?.capitao);
     cap.onchange = () => ajustar(i.id, chave, { capitao: true });
+    // jogador do banco com outra nacionalidade (mesmo nome e nascimento): entra como ele mesmo e muda de nação
+    const outra = j.outra_nacao ? el('span', { class: 'selo-db', title: `Estava no banco como jogador de ${nomeNacao(j.outra_nacao)} (mesmo nome e nascimento): entra como ele mesmo e passa a ser de ${nomeNacao(t.nacao)}.` }, 'OUTRA NAÇÃO') : null;
+    const criarNovo = j.outra_nacao && !String(chave).startsWith('db') ? el('button', { class: 'link-banco', title: 'Não é ele: criar um jogador novo com os dados da fonte (o do banco fica como está)',
+      onclick: async () => { if (await tentar(() => api('ajustar', { id: i.id, api_id: chave, usar_db: false }))) selecao(i.id, { criar_um: { api_id: chave, criar: true } }); } }, 'não é ele: criar novo') : null;
     tb.append(el('tr', { class: tit.has(j.playerid) ? 'tit' : '' },
       el('td', {}, camisa),
-      el('td', { class: 'nome' }, el('b', {}, j.nome), el('small', {}, `ID ${j.playerid} · ${j.existente ? (j.clube || 'sem clube') : `novo → ${j.clube || 'Passes Livres'}`}`)),
+      el('td', { class: 'nome' }, el('b', {}, j.nome, outra),
+        el('small', {}, `ID ${j.playerid} · ${j.existente ? (j.clube || 'sem clube') : `novo → ${j.clube || 'Passes Livres'}`}${j.outra_nacao ? ` · era de ${nomeNacao(j.outra_nacao)}` : ''}`, criarNovo ? ' · ' : '', criarNovo)),
       el('td', {}, POS[j.pos] || j.pos), el('td', { class: 'num' }, el('span', { class: `ov ${classeOv(j.overall)}` }, j.overall)),
       el('td', { class: 'num' }, j.idade ?? '—'),
       el('td', {}, el('span', { class: `origem ${j.origem}` }, { convocado: 'convocado', completado: 'completado pelo banco', manual: 'escolhido', novo: 'novo (criado)' }[j.origem] || j.origem)),
       el('td', {}, cap), el('td', {}, fora)));
+  }
+  // convocados tirados à mão (não entram nem são criados): pôr de volta
+  for (const x of t.excluidos || []) {
+    tb.append(el('tr', { class: 'fora' }, el('td', {}, el('button', { class: 'btn-icone peq', title: 'Pôr de volta na seleção', onclick: () => ajustar(i.id, x.id, { excluir: false }), html: icone('restaurar', 12) })),
+      el('td', { colspan: 7 }, el('s', {}, x.nome || `Jogador ${x.id}`), el('span', { class: 'mudo peq-txt' }, ' — convocado tirado da seleção'))));
   }
   const excl = so.excluir_db || [];
   corpo.append(el('div', { class: 'cartao' }, el('header', {}, el('div', {}, el('h3', {}, `Elenco da seleção (${t.jogadores.length})`), el('p', { class: 'dica' }, 'Titulares em azul. Mude o número, o capitão ou tire jogadores; os completados pelo banco são trocados pelo próximo melhor da posição.')),
@@ -920,8 +1139,16 @@ async function modalTecnico(i, t) {
   await setItem(i, { tecnico });
 }
 
+// a prévia mudou por um ajuste: o projeto ficou com mudanças não salvas (o "•" no título e na lista)
+function projetoMudou(r) {
+  if (!r?.projeto || !S.e) return;
+  const antes = JSON.stringify(S.e.projeto || {});
+  S.e.projeto = r.projeto;
+  if (JSON.stringify(r.projeto) !== antes) { desenharTopo(); desenharProjeto(); }
+}
 async function ajustar(id, apiId, d) {
   const r = await tentar(() => api('ajustar', { id, api_id: apiId, ...d }));
+  projetoMudou(r);
   if (!r || S.e.sel !== id) return;
   S.previa[id] = r.time;
   const corpo = $('#corpo-previa');
@@ -930,6 +1157,7 @@ async function ajustar(id, apiId, d) {
 }
 async function selecao(id, d) {
   const r = await tentar(() => api('selecao', { id, ...d }));
+  projetoMudou(r);
   if (!r || S.e.sel !== id) return;
   const corpo = $('#corpo-previa');
   const i = itemSel();
@@ -1362,7 +1590,7 @@ async function desenharSelecoesAtual() {
       const x = await tentar(() => api('atualizar_selecoes_projeto', { leagueid: l.leagueid, fonte: f, teamids: prontas.map((y) => y.teamid) }));
       if (!x) return;
       aplicar(x);
-      aviso(`${x.adicionados} seleção(ões) no projeto`, { tipo: 'sucesso', detalhe: `Colete os dados na aba Projeto (Coletar no topo) e gere o banco.${x.sem_par?.length ? ` Sem par: ${x.sem_par.join(', ')}.` : ''}` });
+      aviso(`${x.adicionados} seleção(ões) no projeto`, { tipo: 'sucesso', tempo: 7000, detalhe: `Colete os dados (aqui ou em Projeto › Seleções › Coletar todas) e gere o banco.${x.sem_par?.length ? ` Sem par: ${x.sem_par.join(', ')}.` : ''}`, acao: acaoColetar(x.ids) });
       desenharSelecoesAtual();
     } }, icone('mais', 12), `Pôr ${prontas.length || ''} no projeto`),
     el('span', { class: 'mudo peq-txt' }, `${comPar.length} de ${lista.length} já achadas na fonte`),
@@ -1415,7 +1643,7 @@ function desenharPropriedades() {
   ]));
   if (fonteAtual() !== TM) p.append(secao('tm', 'Transfermarkt', 'mundo', secaoTm()));
   const i = itemSel();
-  if (i && S.aba !== 'atualizar') {
+  if (i && S.aba !== 'atualizar' && !S.vistaGrupo) {
     p.append(secao('item', i.tipo === 'liga' ? 'Liga' : i.selecao ? 'Seleção' : 'Time', i.tipo === 'liga' ? 'trofeu' : 'escudo', propsItem(i)));
     if (i.tipo === 'time') {
       p.append(secao('tatica', 'Formação e tática', 'campo', propsTatica(i)));
@@ -1669,7 +1897,12 @@ function desenharTopo() {
   bg.innerHTML = icone(t.ativa && t.tipo === 'gerar' ? 'recarregar' : 'bancoDados', 14, t.ativa && t.tipo === 'gerar' ? 'girando' : '') + (t.ativa && t.tipo === 'gerar' ? ' Gerando…' : ' Gerar banco');
   const nt = e.itens.filter((x) => x.tipo === 'time').length;
   const nu = (e.atualizacoes || []).reduce((s, x) => s + (x.marcadas || 0), 0);
-  $('#titulo').innerHTML = `<b>${nt ? `${nt} time(s) no projeto` : 'Projeto vazio'}${nu ? ` · ${nu} mudança(s) no banco` : ''}</b><span class="pasta">${esc(e.opcoes.saida || 'escolha a pasta de saída')}</span>`;
+  const pj = proj();
+  const nome = pj.nome || (temConteudo() ? 'Projeto sem nome' : 'Projeto vazio');
+  const sujo = naoSalvo();
+  $('#titulo').innerHTML = `<b title="${esc(pj.arquivo || 'Projeto ainda não salvo (Projeto › Salvar projeto, Ctrl+S)')}">${esc(nome)}${sujo ? ' <span class="alterado" title="Mudanças não salvas">•</span>' : ''}</b>`
+    + `<span class="pasta">${nt ? `${nt} time(s)` : 'nenhum time'}${nu ? ` · ${nu} mudança(s) no banco` : ''} · saída: ${esc(e.opcoes.saida || 'escolha a pasta')}</span>`;
+  document.title = `${nome}${sujo ? ' •' : ''} · Criador de Ligas e Times`;
 }
 function desenharStatus() {
   const e = S.e;
@@ -1756,8 +1989,22 @@ function fimTarefa(t) {
 
 function menus() {
   barraMenus($('#menus'), [
-    ['Projeto', () => [
-      { rotulo: 'Coletar o que falta', icone: 'baixar', desabilitado: S.e.tarefa.ativa, fn: () => coletar(null) },
+    ['Projeto', () => {
+      const pj = proj();
+      const ativa = S.e.tarefa.ativa;
+      const rec = (pj.recentes || []).filter((r) => r.caminho !== pj.arquivo).slice(0, 6);
+      const sels = doGrupo('selecoes');
+      const selFalta = sels.filter((x) => x.estado !== 'pronto');
+      return [
+      { rotulo: 'Novo projeto', icone: 'arquivoMais', desabilitado: ativa || (!temConteudo() && !pj.arquivo), fn: novoProjeto },
+      { rotulo: 'Abrir projeto…', icone: 'pastaAberta', atalho: 'Ctrl+O', desabilitado: ativa, fn: () => abrirProjeto() },
+      { rotulo: 'Salvar projeto', icone: 'salvar', atalho: 'Ctrl+S', desabilitado: !temConteudo(), fn: () => salvarProjeto() },
+      { rotulo: 'Salvar como…', atalho: 'Ctrl+Shift+S', desabilitado: !temConteudo(), fn: () => salvarProjeto(true) },
+      { rotulo: 'Juntar outro projeto a este…', icone: 'pastaMais', desabilitado: ativa, fn: juntarProjeto },
+      ...(rec.length ? ['-', { cabecalho: 'Recentes' }, ...rec.map((r) => ({ rotulo: r.nome, icone: 'arquivo', desabilitado: ativa, fn: () => abrirProjeto(r.caminho) }))] : []),
+      '-',
+      { rotulo: 'Coletar o que falta', icone: 'baixar', desabilitado: ativa || !S.e.itens.some((x) => x.tipo === 'time' && x.estado !== 'pronto'), fn: () => coletar(null) },
+      { rotulo: selFalta.length ? `Coletar todas as seleções (${selFalta.length} sem dados)` : 'Coletar de novo todas as seleções', icone: selFalta.length ? 'baixar' : 'recarregar', desabilitado: ativa || !sels.length, fn: () => coletarGrupo('selecoes', !selFalta.length) },
       { rotulo: 'Analisar as fotos de todos', icone: 'rosto', desabilitado: S.e.tarefa.ativa || !S.e.fotos_ok, fn: () => analisarFotos(null) },
       { rotulo: 'Buscar todos no pesdb.net (os que faltam)', icone: 'busca', desabilitado: S.e.tarefa.ativa || !S.e.opcoes.fichas_pesdb, fn: () => buscarPes(null) },
       { rotulo: 'Gerar banco', icone: 'bancoDados', atalho: 'Ctrl+Enter', desabilitado: !podeGerar(), fn: gerar },
@@ -1766,8 +2013,9 @@ function menus() {
       { rotulo: 'Abrir a pasta de saída', icone: 'externo', desabilitado: !S.e.opcoes.saida, fn: () => tentar(() => api('abrir', {})) },
       { rotulo: 'Mandar as fotos do último banco ao Criador de Minifaces', icone: 'miniface', fn: () => enviarMinifaces(null) },
       '-',
-      { rotulo: 'Esvaziar o projeto', icone: 'apagar', desabilitado: !S.e.itens.length && !(S.e.atualizacoes || []).length, fn: async () => { if (await confirmar('Esvaziar o projeto?', 'Times, ligas, seleções e conferências saem do projeto. O cache da API continua (nada é baixado de novo).', { rotulo: 'Esvaziar', perigo: true })) { aplicar(await tentar(() => api('limpar', {}))); S.atual.sel = null; desenharPrincipal(); } } },
-    ]],
+      { rotulo: 'Esvaziar o projeto', icone: 'apagar', desabilitado: !S.e.itens.length && !(S.e.atualizacoes || []).length, fn: async () => { if (await confirmar('Esvaziar o projeto?', `Times, ligas, seleções e conferências saem do projeto${pj.arquivo ? ` (o arquivo salvo ${esc(pj.nome)} só muda se você salvar depois)` : ''}. O cache da API continua (nada é baixado de novo).`, { rotulo: 'Esvaziar', perigo: true })) { aplicar(await tentar(() => api('limpar', {}))); S.atual.sel = null; S.vistaGrupo = null; S.marcadosProj.clear(); desenharPrincipal(); } } },
+      ];
+    }],
     ['API', () => [
       { rotulo: 'Fonte: API-Football', marcado: fonteAtual() !== TM, fn: () => trocarFonte('apifootball') },
       { rotulo: 'Fonte: Transfermarkt', marcado: fonteAtual() === TM, fn: () => trocarFonte(TM) },
@@ -1792,6 +2040,12 @@ function menus() {
         com a posição e o pé de cada jogador.<br><br>
         <b>Saída:</b> banco novo (cópia do importado + linhas novas, alteradas e removidas), tabelas .txt, idioma, internationals.txt e
         escudos/fotos (com envio ao Criador de Minifaces).<br><br>
+        <b>2.6</b> — seleção nova de nação com poucos jogadores no banco: os convocados que faltam são criados (Automático, Criar todos
+        ou Não criar), cada um no clube dele, se o clube estiver no banco, ou nos Passes Livres; quem já está no banco com outra
+        nacionalidade entra como ele mesmo. Coletar todas as seleções (ou todos os times avulsos) de uma vez. Salvar e abrir projetos,
+        com tudo o que foi coletado (Projeto › Salvar projeto, Ctrl+S). Países com nome diferente entre a fonte e o banco (Holanda,
+        Cabo Verde, Gâmbia, Hong Kong…).<br>
+        <b>2.5</b> — fichas do sofifa (FIFA 15 a FC 26) e do PES 2021 em bases locais, pesdb.net opcional.<br>
         <b>2.2</b> — Atualizar banco com várias ligas de uma vez (painéis, desempate pelo elenco) e ligas de seleções; rebaixado sem
         divisão abaixo vai para o Resto do Mundo; foto na prévia, tirar jogador do elenco, jogadores que já estão no banco; Transfermarkt:
         idade da época, temporadas antigas pela liga e classificação, nacionalidade válida.<br>
@@ -1805,8 +2059,12 @@ function menus() {
 }
 
 document.addEventListener('keydown', (e) => {
-  if (modalAberto() || menuAberto()) return;
-  if ((e.ctrlKey || e.metaKey) && e.key === 'Enter' && podeGerar()) { e.preventDefault(); gerar(); }
+  const ctrl = e.ctrlKey || e.metaKey;
+  if (ctrl && ['s', 'o'].includes(e.key.toLowerCase())) e.preventDefault();      // nunca o "salvar página"/"abrir" do navegador
+  if (modalAberto() || menuAberto() || !S.e) return;
+  if (ctrl && e.key === 'Enter' && podeGerar()) { e.preventDefault(); gerar(); }
+  else if (ctrl && e.key.toLowerCase() === 's') salvarProjeto(e.shiftKey);
+  else if (ctrl && e.key.toLowerCase() === 'o' && !S.e.tarefa.ativa) abrirProjeto();
 });
 
 async function iniciar() {

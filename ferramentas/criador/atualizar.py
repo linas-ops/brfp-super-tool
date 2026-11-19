@@ -92,7 +92,7 @@ def casar_selecao_tm(tm, nome_en, feminina=False):
     if feminina or not nome_en:
         return None
     alias = _SELECAO_TM.get(K.norm(nome_en))
-    alvos = {K.norm(nome_en)} | ({K.norm(alias)} if alias else set())
+    alvos = {K.norm(nome_en)} | ({K.norm(alias)} if alias else set()) | set(K.nomes_da_nacao(nome_en))
     for q in [x for x in (alias, nome_en) if x]:
         try:
             r = tm.get(f"clubs/search/{q}")
@@ -384,9 +384,11 @@ _ALIAS_TM = {"korea republic": "korea south", "korea dpr": "korea north", "repub
 def pais_tm(nome_en):
     import coleta_tm as CT
     alvo = K.norm(nome_en)
-    alvo = _ALIAS_TM.get(alvo, alvo)
     paises = {K.norm(c.get("pais")): c.get("pais") for c in CT.catalogo() if c.get("pais")}
-    return paises.get(alvo) or paises.get(K.norm(nome_en)) or nome_en
+    for n in [_ALIAS_TM.get(alvo, alvo), *K.nomes_da_nacao(nome_en)]:     # "Holland" -> "Netherlands"…
+        if n in paises:
+            return paises[n]
+    return nome_en
 
 
 def _divisao_tm(liga):
@@ -1334,16 +1336,16 @@ def _criar_jogador(pj, m, a):
         m["playerid_novo"] = jj["playerid"]
 
 
-def reescalar(pj, teamid):
+def reescalar(pj, teamid, completar=True):
     """Escalação padrão, cobradores e capitão de um time do banco refeitos com o elenco atual (vínculos com as
-    mudanças do projeto): ninguém que saiu fica na escalação."""
+    mudanças do projeto): ninguém que saiu fica na escalação. completar=False (seleções): sem jogadores sem contrato."""
     import gerador as G
     vincs = pj.atuais("teamplayerlinks", teamid=teamid) + pj.novas_de("teamplayerlinks", teamid=teamid)
     # elenco sem jogadores suficientes (menos de 18 ou de 2 goleiros): completado com jogadores sem contrato (nota perto
     # da média do time, mesma nação). Antes, com menos de 11 a escalação ficava apontando para quem saiu.
     nome = pj.nome_time(teamid) or f"time {teamid}"
     antes = len(vincs)
-    entraram = pj.completar_clube(teamid)
+    entraram = pj.completar_clube(teamid) if completar else []
     if entraram:
         vincs = pj.atuais("teamplayerlinks", teamid=teamid) + pj.novas_de("teamplayerlinks", teamid=teamid)
         pj.avisos.append(f"{nome} ({teamid}): ficou com {antes} jogador(es); completado com {len(entraram)} sem contrato "

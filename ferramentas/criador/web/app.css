@@ -201,3 +201,18 @@ div.it-api.marcavel { cursor: pointer; grid-template-columns: 22px 1fr auto; }
 .arvore > .barra-lote { flex-wrap: wrap; }
 .arvore > .barra-lote > span:first-child { white-space: nowrap; }
 .campos-delta { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 12.5px; border-top: 1px solid var(--borda); }
+/* projeto salvo (2.6): nome do arquivo, mudanças não salvas e recentes */
+.proj-arquivo { display: flex; align-items: center; gap: 6px; padding: 8px 8px 8px 12px; border-bottom: 1px solid var(--borda); }
+.proj-arquivo .ic { color: var(--texto-3); display: inline-flex; }
+.proj-arquivo .txt { flex: 1; min-width: 0; }
+.proj-arquivo .txt b { display: block; font-weight: 600; font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.proj-arquivo .txt small { display: block; font-size: 11px; color: var(--texto-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.alterado { color: var(--selecao); font-weight: 700; }
+.recentes { margin-top: 4px; }
+.recentes .link-linha { font-size: 12.5px; padding: 6px 14px; }
+/* grupos sem liga (seleções, times avulsos): cabeçalho que abre a página do grupo e coleta todos */
+.cab-grupo { padding: 8px 8px 4px 10px; gap: 6px; border-left: 2px solid transparent; }
+.cab-grupo.foco { background: var(--selecao-suave); border-left-color: var(--selecao); }
+.link-grupo { border: 0; background: none; padding: 0; color: inherit; cursor: pointer; text-align: left; min-width: 0; }
+.link-grupo:hover h2 { color: var(--texto); text-decoration: underline; }
+.linha-faltante.vai-criar small { color: var(--alerta); }

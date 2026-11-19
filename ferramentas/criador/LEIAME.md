@@ -1,4 +1,4 @@
-# Criador de Ligas e Times — versão 2.5
+# Criador de Ligas e Times — versão 2.6
 
 Cria ligas, times, seleções e jogadores no banco do jogo (FC 26 / FC 27) a partir da **API-Football** (api-sports.io) —
 mais de 1.200 ligas e copas no mundo; só no Brasil, 109 competições — ou da **Transfermarkt** (pela transfermarkt-api) e
@@ -57,8 +57,23 @@ Criador procura o mesmo clube na Transfermarkt (2 pedidos: a busca e o elenco da
 nascimento, pé, posição exata, altura e nacionalidades —, casando os jogadores por nome e idade. O que a API trouxe não
 muda; o resumo ("N de M jogadores completados") aparece nos avisos do time.
 
-**Projeto**: marque vários itens (caixa à esquerda de cada um) e **Tirar do projeto** tira todos de uma vez (também no
-menu do botão direito).
+**Projeto**: marque vários itens (caixa à esquerda de cada um) e **Coletar** ou **Tirar do projeto** faz com todos de uma
+vez (também no menu do botão direito).
+
+## Projetos salvos (2.6)
+
+O projeto aberto (ligas, times, seleções, ajustes, conferências do *Atualizar banco* e **tudo o que já foi coletado**) se
+salva num arquivo e se abre de novo depois, em outro dia ou em outro computador com o Super Tool — sem coletar de novo.
+
+- **Projeto › Salvar projeto** (Ctrl+S) e **Salvar como…** (Ctrl+Shift+S): um arquivo `.json`; a pasta sugerida é
+  `ferramentas\criador\projetos` (fica fora do pacote e das atualizações: o que você salva ali nunca é apagado).
+- **Abrir projeto…** (Ctrl+O) e os **recentes** (no menu e na aba Projeto, com o projeto vazio): troca o projeto aberto.
+  Com mudanças que não foram salvas, o Criador pergunta antes (*Salvar*, *Não salvar* ou *Cancelar*).
+- **Juntar outro projeto a este…**: põe os itens de um projeto salvo no aberto (os que já estão ficam como estão).
+- **Novo projeto**: começa vazio (o cache das fontes continua: nada é baixado de novo).
+- O nome do projeto aparece no topo e no alto da aba Projeto; o **•** marca mudanças não salvas. Sem salvar, o projeto
+  continua guardado como antes (ele abre como você deixou), só não tem um arquivo seu.
+- O `projeto.json` que o Gerar grava na pasta do banco é outra coisa (o mapa dos ids) e não abre aqui.
 
 ## API-Football: plano grátis × pago
 
@@ -104,7 +119,10 @@ sempre; elencos atuais, 1 dia). A barra embaixo mostra as chamadas que restam ho
    - **Estádio**: sempre um **genérico** do jogo, com a capacidade do estádio real (ou a típica do nível do time no banco,
      ajustada pelo país e menor no feminino). O nome do estádio real vai em `stadiumassignments` — o jogo mostra esse nome
      no genérico. Dá para trocar nome, capacidade e o genérico.
-3. **Coletar** (topo) busca o que falta, mostrando antes quantas chamadas (pedidos, na Transfermarkt) vai gastar. Na
+3. **Coletar** (topo) busca o que falta, mostrando antes quantas chamadas (pedidos, na Transfermarkt) vai gastar.
+   **Seleções** e **Times avulsos** têm, na aba Projeto, um cabeçalho com **Coletar todas** (ou *De novo*, quando todas já
+   têm dados); clicar no nome do grupo abre a página dele, com o estado, o nível e o custo de cada um. Itens que acabaram de
+   entrar no projeto também podem ser coletados pelo **Coletar agora** do aviso. Na
    Transfermarkt: elenco da temporada, perfil de cada jogador (valor de mercado, posições, nacionalidade), clube (estádio,
    cores, sigla), técnico, classificação e os últimos jogos (formação e titulares) — Palmeiras: ≈37 pedidos, ≈20 s pelo
    servidor local. *Estatísticas da temporada (Transfermarkt)*, em Geração, busca também jogos, minutos e gols de cada um
@@ -198,10 +216,23 @@ os 34 atributos — do sofifa, também o **ID da EA** — e, conforme a opção,
   jogadores da **mesma nacionalidade** (nunca ídolos da Liga Clássica). Faltando gente numa posição, entram os melhores da
   nação no banco até o **mínimo** de cada grupo do internationals (GK 3–5, LB 2–4, CB 6–8, RB 2–4, LM 2–4, CM 6–10,
   RM 2–4, ST 5–8, até 35 anos); acima do **máximo**, saem primeiro os completados. Os grupos aparecem em verde/vermelho.
-- Convocados que não estão no banco: **Escolher no banco…** (casar à mão) ou marcar **quem criar** — um por um, ou todos
-  com *Criar todos os convocados que não estão no banco* (com nota estimada); os desmarcados ficam fora. Os criados vão para
-  o **clube deles, se o clube estiver no banco** (Transfermarkt: o clube do perfil do jogador; colete a seleção de novo para
-  ter esse dado), senão para os Passes Livres (Sem Contrato).
+- **Convocados que não estão no banco** (2.6), na prévia da seleção:
+  - **Automático** (padrão): todos são criados quando a nação tem **poucos jogadores no banco** — só com eles a seleção
+    não chega a 11, ou fica abaixo do mínimo de uma posição em que há convocado fora do banco (ex.: Taipé Chinês, com 2
+    jogadores no banco, ganha os 24 que faltam; Curaçao, sem goleiro no banco, os 11). Se o banco já fecha a seleção, eles
+    ficam fora (Cabo Verde).
+  - **Criar todos** / **Não criar**; e, na lista, um por um (marcar ou desmarcar) ou **Escolher no banco…** (casar à mão).
+  - Os criados têm a nota pelo valor de mercado e pela idade (Transfermarkt; na API-Football, perto dos que vêm do banco)
+    e vão para o **clube deles, se o clube estiver no banco** (o clube do perfil do jogador na Transfermarkt; colete a
+    seleção de novo para ter esse dado) — o clube tem a escalação refeita —, senão para os **Passes Livres (Sem Contrato)**.
+  - Quem já está no banco **com outra nacionalidade** (mesmo nome e nascimento, ex.: um jogador de Curaçao que no banco é
+    holandês) entra como ele mesmo, com o selo **OUTRA NAÇÃO**, e passa a ser da nação da seleção (sai da outra seleção, se
+    estava nela). *Não é ele: criar novo* cria outro em vez disso.
+  - Com menos de 11 a prévia mostra a seleção incompleta para escolher o que criar; o Gerar não grava seleção com menos de 11.
+  - Seleção nova sem nível escolhido à mão: o nível é o do elenco montado (média dos 14 melhores).
+  - Países com nome diferente entre a fonte e o banco agora batem (Netherlands → Holland, Cape Verde → Cape Verde Islands,
+    The Gambia, Hongkong, Macao, Swaziland, Macedonia, Sao Tome and Principe…); as seleções postas antes no projeto sem
+    nação reconhecida são reconhecidas de novo ao abrir.
   **Pôr jogador do banco…** inclui qualquer um; o **×** tira (os completados são trocados pelo próximo da posição). Número
   e capitão editáveis.
 - **Convocação antiga** (painel da direita, *Convocação*): uma temporada passada em vez da atual — na Transfermarkt, a
@@ -347,3 +378,7 @@ posição e o pé da Transfermarkt. Os pares trocados à mão ficam no mapa sepa
   2.2: Palmeiras e Fluminense 2012 (níveis 72,4 e 76,5), Sabah FK (nacionalidades), Palmeiras 2026 com 23 de 29 jogadores
   achados no banco (usar 3 do banco e gerar; usar todos → o Gerar para com o aviso), Série A + Série B conferidas juntas
   (Botafogo-SP e Novorizontino desempatados pelo elenco), 70 de 70 seleções masculinas achadas na Transfermarkt.
+  2.6: Taipé Chinês criada do zero (24 convocados criados nos Passes Livres, 1 do banco), Curaçao (11 criados: 2 nos
+  clubes deles no banco, ADO Den Haag e Voluntari, 9 nos Passes Livres; 1 jogador holandês do banco passou a ser de
+  Curaçao), Cabo Verde, Holanda e Brasil gerados juntos num banco, sem jogador repetido; projeto salvo, aberto pelos
+  recentes e juntado com outro.
