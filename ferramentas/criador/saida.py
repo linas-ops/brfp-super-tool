@@ -405,7 +405,7 @@ def _relatorio(projeto, destino, feitos, avisos):
         if est.get("generico"):
             L.append(f"   estádio: {est.get('nome') or '—'} -> genérico {est['generico']} ({est.get('generico_capacidade')} lugares)")
         for j in t["jogadores"]:
-            orig = f"{j['origem']}, " if j.get("origem") else ""
+            orig = ({"anterior": "convocação anterior"}.get(j["origem"], j["origem"]) + ", ") if j.get("origem") else ""
             L.append(f"   {j['camisa']:>2}  {N.NOME_POS.get(j['pos'], j['pos']):4s} {j['overall']:>2}/{j['potential'] or '':<2} "
                      f"{(j['nome'] or '')[:30]:30s} {j['idade'] or '':>2} anos  {j['nacionalidade'] or '':15s} playerid {j['playerid']}"
                      f"  ({orig}API {j['api_id']}, {j['minutos']} min, nota {j['nota_api'] or '—'}, posição: {j['pos_origem']})")
