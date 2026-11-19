@@ -1,4 +1,4 @@
-# Criador de Minifaces — versão 1.4
+# Criador de Minifaces — versão 1.5
 
 Transforma fotos de jogadores em minifaces do jogo: **p&lt;ID&gt;.png**, 180×180, fundo transparente, com o rosto no
 mesmo lugar e tamanho das minifaces do BRFP e do jogo.
@@ -23,25 +23,24 @@ mesmo lugar e tamanho das minifaces do BRFP e do jogo.
 4. **Saída**: escolha a pasta e clique **Exportar** (`Ctrl+E`). Fotos sem jogador ligado são puladas (ou exportadas com o
    nome do arquivo, se você escolher). O tamanho padrão é o do jogo (180).
 
-## Enquadramento (novo na 1.4)
+## Enquadramento
 
-O detector **YuNet** do OpenCV (`motor/modelos/`, 230 KB, licença MIT) acha o rosto e 5 pontos. O meio dos olhos vai
-sempre para o mesmo lugar do quadro; o tamanho sai da distância entre os olhos (corrigida quando o rosto está virado,
-pela posição do nariz) e da distância dos olhos à boca; a inclinação sai das pupilas. As medidas-alvo são a mediana de
-600 minifaces do BRFP 24 e batem com a miniface original do jogo (p158023).
+O detector YuNet localiza olhos, nariz e boca. A ferramenta mede a largura e o centro da cabeça na altura das orelhas,
+o topo do cabelo e a parte disponível do pescoço. Isso permite centralizar a cabeça mesmo quando a pessoa olha para
+um lado. As medidas de referência vêm de uma amostra de 317 minifaces do jogo, normalizadas para 180 × 180 px.
+Nessa amostra, a mediana da altura dos olhos foi 85,6 px e a da largura da cabeça nessa faixa foi 97,5 px.
 
-Nas 65 fotos de teste (Corinthians e Santos), medindo as saídas com os 478 pontos do MediaPipe: a variação do tamanho do
-rosto caiu de 8,4% para 4,1% (a das minifaces do BRFP é 7%), a dos olhos de 2,3 para 1,7 px, a do queixo de 6,7 para
-2,7 px, e a inclinação que sobra caiu de até 10° para até 2,3°. Sem os pontos (o YuNet não achou rosto), valem os
-detectores antigos: Haar de frente, de perfil e, por último, a silhueta.
+Em fotos muito fechadas, a aproximação é limitada para preservar a proporção do rosto. Quando uma faixa da cabeça já
+encosta no alto da imagem de origem, a legenda indica o corte. Zoom, posição e rotação continuam ajustáveis.
+Editar a máscara com o pincel conserva o enquadramento.
 
 ## Fundo
 
-- **Automático**: usa a transparência da foto quando existe; senão separa o jogador do fundo.
+- **Automático** aproveita o alfa de fotos transparentes. Para fotos opacas, usa o segmentador local.
 - **Transparência**: usa o canal alfa e limpa o halo semitransparente que alguns recortes trazem (sai pela cor do halo,
   para não comer o cabelo).
-- **Remover fundo**: GrabCut do OpenCV guiado pelo rosto, pela cor do fundo (fundo neutro) e pelos traços do pincel.
-- **remove.bg** (novo na 1.4): tira o fundo pelo [remove.bg](https://www.remove.bg/api), com a chave da sua conta.
+- **Recorte local** usa o modelo MediaPipe Selfie Multiclass para separar cabelo, pele e roupa do fundo. O contorno é refinado pela luminância da foto. Os pincéis permitem manter ou apagar detalhes.
+- **remove.bg** (opcional): tira o fundo pelo [remove.bg](https://www.remove.bg/api), com a chave da sua conta.
 - **Manter tudo**: não mexe no fundo.
 - **Limpeza**: quanto do contorno semitransparente sai.
 - **Usar em todas**: põe o modo de fundo da foto aberta em todas as fotos da lista e nas que entrarem depois.
@@ -73,8 +72,7 @@ ferramenta abrir; fotos genéricas da API ("sem foto") não são mandadas.
 
 ## Técnico
 
-Interface e processamento rodam no Python embutido do Super Tool (`runtime\python`); o processamento usa OpenCV, Pillow e
-numpy (a ferramenta oferece o download se faltarem, ≈ 57 MB uma vez só) e é aberto uma vez
-como processo de trabalho (`motor/minifaces.py`). O cliente do remove.bg (`removebg.py`) roda no servidor da interface,
-só com a biblioteca padrão. Testado com 65 fotos de jogadores do Corinthians e do Santos: todas enquadradas pelos 5
-pontos, 59 ligadas sozinhas ao elenco do banco BRFP 26.
+O motor usa o Python embutido, OpenCV, Pillow, numpy e MediaPipe. **Baixar os componentes** instala o modelo local e as
+bibliotecas uma vez. O Super Tool reutiliza o modelo de retratos quando já está instalado pelo Criador de Faces.
+O modo Automático processa e exporta offline. Em instalações que ainda usam o recorte básico, a interface oferece a instalação
+do segmentador e continua aceitando fotos transparentes e opacas. Somente o modo remove.bg envia a foto ao serviço.

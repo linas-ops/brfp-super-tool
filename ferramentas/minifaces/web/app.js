@@ -10,9 +10,9 @@ const S = {
   modo: 'mover', elenco: [], elencoTime: null, times: null, fundoVista: 'xadrez', ref: false, polling: null, ultimoFimExport: null,
   removebg: {},
 };
-const FUNDOS = [['auto', 'Automático', 'Usa a transparência da foto se houver; senão separa o jogador do fundo.'],
+const FUNDOS = [['auto', 'Automático', 'Aproveita a transparência da foto. Em fotos opacas, recorta o jogador neste computador.'],
   ['transparencia', 'Transparência', 'Usa o canal alfa da foto (PNG recortado), limpando o halo semitransparente.'],
-  ['remover', 'Remover fundo', 'Separa o jogador do fundo pela cor e pelo rosto (GrabCut). Use o pincel para corrigir.'],
+  ['remover', 'Recorte local', 'Reconhece cabelo, pele e roupa neste computador. Use o pincel para ajustar o contorno.'],
   ['removebg', 'remove.bg', 'Tira o fundo pelo remove.bg (internet), com a chave da sua conta. Cada foto gasta uma chamada uma vez só: o recorte fica guardado neste computador.'],
   ['nenhum', 'Manter tudo', 'Não mexe no fundo (a foto entra inteira no quadro).']];
 const ORIGENS = { pontos: 'detectado (olhos, nariz e boca)', frente: 'detectado', perfil: 'detectado (perfil)', silhueta: 'estimado pela silhueta', nenhum: 'não encontrado' };
@@ -142,7 +142,7 @@ function desenharLista() {
   const l = $('#lista');
   const topo = l.scrollTop;
   l.innerHTML = '';
-  if (S.motor.instalar && !S.motor.ok) {
+  if (S.motor.instalar) {
     l.append(el('div', { class: 'aviso-motor' }, nota(esc(S.motor.msg), 'alerta'),
       el('button', { class: 'btn-primario peq', onclick: componentesMotor }, icone('baixar', 12), 'Baixar os componentes…')));
   }
@@ -296,7 +296,8 @@ function desenharFoto() {
   }
   const a = it.analise;
   const giro = jan && Math.abs(jan[3] || 0) >= 0.5 ? ` · endireitada ${Math.abs(jan[3]).toLocaleString('pt-BR', { maximumFractionDigits: 1 })}°` : '';
-  $('#legenda-foto').textContent = `${a.largura}×${a.altura} · ${a.transparente ? 'com transparência' : 'sem transparência'} · rosto: ${it.params.rosto ? 'marcado à mão' : ORIGENS[a.origem] || a.origem}${giro}`;
+  const corte = it.topo_cortado ? ' · topo da cabeça cortado na foto original' : '';
+  $('#legenda-foto').textContent = `${a.largura}×${a.altura} · ${a.transparente ? 'com transparência' : 'sem transparência'} · rosto: ${it.params.rosto ? 'marcado à mão' : ORIGENS[a.origem] || a.origem}${giro}${corte}`;
 }
 
 // janela [x, y, lado, giro°]: canto de cima à esquerda da miniface na foto, lado e giro da miniface dentro da foto
@@ -681,8 +682,9 @@ function desenharStatus() {
   cb.innerHTML = icone('bancoDados', 12) + (S.banco ? `${S.banco.nome_jogo} · ${fmt(S.banco.contagens.teams)} times` : 'sem banco');
   cb.title = S.banco ? S.banco.caminho : 'Importe o banco em Dados do jogo (Super Tool)';
   const cm = $('#chip-motor');
-  cm.className = 'chip ' + (S.motor.ok ? 'ok' : S.motor.msg === 'verificando…' ? '' : 'erro');
-  cm.innerHTML = icone(S.motor.ok ? 'check' : 'aviso', 12) + (S.motor.ok ? 'Motor pronto' : S.motor.msg === 'verificando…' ? 'verificando o motor…' : 'Motor indisponível');
+  const basico = S.motor.ok && S.motor.instalar;
+  cm.className = 'chip ' + (basico ? 'aviso' : S.motor.ok ? 'ok' : S.motor.msg === 'verificando…' ? '' : 'erro');
+  cm.innerHTML = icone(S.motor.ok && !basico ? 'check' : 'aviso', 12) + (basico ? 'Recorte básico' : S.motor.ok ? 'Recorte local pronto' : S.motor.msg === 'verificando…' ? 'verificando o motor…' : 'Motor indisponível');
   cm.title = S.motor.msg || '';
   cm.classList.toggle('clicavel', !!S.motor.instalar);
   cm.onclick = S.motor.instalar ? componentesMotor : null;
@@ -706,7 +708,7 @@ function esperarMotor() {
   const t = setInterval(async () => {
     const e = await api('estado').catch(() => null);
     if (e) aplicar(e);
-    if (e && e.motor.ok && !e.analisando) clearInterval(t);
+    if (e && e.motor.ok && !e.motor.instalar && !e.analisando) clearInterval(t);
   }, 800);
   setTimeout(() => clearInterval(t), 120000);
 }
@@ -854,14 +856,12 @@ function atalhos() {
 function sobre() {
   dialogoSobre({ nome: 'Criador de Minifaces', versao: S.versao, html: `
     Transforma fotos de jogadores em minifaces do jogo (<i>p&lt;ID&gt;.png</i>, 180×180 com fundo transparente).<br><br>
-    <b>Fundo:</b> usa a transparência da foto quando existe (limpando o halo); senão separa o jogador do fundo com o GrabCut do OpenCV,
-    guiado pelo rosto e pela cor do fundo; ou pelo <b>remove.bg</b>, com a chave da sua conta (cada foto vai uma vez só e o recorte fica
-    guardado). O pincel verde/vermelho corrige o que sobrar.<br>
-    <b>Enquadramento:</b> o detector YuNet do OpenCV acha o rosto e 5 pontos (olhos, nariz e boca); o meio dos olhos vai para o mesmo
-    lugar das minifaces do BRFP e do jogo, o tamanho sai da distância entre os olhos e dos olhos à boca (corrigida no rosto virado) e a
-    cabeça é endireitada pelas pupilas. Sem os pontos, valem os detectores antigos (de frente, de perfil ou pela silhueta). O botão de
-    comparar sobrepõe uma miniface do jogo.<br>
+    O modo <b>Automático</b> utiliza a transparência existente ou recorta o jogador com o MediaPipe no computador.
+    Os pincéis ajustam o contorno. O remove.bg continua disponível no botão do serviço.<br>
+    O enquadramento combina os pontos do rosto com o contorno da cabeça, a altura do cabelo e o pescoço disponível.
+    O botão Comparar sobrepõe uma miniface do jogo.<br>
     <b>Jogadores:</b> com o banco importado no Super Tool, escolha o time e cada foto é ligada ao jogador pelo nome do arquivo.<br><br>
+    <b>1.5</b> — recorte local de retratos e centralização de fotos frontais e de três quartos.<br>
     <b>1.4</b> — enquadramento pelos olhos, nariz e boca (tamanho e altura do rosto bem mais iguais entre as fotos), cabeça endireitada e
     fundo pelo remove.bg.<br>
     <b>1.0</b> — primeira versão.` });

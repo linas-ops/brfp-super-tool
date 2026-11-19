@@ -12,6 +12,7 @@ Linha de comando:
     python componentes.py instalar faces corpos minifaces | numpy scipy opencv pillow | tudo
     python componentes.py python            baixa o Python embutido (se ainda não existir)
 """
+import functools
 import glob
 import hashlib
 import json
@@ -120,14 +121,26 @@ def pacotes_instalados():
 
 
 def caminho_projeto(pid):
-    return os.path.join(RUNTIME, *manifesto()["projetos"][pid]["pasta"].split("/"))
+    p = manifesto()["projetos"][pid]
+    return os.environ.get(p.get("pasta_env", "")) or os.path.join(RUNTIME, *p["pasta"].split("/"))
+
+
+@functools.lru_cache(maxsize=16)
+def _hash_instalado(caminho, mtime_ns, tamanho):
+    return _sha256(caminho)
 
 
 def projetos_instalados():
-    """{id: versão} dos projetos (código-fonte de terceiros, ex.: transfermarkt-api) extraídos em runtime/."""
+    """Versões dos projetos e dos modelos instalados em runtime/."""
     out = {}
-    for pid in manifesto().get("projetos", {}):
+    for pid, p in manifesto().get("projetos", {}).items():
         try:
+            if p.get("formato") == "arquivo":
+                caminho = os.path.join(caminho_projeto(pid), p["arquivo"])
+                st = os.stat(caminho)
+                if st.st_size == p["tamanho"] and _hash_instalado(caminho, st.st_mtime_ns, st.st_size) == p["sha256"]:
+                    out[pid] = p["versao"]
+                continue
             with open(os.path.join(caminho_projeto(pid), "brfp-projeto.json"), encoding="utf-8") as f:
                 out[pid] = json.load(f).get("versao")
         except (OSError, ValueError):
@@ -187,15 +200,18 @@ def estado_grupo(grupo):
             "python": python_embutido()["ok"]}
 
 
-def python_para(grupo, forcar=False):
+def python_para(grupo, forcar=False, pacotes=None):
     """Comando do Python que tem os pacotes do grupo: o embutido; senão um do computador (py -3.12…).
     Devolve (cmd, descrição) ou (None, ""). O teste dos Pythons do computador fica guardado até forcar=True."""
-    if estado_grupo(grupo)["ok"]:
+    grupo_ok = estado_grupo(grupo)["ok"] if pacotes is None else (
+        python_embutido()["ok"] and set(pacotes).issubset(pacotes_instalados()))
+    if grupo_ok:
         return [PYEXE], "Python embutido " + (python_embutido()["versao"] or "")
     with _LOCK:
-        if not forcar and grupo in _PYTHON_GRUPO:
-            return _PYTHON_GRUPO[grupo]
-        mods = [manifesto()["pacotes"][i]["modulo"] for i in manifesto()["grupos"][grupo]["pacotes"]]
+        chave = (grupo, tuple(pacotes)) if pacotes is not None else grupo
+        if not forcar and chave in _PYTHON_GRUPO:
+            return _PYTHON_GRUPO[chave]
+        mods = [manifesto()["pacotes"][i]["modulo"] for i in (pacotes or manifesto()["grupos"][grupo]["pacotes"])]
         r = (None, "")
         for cmd in ([sys.executable], ["py", "-3.12"], ["python3.12"]):
             if os.path.normcase(os.path.abspath(cmd[0])) == os.path.normcase(PYEXE):
@@ -208,7 +224,7 @@ def python_para(grupo, forcar=False):
             if p.returncode == 0:
                 r = (cmd, "Python %s do computador" % p.stdout.strip())
                 break
-        _PYTHON_GRUPO[grupo] = r
+        _PYTHON_GRUPO[chave] = r
         return r
 
 
@@ -515,10 +531,15 @@ def instalar(ids, progresso=None, forcar=False):
 
 
 def instalar_projeto(arquivo, pid):
-    """Código-fonte de um projeto (zip do GitHub, "<projeto>-<versão>/..."): só as partes listadas em "incluir" vão
-    para runtime/<pasta> (troca a versão anterior inteira)."""
+    """Instala um arquivo de modelo ou extrai as partes do projeto listadas em incluir."""
     p = manifesto()["projetos"][pid]
     destino = caminho_projeto(pid)
+    if p.get("formato") == "arquivo":
+        os.makedirs(destino, exist_ok=True)
+        alvo = os.path.join(destino, p["arquivo"])
+        shutil.copyfile(arquivo, alvo + ".novo")
+        os.replace(alvo + ".novo", alvo)
+        return
     novo = destino + ".novo"
     _remover(novo)
     with zipfile.ZipFile(arquivo) as z:

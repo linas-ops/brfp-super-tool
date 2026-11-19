@@ -6,15 +6,9 @@ Processo de trabalho: lê um pedido JSON por linha na entrada padrão e responde
   {"id": 3, "cmd": "exportar", "caminho": "...", "params": {...}, "saida": "...", "formato": "png"}
   {"id": 4, "cmd": "recorte_removebg", "caminho": "...", "params": {...}, "escala": 0.5}   -> região (e JPG) para o remove.bg
 
-Enquadramento: igual às minifaces do jogo (180×180, p<ID>.png). O rosto e 5 pontos (olhos, nariz e cantos da boca) vêm do
-detector YuNet do OpenCV (modelos/); o meio dos olhos vai para um lugar fixo do quadro, a escala sai da distância entre os
-olhos (corrigida quando o rosto está virado) e dos olhos à boca, e a cabeça é endireitada (olhos na horizontal). As
-medidas-alvo são a mediana de 600 minifaces do BRFP 24 e batem com a miniface original do jogo (p158023). Sem os pontos
-(rosto marcado à mão longe de um rosto, ou foto em que o YuNet não acha nada) vale o retângulo do rosto dos detectores Haar
-do OpenCV, que fica em x=41,5 y=38,5 com 98,5 px de lado (medido na p158023).
-Fundo: usa a transparência da foto quando existe (limpando o halo semitransparente); senão separa o jogador do fundo com o
-GrabCut, guiado pelo rosto, pela cor do fundo (fundo neutro) e pelos traços de pincel do usuário; ou usa o recorte que o
-remove.bg devolveu (o servidor chama a API e passa o arquivo em params["removebg"]).
+Enquadra o retrato pelos pontos do rosto e pela silhueta na escala das minifaces do jogo.
+O fundo automático usa o alfa existente ou o segmentador local de retratos. Sem o modelo instalado,
+usa o GrabCut. O modo remove.bg lê o recorte fornecido pelo servidor.
 """
 import base64
 import hashlib
@@ -27,7 +21,10 @@ import traceback
 
 import cv2
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageOps
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import retrato
 
 for _s in (sys.stdout, sys.stderr):
     try:
@@ -38,11 +35,10 @@ for _s in (sys.stdout, sys.stderr):
 AQUI = os.path.dirname(os.path.abspath(__file__))
 ALVO = (41.5, 38.5, 98.5)       # retângulo do rosto (Haar) na miniface 180×180 do jogo
 LADO_REF = 180
-# pontos do YuNet no quadro 180: meio dos olhos, distância entre os olhos e dos olhos à boca (mediana de 600 minifaces do
-# BRFP 24, conferida com os 478 pontos do MediaPipe nas saídas)
-OLHOS_ALVO = (88.3, 78.2)
-IOD_ALVO = 38.85
-EM_ALVO = 40.06
+# Medianas de 317 retratos do jogo, medidos no quadro de 180 px.
+OLHOS_ALVO = (89.2, 85.6)
+IOD_ALVO = 37.8
+EM_ALVO = 36.6
 GIRO_MAX = 20.0                 # endireita no máximo isto (graus); mais que isso é a pose da foto
 YUNET = os.path.join(AQUI, "modelos", "face_detection_yunet_2023mar.onnx")
 HC = cv2.data.haarcascades
@@ -52,6 +48,7 @@ PERFIL = cv2.CascadeClassifier(HC + "haarcascade_profileface.xml")
 OLHO = cv2.CascadeClassifier(HC + "haarcascade_eye.xml")
 FOTOS = {}      # caminho -> (mtime, rgba)
 MASCARAS = {}   # chave -> (x0, y0, L, alfa float32)
+SEGMENTADAS = {}  # probabilidade da pessoa antes da limpeza e dos pincéis
 ROSTOS = {}     # (caminho, mtime, rosto manual) -> análise do rosto
 RECORTES = {}   # arquivo do remove.bg -> (mtime, alfa float32)
 _YN = {}
@@ -59,16 +56,16 @@ _YN = {}
 
 # ------------------------------------------------------------------ fotos
 def carregar(caminho):
-    mt = os.path.getmtime(caminho)
+    mt = os.stat(caminho).st_mtime_ns
     f = FOTOS.get(caminho)
     if f and f[0] == mt:
         return f[1]
-    im = Image.open(caminho)
-    im.load()
-    rgba = np.asarray(im.convert("RGBA")).copy()
+    with Image.open(caminho) as im:
+        rgba = np.array(ImageOps.exif_transpose(im).convert("RGBA"))
     if len(FOTOS) > 40:
         FOTOS.clear()
         MASCARAS.clear()
+        SEGMENTADAS.clear()
         ROSTOS.clear()
         RECORTES.clear()
     FOTOS[caminho] = (mt, rgba)
@@ -155,12 +152,12 @@ def geometria_pontos(p, giro=None):
     re, le, n, mr, ml = p
     E, M = (re + le) / 2, (mr + ml) / 2
     iod = max(1e-3, float(np.linalg.norm(le - re)))
-    em = float(np.linalg.norm(M - E))
     u = (le - re) / iod
+    em = abs(float(np.dot(M - E, [-u[1], u[0]])))
     # rosto virado: o nariz sai do meio dos olhos e a distância entre os olhos encolhe (cosseno da guinada)
     t = float(np.dot(n - E, u) / iod)
     c = math.sqrt(max(0.5, 1 - (1.6 * t) ** 2))
-    tam = (iod / c / IOD_ALVO + em / EM_ALVO) / 2
+    tam = max(0.1, (iod / c / IOD_ALVO + em / EM_ALVO) / 2)
     return E, tam, math.radians(giro) if giro is not None else math.atan2(u[1], u[0])
 
 
@@ -352,37 +349,41 @@ def analisar_rosto(caminho, rgba, transparente, manual=None):
 
 # ------------------------------------------------------------------ fundo
 def janela_da_mascara(r, fator=2.7):
-    """Janela fixa (independe do zoom do usuário) onde a máscara é calculada: ~2,7× o rosto (3,2× sem o GrabCut)."""
+    """Janela fixa (independe do zoom do usuário) onde a máscara é calculada: 2,7× o rosto para segmentar e 3,2× para a transparência da foto."""
     x, y, s = r
     L = s * fator
     x0 = int(x + s / 2 - L / 2)
     y0 = int(y + s * 0.45 - L * 0.42)
-    return x0, y0, int(L)
+    return x0, y0, max(1, int(L))
 
 
 def fator_da_janela(modo, transparente):
-    usar_grabcut = modo == "remover" or (modo == "auto" and not transparente)
-    return 2.7 if usar_grabcut else 3.2
+    segmentar = modo == "remover" or (modo == "auto" and not transparente)
+    return 2.7 if segmentar else 3.2
 
 
 def recorte(rgba, x0, y0, L):
     h, w = rgba.shape[:2]
-    pad = max(0, -x0, -y0, x0 + L - w, y0 + L - h)
-    src = cv2.copyMakeBorder(rgba, pad, pad, pad, pad, cv2.BORDER_CONSTANT, value=(0, 0, 0, 0)) if pad else rgba
-    return src[y0 + pad:y0 + pad + L, x0 + pad:x0 + pad + L], pad
+    if x0 >= 0 and y0 >= 0 and x0 + L <= w and y0 + L <= h:
+        return rgba[y0:y0+L, x0:x0+L], False
+    crop = np.zeros((L, L, 4), np.uint8)
+    xa, ya, xb, yb = max(0, x0), max(0, y0), min(w, x0 + L), min(h, y0 + L)
+    if xb > xa and yb > ya:
+        crop[ya-y0:yb-y0, xa-x0:xb-x0] = rgba[ya:yb, xa:xb]
+    return crop, True
 
 
-def mascara(rgba, r, modo, limpeza, tracos, transparente, removebg=None):
+def mascara(rgba, r, modo, limpeza, tracos, transparente, removebg=None, foto=None):
     """alfa (0..1) na janela da máscara + origem da janela."""
     x0, y0, L = janela_da_mascara(r, fator_da_janela(modo, transparente))
     extra = [removebg.get("arquivo"), removebg.get("regiao")] if (modo == "removebg" and removebg) else None
-    chave = hashlib.sha1(json.dumps([id(rgba), [round(v, 1) for v in r], modo, round(limpeza, 3), tracos, transparente,
+    chave = hashlib.sha1(json.dumps([foto or id(rgba), r, modo, round(limpeza, 3), tracos, transparente,
                                      extra]).encode()).hexdigest()
     if chave in MASCARAS:
         return MASCARAS[chave]
-    crop, pad = recorte(rgba, x0, y0, L)
+    crop, _ = recorte(rgba, x0, y0, L)
     alfa0 = crop[..., 3].astype(np.float32) / 255
-    fora = alfa0 <= 0.01 if pad else np.zeros_like(alfa0, bool)   # área fora da foto
+    fora = alfa0 == 0
     usar_alfa = modo == "transparencia" or (modo == "auto" and transparente)
     if modo == "nenhum":
         a = alfa0
@@ -415,10 +416,33 @@ def mascara(rgba, r, modo, limpeza, tracos, transparente, removebg=None):
                 a = cv2.GaussianBlur(a, (0, 0), 0.6)
         if tracos:
             a = _aplicar_tracos_alfa(a, tracos, x0, y0)
-    else:
+    elif not retrato.DISPONIVEL:
         a = _grabcut(crop[..., :3], (r[0] - x0, r[1] - y0, r[2]), limpeza, tracos, x0, y0)
-        a[fora] = 0
+        a = np.minimum(a, alfa0)
+    else:
+        h, w = rgba.shape[:2]
+        xa, ya, xb, yb = max(0, x0), max(0, y0), min(w, x0 + L), min(h, y0 + L)
+        a = np.zeros((L, L), np.float32)
+        if xa < xb and ya < yb:
+            seg = (foto or id(rgba), x0, y0, L, tuple(r))
+            if seg not in SEGMENTADAS:
+                if len(SEGMENTADAS) >= 24:
+                    SEGMENTADAS.pop(next(iter(SEGMENTADAS)))
+                centro = (r[0] + r[2]*0.5 - xa, r[1] + r[2]*0.5 - ya, r[2]*0.18)
+                img = rgba[ya:yb, xa:xb]
+                prob = retrato.probabilidade(rgb_opaco(img, transparente), centro)
+                SEGMENTADAS[seg] = np.rint(prob * 255).astype(np.uint8)
+            p = SEGMENTADAS[seg].astype(np.float32) / 255
+            lo = 0.16 + 0.22 * limpeza
+            p = np.clip((p - lo) / (0.86 - lo), 0, 1)
+            a[ya-y0:yb-y0, xa-x0:xb-x0] = p*p*(3 - 2*p)
+        if tracos:
+            a = _aplicar_tracos_alfa(a, tracos, x0, y0)
+        a = np.minimum(a, alfa0)
+    a[fora] = 0
     res = (x0, y0, L, a.astype(np.float32))
+    if len(MASCARAS) >= 48:
+        MASCARAS.pop(next(iter(MASCARAS)))
     MASCARAS[chave] = res
     return res
 
@@ -519,7 +543,7 @@ def _grabcut(rgb, r, limpeza, tracos, x0, y0):
 
 
 # ------------------------------------------------------------------ gerar a miniface
-def matriz(info, ajuste, lado, endireitar=True):
+def matriz(info, ajuste, lado, endireitar=True, automatico=(0., 0., 1.)):
     """foto -> miniface: matriz 2×3, escala e giro (graus) da foto dentro do quadro"""
     zoom = float(ajuste.get("zoom", 1.0))
     ref = lado / LADO_REF
@@ -531,11 +555,28 @@ def matriz(info, ajuste, lado, endireitar=True):
         x, y, s = info["rosto"]
         centro, tam, ang = np.array([x + s / 2, y + s / 2]), s / ALVO[2], 0.0
         alvo = np.array([ALVO[0] + ALVO[2] / 2, ALVO[1] + ALVO[2] / 2]) * ref
-    k = ref / tam * zoom
+    dx, dy, escala = automatico
+    alvo += np.array([dx, dy]) * ref * zoom
+    k = ref / tam * zoom * escala
     c, s_ = math.cos(-ang) * k, math.sin(-ang) * k
     A = np.array([[c, -s_], [s_, c]])
     t = alvo + np.array([float(ajuste.get("dx", 0)), float(ajuste.get("dy", 0))]) * ref - A @ centro
     return np.hstack([A, t[:, None]]).astype(np.float32), k, math.degrees(ang)
+
+
+def ajuste_do_retrato(rgba, foto, info, transp, endireitar):
+    if not transp and not retrato.DISPONIVEL:
+        return (0., 0., 1.), False
+    r = info["rosto"]
+    bx, by, _, sil = mascara(rgba, r, "auto", 0.35, [], transp, foto=foto)
+    inicial, _, _ = matriz(info, {}, LADO_REF, endireitar)
+    inicial[:, 2] += inicial[:, :2] @ [bx, by]
+    olhos = OLHOS_ALVO if info["pontos"] is not None else (ALVO[0]+ALVO[2]/2, ALVO[1]+ALVO[2]/2)
+    # Uma faixa larga de cabelo encostada no limite superior já veio cortada na foto.
+    xa = max(0, int(r[0] - bx))
+    xb = min(sil.shape[1], int(r[0] + r[2] - bx))
+    cortada = 0 <= -by < len(sil) and np.count_nonzero(sil[-by, xa:xb] > 0.65) > r[2] * 0.30
+    return retrato.enquadramento(sil, inicial, olhos), bool(cortada)
 
 
 def gerar(caminho, p):
@@ -547,9 +588,14 @@ def gerar(caminho, p):
     r = info["rosto"]
     lado = int(p.get("lado", 180))
     modo = p.get("fundo", "auto")
-    x0, y0, L, a = mascara(rgba, r, modo, float(p.get("limpeza", 0.35)), p.get("tracos") or [], transp, p.get("removebg"))
+    foto = (caminho, FOTOS[caminho][0])
+    endireitar = p.get("endireitar", True)
+    # Enquadramento independente de pincel, limpeza e zoom: editar a máscara não move o rosto.
+    automatico, corte = ajuste_do_retrato(rgba, foto, info, transp, endireitar)
+    x0, y0, L, a = mascara(rgba, r, modo, float(p.get("limpeza", 0.35)), p.get("tracos") or [], transp,
+                           p.get("removebg"), foto=foto)
     crop, _ = recorte(rgba, x0, y0, L)
-    M, k, giro = matriz(info, p.get("ajuste") or {}, lado, p.get("endireitar", True))
+    M, k, giro = matriz(info, p.get("ajuste") or {}, lado, endireitar, automatico)
     M2 = M.copy()
     M2[:, 2] += M[:, :2] @ np.array([x0, y0], np.float32)      # coordenadas da janela -> saída
     pm = np.dstack([crop[..., :3].astype(np.float32) * a[..., None], a * 255])
@@ -561,7 +607,7 @@ def gerar(caminho, p):
     # janela da miniface na foto (para o quadro na interface): canto de cima à esquerda, lado e giro
     inv = cv2.invertAffineTransform(M)
     c0 = inv @ np.array([0, 0, 1], np.float32)
-    return out, info, [float(c0[0]), float(c0[1]), float(lado / k), round(giro, 2)]
+    return out, dict(info, topo_cortado=corte), [float(c0[0]), float(c0[1]), float(lado / k), round(giro, 2)]
 
 
 def png_b64(arr):
@@ -594,7 +640,8 @@ def cmd_analisar(q):
 
 def cmd_gerar(q):
     out, info, janela = gerar(q["caminho"], q.get("params") or {})
-    return {"png": png_b64(out), "rosto": info["rosto"], "pontos": info["pontos"], "janela": janela}
+    return {"png": png_b64(out), "rosto": info["rosto"], "pontos": info["pontos"], "janela": janela,
+            "topo_cortado": info["topo_cortado"]}
 
 
 def cmd_exportar(q):
@@ -616,7 +663,9 @@ def cmd_recorte_removebg(q):
         raise ValueError("Rosto não encontrado: marque o rosto na foto antes de usar o remove.bg.")
     H, W = rgba.shape[:2]
     reg = regiao_removebg(info["rosto"], W, H)
-    _, k, _ = matriz(info, {}, int(p.get("lado", 180)), p.get("endireitar", True))
+    endireitar = p.get("endireitar", True)
+    automatico, _ = ajuste_do_retrato(rgba, (caminho, FOTOS[caminho][0]), info, transp, endireitar)
+    _, k, _ = matriz(info, {}, int(p.get("lado", 180)), endireitar, automatico)
     res = {"regiao": reg, "necessaria": regiao_removebg(info["rosto"], W, H, 3.2), "k": float(k), "foto": [int(W), int(H)]}
     if q.get("escala"):
         e = float(q["escala"])
@@ -636,7 +685,8 @@ COMANDOS = {"analisar": cmd_analisar, "gerar": cmd_gerar, "exportar": cmd_export
 
 
 def main():
-    sys.stdout.write(json.dumps({"pronto": True, "opencv": cv2.__version__, "yunet": _yunet() is not None}) + "\n")
+    sys.stdout.write(json.dumps({"pronto": True, "opencv": cv2.__version__, "yunet": _yunet() is not None,
+                                 "segmentador": retrato.DISPONIVEL}) + "\n")
     sys.stdout.flush()
     for linha in sys.stdin:
         linha = linha.strip()

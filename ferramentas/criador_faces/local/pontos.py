@@ -12,7 +12,8 @@ from . import MODELOS, PASTA_MODELOS, Erro
 
 CLASSES = ("fundo", "cabelo", "pele_corpo", "pele_rosto", "roupa", "outros")
 OPCIONAIS = ("matplotlib", "sounddevice", "certifi", "absl", "flatbuffers")   # o pacote importa, mas não usa aqui
-_det = _seg = _mp = None
+_det = _mp = None
+_segmentadores = {}
 
 
 def modelos_faltando():
@@ -78,29 +79,33 @@ def detectar(rgb):
     return np.array([[q.x * w, q.y * h, q.z * w] for q in res.face_landmarks[0]])
 
 
-def segmentar(rgb):
-    """rgb uint8 -> classes (H x W): 0 fundo, 1 cabelo, 2 pele do corpo, 3 pele do rosto, 4 roupa, 5 outros"""
-    global _seg
+def segmentar(rgb, *, probabilidade_pessoa=False):
+    """Categorias da selfie, ou probabilidade contínua de primeiro plano para recorte de retratos."""
     mp = mediapipe()
     from mediapipe.tasks.python import vision
-    if _seg is None:
+    if probabilidade_pessoa not in _segmentadores:
         opts = vision.ImageSegmenterOptions(base_options=_opcoes_base("selfie_multiclass_256x256.tflite"),
-                                            output_category_mask=True, output_confidence_masks=False)
-        _seg = vision.ImageSegmenter.create_from_options(opts)
-    res = _seg.segment(mp.Image(image_format=mp.ImageFormat.SRGB, data=np.ascontiguousarray(rgb, np.uint8)))
+                                            output_category_mask=not probabilidade_pessoa,
+                                            output_confidence_masks=probabilidade_pessoa)
+        _segmentadores[probabilidade_pessoa] = vision.ImageSegmenter.create_from_options(opts)
+    res = _segmentadores[probabilidade_pessoa].segment(
+        mp.Image(image_format=mp.ImageFormat.SRGB, data=np.ascontiguousarray(rgb, np.uint8)))
+    if probabilidade_pessoa:
+        return 1 - res.confidence_masks[0].numpy_view().reshape(rgb.shape[:2])
     return np.array(res.category_mask.numpy_view()).reshape(rgb.shape[:2]).astype(np.uint8)
 
 
 def fechar():
     """fecha os modelos antes de o programa sair (evita erro no destrutor do MediaPipe)"""
-    global _det, _seg
-    for x in (_det, _seg):
+    global _det
+    for x in (_det, *_segmentadores.values()):
         try:
             if x is not None:
                 x.close()
         except Exception:  # noqa: BLE001
             pass
-    _det = _seg = None
+    _det = None
+    _segmentadores.clear()
 
 
 # contornos dos olhos na malha do MediaPipe (para tirar a abertura dos olhos da textura)

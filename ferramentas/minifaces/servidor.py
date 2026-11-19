@@ -33,7 +33,7 @@ import dados  # noqa: E402
 import referencias  # noqa: E402
 import removebg as RB  # noqa: E402
 
-VERSAO = "1.4"
+VERSAO = "1.5"
 PREFS = base.Prefs(os.path.join(AQUI, "preferencias.json"), {
     "saida": "", "lado": 180, "sobrescrever": False, "sem_ligacao": "pular", "teamid": None, "fundo_padrao": "auto",
     "ultima_pasta": "", "removebg_chave": ""})
@@ -65,12 +65,14 @@ class Motor:
 
     def iniciar(self):
         """Motor: o Python embutido do Super Tool com OpenCV/Pillow/numpy; senão um Python do computador que os tenha."""
-        cmd, desc = componentes.python_para("minifaces")
+        basico = not componentes.estado_grupo("minifaces")["ok"]
+        cmd, desc = componentes.python_para("minifaces", pacotes=("numpy", "opencv", "pillow") if basico else None)
         for cmd in [cmd] if cmd else []:
             try:
                 p = subprocess.Popen(cmd + ["-X", "utf8", os.path.join(AQUI, "motor", "minifaces.py")], stdin=subprocess.PIPE,
                                      stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, encoding="utf-8",
-                                     errors="replace", creationflags=SEM_JANELA)
+                                     errors="replace", creationflags=SEM_JANELA,
+                                     env=dict(os.environ, BRFP_RECORTE_BASICO="1" if basico else "0"))
             except OSError:
                 continue
             linha = p.stdout.readline()
@@ -80,8 +82,9 @@ class Motor:
                 p.kill()
                 continue
             if info.get("pronto"):
-                self.proc, self.ok, self.instalar = p, True, False
-                self.msg = f"OpenCV {info.get('opencv')} · {desc}"
+                self.proc, self.ok, self.instalar = p, True, not info.get("segmentador")
+                self.msg = ("Recorte básico. Instale os componentes para usar o segmentador de retratos."
+                            if self.instalar else f"Recorte local · OpenCV {info.get('opencv')} · {desc}")
                 return True
         self.ok, self.instalar = False, True
         self.msg = componentes.falta_msg("minifaces")
@@ -101,6 +104,8 @@ class Motor:
                     if it["estado"] == "erro" and it["id"] not in FILA:
                         it.update(estado="analisando", erro=None)
                         FILA.append(it["id"])
+                    elif it["estado"] == "pronto" and it["params"]["fundo"] != "removebg" and it["id"] not in PREVIAS:
+                        PREVIAS.append(it["id"])
             disparar_analise()
 
     def pedir(self, q, tentativas=2):
@@ -129,7 +134,7 @@ _RECONF = {"ativo": False}
 
 def reconferir_motor():
     """Pacotes instalados por outra janela (Super Tool ou outra ferramenta): sobe o motor uma vez."""
-    if MOTOR.ok or not MOTOR.instalar or _RECONF["ativo"] or not componentes.estado_grupo("minifaces")["ok"]:
+    if not MOTOR.instalar or _RECONF["ativo"] or not componentes.estado_grupo("minifaces")["ok"]:
         return
 
     def rodar():
@@ -197,7 +202,7 @@ def gerar_previa(it):
             it.update(estado="erro", erro=str(ex))
         return None
     with LOCK:
-        it.update(previa=g["png"], janela=g["janela"], pontos=g.get("pontos"))
+        it.update(previa=g["png"], janela=g["janela"], pontos=g.get("pontos"), topo_cortado=g.get("topo_cortado"))
         if it["estado"] in ("sem_rosto", "erro"):
             it["estado"], it["erro"] = "pronto", None
     return g
@@ -379,7 +384,7 @@ def api_abrir_link(d):
 
 def publico(it, com_foto=False):
     d = {k: it.get(k) for k in ("id", "caminho", "nome", "recebido", "estado", "analise", "params", "jogador", "erro",
-                                "exportado", "previa", "janela", "pontos")}
+                                "exportado", "previa", "janela", "pontos", "topo_cortado")}
     if com_foto:
         d["foto"] = it.get("foto")
     d["saida"] = nome_saida(it)

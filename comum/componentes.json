@@ -378,8 +378,10 @@
    "pacotes": [
     "numpy",
     "opencv",
-    "pillow"
-   ]
+    "pillow",
+    "mediapipe"
+   ],
+   "projetos": ["segmentador_retratos"]
   },
   "criador": {
    "nome": "Criador de Ligas e Times",
@@ -433,6 +435,17 @@
   }
  },
  "projetos": {
+  "segmentador_retratos": {
+   "nome": "MediaPipe Selfie Multiclass",
+   "versao": "1",
+   "formato": "arquivo",
+   "arquivo": "selfie_multiclass_256x256.tflite",
+   "url": "https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_multiclass_256x256/float32/1/selfie_multiclass_256x256.tflite",
+   "sha256": "c6748b1253a99067ef71f7e26ca71096cd449baefa8f101900ea23016507e0e0",
+   "tamanho": 16371837,
+   "pasta": "modelos/mediapipe",
+   "pasta_env": "BRFP_MODELOS_MEDIAPIPE"
+  },
   "transfermarkt_api": {
    "nome": "transfermarkt-api",
    "versao": "5.0.0+brfp1",
