@@ -236,9 +236,12 @@ def coletar_time(tm, time, temporada, modo="temporada", opcoes=None, liga=None, 
     avisos = []
     passo = progresso or (lambda m: None)
     sq_params = {"season_id": temporada} if modo != "atual" and temporada else {}
-    passo(f"{time['nome']}: elenco")
-    sq = tm.get(f"clubs/{cid}/players", **sq_params)
-    lista = sq.get("players") or []
+    if op.get("lista") is not None:                     # jogadores já listados (ex.: os da convocação anterior)
+        lista = op["lista"]
+    else:
+        passo(f"{time['nome']}: elenco")
+        sq = tm.get(f"clubs/{cid}/players", **sq_params)
+        lista = sq.get("players") or []
     if not lista:
         raise T.ErroTm(f"A Transfermarkt não tem o elenco de {time['nome']}" + (f" em {op.get('temporada_nome') or temporada}" if sq_params else "") + ".")
     passo(f"{time['nome']}: clube e técnico")
@@ -385,7 +388,45 @@ def coletar_selecao(tm, time, progresso=None, temporada=None):
     if temporada:
         d["tecnico"] = None
         d["convocacao"] = str(temporada)
+    # convocação anterior: quem não está nesta completa o mínimo do internationals quando o banco não fecha
+    try:
+        ant = convocacao_anterior(tm, time, d["jogadores"], temporada, progresso)
+    except T.ErroTm as ex:
+        ant = None
+        d.setdefault("avisos", []).append(f"Convocação anterior: {ex}")
+    d["anteriores"] = ant["jogadores"] if ant else []
+    d["anterior_temporada"] = ant["temporada"] if ant else None
     return d
+
+
+def temporada_selecao(data=None):
+    """Temporada de hoje das seleções na Transfermarkt (o ano em que começa, em julho): novembro de 2026 -> "2026"."""
+    data = data or datetime.date.today()
+    return data.year if data.month >= 7 else data.year - 1
+
+
+def convocacao_anterior(tm, time, atuais, temporada=None, progresso=None):
+    """Quem esteve na convocação anterior (a da temporada passada na Transfermarkt; se ela não trouxer ninguém novo, a
+    de antes) e não está na atual: {"temporada", "jogadores"} no formato do coletar_time, com idade, clube e valor de
+    mercado de hoje (numa convocação antiga, os daquela época). None se não houver ninguém."""
+    cid = str(time["id"])
+    ids = {str(j["id"]) for j in atuais}
+    base_t = int(temporada) if temporada else temporada_selecao()
+    passo = progresso or (lambda m: None)
+    for s in (base_t - 1, base_t - 2):
+        passo(f"{time['nome']}: convocação anterior ({s}/{(s + 1) % 100:02d})")
+        sq = tm.get(f"clubs/{cid}/players", season_id=str(s))
+        novos = [p for p in sq.get("players") or [] if str(p.get("id")) not in ids]
+        if not novos:
+            continue
+        novos = [dict(p, shirtNumber=None, isCaptain=False) for p in novos]   # número e braçadeira eram daquela convocação
+        if temporada:                                      # convocação antiga: idade e valor da época escolhida
+            op = {"estatisticas": False, "lista": novos, "temporada_nome": f"{str(temporada)[2:]}/{(int(temporada) + 1) % 100:02d}"}
+            d = coletar_time(tm, time, str(temporada), "temporada", op, None, progresso)
+        else:
+            d = coletar_time(tm, time, None, "atual", {"estatisticas": False, "lista": novos}, None, progresso)
+        return {"temporada": str(s), "jogadores": d["jogadores"]}
+    return None
 
 
 def elenco_atual(tm, clube_id):

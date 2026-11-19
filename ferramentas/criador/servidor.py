@@ -64,7 +64,7 @@ def exige_motor():
         raise base.ErroUsuario(MOTOR["msg"])
 
 
-VERSAO = "2.6"
+VERSAO = "2.6.1"
 PREFS = base.Prefs(os.path.join(AQUI, "preferencias.json"), {
     "saida": "", "espalhamento": 1.25, "escalacoes": 5, "modo": "temporada", "perfis_faltantes": 10, "baixar_imagens": True,
     "classificacao": True, "jogador_inicio": 460000, "time_inicio": 150000, "liga_inicio": 3000, "visual": "proprio",
@@ -1022,6 +1022,8 @@ def api_selecao(d):
             so["criar_modo"] = d["criar_modo"]
             so.pop("criar_faltantes", None)
             so["criar"] = {}                                # "criar todos"/"nenhum" desfaz as escolhas de um por um
+        if "anterior" in d:                                 # completar o mínimo com a convocação anterior (padrão: sim)
+            so["anterior"] = bool(d["anterior"])
         if "criar_um" in d:                                 # {api_id, criar}: este convocado é criado ou não
             so.setdefault("criar", {})[str(d["criar_um"]["api_id"])] = bool(d["criar_um"].get("criar"))
         if d.get("incluir"):
@@ -1341,7 +1343,8 @@ def _extra(it, op=None, previa=False):
         intl = dados.internationals_atual()
         so = it.get("sel_opcoes") or {}
         ex.update(nacao=it.get("nacao"), limites=intl.squad() if intl else None, idade_maxima=intl.idade_maxima() if intl else 35,
-                  criar_modo=criar_modo(so), criar=so.get("criar") or {}, incluir=so.get("incluir") or [],
+                  criar_modo=criar_modo(so), criar=so.get("criar") or {}, anterior=so.get("anterior", True) is not False,
+                  incluir=so.get("incluir") or [],
                   excluir_db=so.get("excluir_db") or [], nivel_manual=bool(it.get("nivel_manual")), previa=previa,
                   forca=(float(it.get("nivel") or 76) - 76.0) / 4.0)
     return ex
@@ -1603,7 +1606,8 @@ def _pes_do_item(iid, refazer=False):
     pr = api_previa({"id": iid}).get("time") or {}
     criados = {str(j["api_id"]) for j in pr.get("jogadores") or [] if not j.get("usar_db") and not j.get("existente")
                and j.get("origem") not in ("livre",)}
-    jogs = [j for j in (it.get("dados") or {}).get("jogadores") or [] if str(j["id"]) in criados]
+    dd = it.get("dados") or {}
+    jogs = [j for j in (dd.get("jogadores") or []) + (dd.get("anteriores") or []) if str(j["id"]) in criados]
     feitos = it.get("fichas_pes") or {}
     if not refazer:
         jogs = [j for j in jogs if str(j["id"]) not in feitos]
@@ -1672,7 +1676,8 @@ def _analisar_fotos(ids, refazer):
             TAREFA.update(feito=n, msg=f"Fotos de {it['nome']}…")
             fotos = dict(it.get("fotos") or {}) if not refazer else {}
             gen = _genero(it)
-            pessoas = [(str(j["id"]), j.get("foto")) for j in it["dados"]["jogadores"] if j.get("foto")]
+            pessoas = [(str(j["id"]), j.get("foto")) for j in it["dados"]["jogadores"] + (it["dados"].get("anteriores") or [])
+                       if j.get("foto")]
             tec = it["dados"].get("tecnico") or {}
             if tec.get("foto"):
                 pessoas.append(("_tecnico", tec["foto"]))

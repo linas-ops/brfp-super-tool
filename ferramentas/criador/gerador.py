@@ -1570,8 +1570,13 @@ class Projeto:
     def criar_selecao(self, dados, nivel, genero=0, ajustes=None, extra=None):
         """Seleção (cria ou atualiza): convocação da fonte casada com os jogadores do banco + os melhores da nação no
         banco até cumprir o SQUAD_SELECTION. extra: nacao, limites {grupo: (min, max)}, idade_maxima, criar_modo
-        ("auto", "todos" ou "nenhum") e criar {api_id: bool} (um por um), incluir, excluir_db, tatica, tecnico, teamid
-        (manual, só ao criar), modelo, nivel_manual, previa.
+        ("auto", "todos" ou "nenhum") e criar {api_id: bool} (um por um), anterior (False: não completar o mínimo com a
+        convocação anterior), incluir, excluir_db, tatica, tecnico, teamid (manual, só ao criar), modelo, nivel_manual,
+        previa.
+
+        O mínimo de cada posição que o banco não fecha é completado com quem esteve na convocação anterior e não está
+        na atual (dados["anteriores"], Transfermarkt): o do banco, se já estiver lá; senão criado como os convocados
+        (no "nenhum", só os do banco).
 
         Convocados que não estão no banco: no automático, quando a nação tem poucos jogadores no banco (só com eles a
         seleção não chega a 11, ou não fecha o mínimo de uma posição em que há convocado fora do banco), todos são criados — na Transfermarkt com a nota
@@ -1680,9 +1685,15 @@ class Projeto:
         padrao = modo == "todos" or (modo == "auto" and poucos)
         escolhidos = ex.get("criar") or {}
         criar = lambda a: bool(escolhidos.get(str(a["id"]), padrao))  # noqa: E731
-        criados = [dict(a, stats={}, nacionalidade=a.get("nacionalidade") or self.nome_nacao.get(nacao)) for a in faltam if criar(a)]
-        if criados:
-            ref = None                                     # Transfermarkt: a nota pelo valor de mercado e pela idade
+
+        def criar_da_fonte(lista, origem_db, origem_novo):
+            """Cria os jogadores da fonte (na Transfermarkt, a nota pelo valor de mercado e pela idade). Quem tem o ID
+            da EA (sofifa) que já é dele no banco, com outro nome, entra como ele mesmo. Devolve os ids da fonte que
+            acabaram vindo do banco."""
+            criados = [dict(a, stats={}, nacionalidade=a.get("nacionalidade") or self.nome_nacao.get(nacao)) for a in lista]
+            if not criados:
+                return set()
+            ref = None
             if dados.get("fonte") != "transfermarkt":      # API-Football: perto dos que entram pelo banco
                 base_ov = sorted((x["overall"] for x in pool + so_banco), reverse=True)
                 ref = (base_ov[min(len(base_ov) - 1, 18)] if base_ov else int(nivel) - 6) + 1.8
@@ -1690,30 +1701,79 @@ class Projeto:
                                               "modo": dados.get("modo"), "data_ref": dados.get("data_ref"),
                                               "temporada_nome": dados.get("temporada_nome")},
                                              ref, genero, ajustes, ex.get("fotos"), ex.get("fichas_pes"))
+            do_banco = set()
             for j in novos:
                 fid = str(j.get("ficha_id_ea") or "")
                 if (fid and not j.get("playerid_ea") and fid in idx.info and fid not in usados and not lenda(fid)
                         and str(idx.info[fid]["nascimento"]) == str(N.dias(j.get("nascimento")))
                         and (ajustes.get(str(j["id"])) or {}).get("usar_db") is not False):
-                    # o ID da EA (sofifa) desse convocado já é dele no banco, com outro nome: ele mesmo, não uma cópia
                     a = next(x for x in criados if str(x["id"]) == str(j["id"]))
-                    faltam = [x for x in faltam if str(x["id"]) != str(j["id"])]
+                    do_banco.add(str(j["id"]))
                     usados.add(fid)
                     if fid in excluir_db:
                         continue
-                    jj = jog_db(fid, "convocado", a.get("numero"), a)
+                    jj = jog_db(fid, origem_db, a.get("numero"), a)
                     jj["casamento"] = 1.0
                     if str(jj["nacao"]) != nacao:
                         jj["outra_nacao"], jj["nacao"] = str(jj["nacao"]), nacao
                     pool.append(jj)
                     continue
-                j.update(origem="novo", existente=False, nacao_manual=j.get("nacao_manual") or nacao)
+                j.update(origem=origem_novo, existente=False, nacao_manual=j.get("nacao_manual") or nacao)
                 pool.append(j)
+            return do_banco
+        do_banco = criar_da_fonte([a for a in faltam if criar(a)], "convocado", "novo")
+        faltam = [x for x in faltam if str(x["id"]) not in do_banco]
         # 5. completar pelo banco até o mínimo de cada grupo (os criados contam)
         entra, _ = completar(pool)
         for i in entra:
             usados.add(i["playerid"])
             pool.append(jog_db(i["playerid"], "completado"))
+        # 5b. o que o banco não fecha: quem esteve na convocação anterior e não está na atual (os de maior valor de
+        #     mercado de cada posição que falta) — do banco, se já estiver lá; senão criado como os convocados
+        cont = collections.Counter(grupo(j) for j in pool)
+        falta = {g: mn - cont[g] for g, (mn, _) in limites.items() if cont[g] < mn}
+        usar_anterior = ex.get("anterior", True) is not False
+        anteriores = dados.get("anteriores") or []
+        if falta and usar_anterior and anteriores:
+            criar_ant = []
+            for a in sorted(anteriores, key=lambda a: -(a.get("valor") or 0)):
+                g = next(iter(grupos_do_convocado(a) & set(falta)), None)
+                if not g or falta[g] <= 0:
+                    continue
+                aj = ajustes.get(str(a["id"])) or {}
+                if aj.get("excluir"):
+                    tirados.append({"id": a["id"], "nome": a.get("nome"), "foto": a.get("foto"), "anterior": True})
+                    continue
+                if (a.get("idade") or 0) > idade_max:
+                    continue
+                if aj.get("playerid_banco"):
+                    pid = str(aj["playerid_banco"])
+                    cand = [(1.0, pid)] if pid in idx.info else []
+                else:
+                    cand = idx.buscar(a.get("nome"), a.get("primeiro", ""), a.get("sobrenome", ""), a.get("nascimento"),
+                                      a.get("idade"), nacao, genero, minimo=0.6, so_nacao=True)
+                if cand and (cand[0][1] in usados or cand[0][1] in excluir_db):
+                    continue                               # já está na seleção (ou foi tirado dela)
+                cand = [x for x in cand if not lenda(x[1])]
+                if not cand and aj.get("usar_db") is not False:
+                    pid = self._mesmo_jogador(a, genero)
+                    if pid and not lenda(pid):
+                        if pid in usados or pid in excluir_db:
+                            continue
+                        cand = [(1.0, pid)]
+                if cand:
+                    falta[g] -= 1
+                    pid = cand[0][1]
+                    usados.add(pid)
+                    j = jog_db(pid, "anterior", None, a)
+                    j["casamento"] = cand[0][0]
+                    if str(j["nacao"]) != nacao:
+                        j["outra_nacao"], j["nacao"] = str(j["nacao"]), nacao
+                    pool.append(j)
+                elif modo != "nenhum":                     # "Não criar": só os que já estão no banco
+                    falta[g] -= 1
+                    criar_ant.append(a)
+            criar_da_fonte(criar_ant, "anterior", "anterior")
         # 6. máximo de cada grupo: saem primeiro os completados, depois os escolhidos, por fim os convocados de nota menor
         for g, (mn, mx) in limites.items():
             dos = [j for j in pool if grupo(j) == g]
@@ -1783,11 +1843,25 @@ class Projeto:
                "criar_modo": modo, "poucos": poucos, "incompleta": incompleta,
                "banco_sozinho": {"jogadores": n_banco,
                                  "abaixo": {g: f"{cont_banco[g]}/{mn}" for g, (mn, _) in limites.items() if cont_banco[g] < mn}},
+               "anterior": {"buscada": "anteriores" in dados, "temporada": dados.get("anterior_temporada"),
+                            "disponiveis": len(anteriores), "usar": usar_anterior,
+                            "usados": sum(1 for j in pool if j.get("origem") == "anterior"),
+                            "criados": sum(1 for j in pool if j.get("origem") == "anterior" and not j.get("existente"))},
                "avisos": list(dados.get("avisos") or [])}
         if criados_ok:
             nos_clubes = sum(1 for j in criados_ok if j.get("clube_destino"))
             res["avisos"].append(f"{len(criados_ok)} convocado(s) que não estão no banco serão criados: {nos_clubes} no clube deles "
                                  f"(clube no banco) e {len(criados_ok) - nos_clubes} nos Passes Livres (Sem Contrato).")
+        ant_ok = [j for j in pool if j.get("origem") == "anterior"]
+        if ant_ok:
+            s = dados.get("anterior_temporada")
+            novos_ant = [j for j in ant_ok if not j.get("existente")]
+            nos_clubes = sum(1 for j in novos_ant if j.get("clube_destino"))
+            res["avisos"].append(f"{len(ant_ok)} jogador(es) da convocação anterior"
+                                 + (f" ({s}/{(int(s) + 1) % 100:02d})" if s else "") + " completam o mínimo: "
+                                 + (f"{len(novos_ant)} criado(s) ({nos_clubes} no clube deles e {len(novos_ant) - nos_clubes} nos "
+                                    f"Passes Livres)" if novos_ant else "nenhum criado")
+                                 + (f" e {len(ant_ok) - len(novos_ant)} do banco" if len(ant_ok) > len(novos_ant) else "") + ".")
         if trocas:
             res["avisos"].append(f"{len(trocas)} jogador(es) do banco com outra nacionalidade entram na seleção e passam a ser de "
                                  f"{self.nome_nacao.get(nacao) or nacao}: " + ", ".join(
@@ -1795,7 +1869,9 @@ class Projeto:
                                  + ("…" if len(trocas) > 8 else "") + ".")
         if falta_grupo:
             res["avisos"].append("Abaixo do mínimo: " + ", ".join(f"{g} {cont[g]}/{limites[g][0]}" for g in falta_grupo) +
-                                 " (a nação não tem mais jogadores no banco nessas posições).")
+                                 " (a nação não tem mais jogadores no banco nessas posições"
+                                 + (", nem na convocação anterior" if anteriores and usar_anterior and modo != "nenhum" else "")
+                                 + ").")
         fora = [a for a in faltam if not criar(a)]
         if fora:
             res["avisos"].append(f"{len(fora)} convocado(s) não estão no banco e não serão criados: "

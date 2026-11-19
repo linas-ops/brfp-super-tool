@@ -1,4 +1,4 @@
-# Criador de Ligas e Times — versão 2.6
+# Criador de Ligas e Times — versão 2.6.1
 
 Cria ligas, times, seleções e jogadores no banco do jogo (FC 26 / FC 27) a partir da **API-Football** (api-sports.io) —
 mais de 1.200 ligas e copas no mundo; só no Brasil, 109 competições — ou da **Transfermarkt** (pela transfermarkt-api) e
@@ -233,6 +233,12 @@ os 34 atributos — do sofifa, também o **ID da EA** — e, conforme a opção,
   - Países com nome diferente entre a fonte e o banco agora batem (Netherlands → Holland, Cape Verde → Cape Verde Islands,
     The Gambia, Hongkong, Macao, Swaziland, Macedonia, Sao Tome and Principe…); as seleções postas antes no projeto sem
     nação reconhecida são reconhecidas de novo ao abrir.
+- **Convocação anterior** (2.6.1, Transfermarkt): a coleta da seleção traz também a convocação da temporada passada (se
+  ela não tiver ninguém novo, a de antes). Nas posições que continuam **abaixo do mínimo** do internationals depois dos
+  convocados e do banco, entram os jogadores dessa convocação que **não estão na atual**, os de maior valor de mercado
+  primeiro: o do banco, se já estiver lá; senão criado como os convocados (clube dele ou Passes Livres; em **Não criar**,
+  só os do banco). Aparecem no elenco como *convocação anterior*; tirar um põe o próximo da posição. O interruptor
+  **Completar o mínimo com a convocação anterior** desliga isso. Seleções coletadas antes da 2.6.1: **Coletar de novo**.
   **Pôr jogador do banco…** inclui qualquer um; o **×** tira (os completados são trocados pelo próximo da posição). Número
   e capitão editáveis.
 - **Convocação antiga** (painel da direita, *Convocação*): uma temporada passada em vez da atual — na Transfermarkt, a
@@ -382,3 +388,6 @@ posição e o pé da Transfermarkt. Os pares trocados à mão ficam no mapa sepa
   clubes deles no banco, ADO Den Haag e Voluntari, 9 nos Passes Livres; 1 jogador holandês do banco passou a ser de
   Curaçao), Cabo Verde, Holanda e Brasil gerados juntos num banco, sem jogador repetido; projeto salvo, aberto pelos
   recentes e juntado com outro.
+  2.6.1: convocação anterior (2025/26) completando o mínimo — Taipé Chinês (3: 2 criados e 1 do banco), Curaçao (3
+  criados nos Passes Livres); desligar, tirar um e Não criar conferidos; gerado num banco com Cabo Verde, Holanda e Brasil,
+  sem jogador repetido nem camisa repetida.

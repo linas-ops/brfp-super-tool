@@ -154,7 +154,7 @@
 .grupos-sel .grupo small { font-weight: 400; color: var(--texto-3); }
 .grupos-sel .grupo.ok { color: #8fdcb2; } .grupos-sel .grupo.baixo { color: #ffb3b5; background: rgba(240, 86, 90, .12); } .grupos-sel .grupo.alto { color: #f5d27a; }
 .origem { font-size: 11px; padding: 1px 6px; border-radius: 3px; background: var(--painel-2); color: var(--texto-2); }
-.origem.convocado { color: #8fdcb2; } .origem.completado { color: #9fc0ff; } .origem.novo { color: #f5d27a; } .origem.manual { color: #f9a8d4; }
+.origem.convocado { color: #8fdcb2; } .origem.completado { color: #9fc0ff; } .origem.novo { color: #f5d27a; } .origem.manual { color: #f9a8d4; } .origem.anterior { color: #c4b5fd; }
 .linha-faltante { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 4px 0; border-bottom: 1px solid var(--borda); font-size: 12.5px; }
 .lista-busca { display: flex; flex-direction: column; max-height: 52vh; overflow: auto; border: 1px solid var(--borda); border-radius: 6px; }
 .it-busca { display: flex; gap: 8px; align-items: center; padding: 6px 10px; border: 0; border-bottom: 1px solid var(--borda); background: none; color: var(--texto); text-align: left; }

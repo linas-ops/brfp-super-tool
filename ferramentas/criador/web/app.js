@@ -952,13 +952,25 @@ function desenharPreviaSelecao(i, t, corpo) {
   else if (t.poucos) explica = `A nação tem poucos jogadores no banco: só com eles, a seleção teria ${bs.jogadores ?? 0} jogador(es)${abaixo ? ` e ficaria abaixo do mínimo em ${abaixo}` : ''}. Por isso os ${ne.length} convocado(s) que não estão no banco são criados${nCriar < ne.length ? ` (menos os ${ne.length - nCriar} desmarcados)` : ''}.`;
   else explica = `O banco já fecha a seleção, então os ${ne.length} convocado(s) que não estão no banco ficam fora${nCriar ? `, menos os ${nCriar} marcados na lista` : ''} (para criá-los, escolha Criar todos).`;
   const grupos = el('div', { class: 'grupos-sel' }, ...Object.entries(t.grupos || {}).map(([g, v]) => el('span', { class: `grupo ${v.n < v.min ? 'baixo' : v.n > v.max ? 'alto' : 'ok'}`, title: `mínimo ${v.min}, máximo ${v.max}` }, el('b', {}, g), `${v.n}`, el('small', {}, ` ${v.min}–${v.max}`))));
+  // convocação anterior (Transfermarkt): completa o mínimo das posições que o banco não fecha
+  const an = t.anterior || {};
+  const tempAn = an.temporada ? `${an.temporada}/${String((+an.temporada + 1) % 100).padStart(2, '0')}` : '';
+  const faltaMin = Object.keys(t.falta_grupo || {}).length > 0;
+  let anTxt = '';
+  if (an.usar !== false && an.usados) anTxt = `${an.usados} jogador(es) da convocação anterior${tempAn ? ` (${tempAn})` : ''} completam o mínimo: ${an.criados} criado(s), cada um no clube dele (se o clube estiver no banco) ou nos Passes Livres${an.usados > an.criados ? `, e ${an.usados - an.criados} do banco` : ''}.`;
+  else if (an.buscada && an.usar !== false && faltaMin) anTxt = an.disponiveis ? 'A convocação anterior não tem mais ninguém nas posições que faltam.' : 'A convocação anterior não trouxe ninguém além dos convocados de agora.';
+  else if (!an.buscada && ehTm(i) && faltaMin) anTxt = 'Abaixo do mínimo: use Coletar de novo para buscar também a convocação anterior, que completa as posições que faltam.';
+  const anterior = an.buscada || ehTm(i) ? interruptor({ titulo: 'Completar o mínimo com a convocação anterior',
+    descricao: `Nas posições abaixo do mínimo que o banco não fecha, entram os jogadores da convocação anterior${tempAn ? ` (${tempAn})` : ''} que não estão na atual, os de maior valor de mercado primeiro${modo === 'nenhum' ? ' (em Não criar, só os que já estão no banco)' : ''}.${an.buscada ? ` ${an.disponiveis} disponível(is).` : ''}`,
+    marcado: an.usar !== false, aoMudar: (v) => selecao(i.id, { anterior: v }) }).el : null;
   corpo.append(el('div', { class: 'cartao' }, el('header', {}, el('div', {}, el('h3', {}, t.atualiza ? 'Seleção que já existe no banco: o elenco é substituído' : 'Seleção nova (entra na liga de seleções e no internationals.txt)'),
     el('p', { class: 'dica' }, `Convocados casados com o banco + os melhores da nação até o mínimo de cada posição (SQUAD_SELECTION${S.e.internationals ? ' do internationals importado' : ', padrão'}).`))),
   el('div', { class: 'cartao-corpo col-gap' },
     t.incompleta ? nota(`Só ${t.jogadores.length} jogador(es) na seleção: são precisos 11 para gerar. Escolha <b>Automático</b> ou <b>Criar todos</b>, marque convocados na lista ou ponha jogadores do banco.`, 'erro') : null,
     grupos,
     campo('Convocados que não estão no banco', seg(modo, MODOS_CRIAR, (v) => selecao(i.id, { criar_modo: v }))),
-    el('div', { class: 'mudo peq-txt' }, explica, nCriar ? ` Cada criado vai para o clube dele, se o clube estiver no banco; senão, para ${destino}.` : ''))));
+    el('div', { class: 'mudo peq-txt' }, explica, nCriar ? ` Cada criado vai para o clube dele, se o clube estiver no banco; senão, para ${destino}.` : ''),
+    anterior, anTxt ? el('div', { class: 'mudo peq-txt' }, anTxt) : null)));
   if (ne.length) {
     corpo.append(el('div', { class: 'cartao' }, el('header', {}, el('div', {}, el('h3', {}, `Convocados que não estão no banco (${ne.length})`),
       el('p', { class: 'dica' }, `${nCriar} de ${ne.length} serão criados. Desmarque quem não criar, ou diga quem ele é no banco (Escolher no banco…).`)),
@@ -996,13 +1008,14 @@ function desenharPreviaSelecao(i, t, corpo) {
         el('small', {}, `ID ${j.playerid} · ${j.existente ? (j.clube || 'sem clube') : `novo → ${j.clube || 'Passes Livres'}`}${j.outra_nacao ? ` · era de ${nomeNacao(j.outra_nacao)}` : ''}`, criarNovo ? ' · ' : '', criarNovo)),
       el('td', {}, POS[j.pos] || j.pos), el('td', { class: 'num' }, el('span', { class: `ov ${classeOv(j.overall)}` }, j.overall)),
       el('td', { class: 'num' }, j.idade ?? '—'),
-      el('td', {}, el('span', { class: `origem ${j.origem}` }, { convocado: 'convocado', completado: 'completado pelo banco', manual: 'escolhido', novo: 'novo (criado)' }[j.origem] || j.origem)),
+      el('td', {}, el('span', { class: `origem ${j.origem}` }, { convocado: 'convocado', completado: 'completado pelo banco', manual: 'escolhido', novo: 'novo (criado)',
+        anterior: j.existente ? 'convocação anterior (do banco)' : 'convocação anterior (criado)' }[j.origem] || j.origem)),
       el('td', {}, cap), el('td', {}, fora)));
   }
   // convocados tirados à mão (não entram nem são criados): pôr de volta
   for (const x of t.excluidos || []) {
     tb.append(el('tr', { class: 'fora' }, el('td', {}, el('button', { class: 'btn-icone peq', title: 'Pôr de volta na seleção', onclick: () => ajustar(i.id, x.id, { excluir: false }), html: icone('restaurar', 12) })),
-      el('td', { colspan: 7 }, el('s', {}, x.nome || `Jogador ${x.id}`), el('span', { class: 'mudo peq-txt' }, ' — convocado tirado da seleção'))));
+      el('td', { colspan: 7 }, el('s', {}, x.nome || `Jogador ${x.id}`), el('span', { class: 'mudo peq-txt' }, x.anterior ? ' — da convocação anterior, tirado da seleção' : ' — convocado tirado da seleção'))));
   }
   const excl = so.excluir_db || [];
   corpo.append(el('div', { class: 'cartao' }, el('header', {}, el('div', {}, el('h3', {}, `Elenco da seleção (${t.jogadores.length})`), el('p', { class: 'dica' }, 'Titulares em azul. Mude o número, o capitão ou tire jogadores; os completados pelo banco são trocados pelo próximo melhor da posição.')),
@@ -2040,6 +2053,8 @@ function menus() {
         com a posição e o pé de cada jogador.<br><br>
         <b>Saída:</b> banco novo (cópia do importado + linhas novas, alteradas e removidas), tabelas .txt, idioma, internationals.txt e
         escudos/fotos (com envio ao Criador de Minifaces).<br><br>
+        <b>2.6.1</b> — o mínimo de cada posição que o banco não fecha é completado com a convocação anterior (quem não está na
+        atual; Transfermarkt).<br>
         <b>2.6</b> — seleção nova de nação com poucos jogadores no banco: os convocados que faltam são criados (Automático, Criar todos
         ou Não criar), cada um no clube dele, se o clube estiver no banco, ou nos Passes Livres; quem já está no banco com outra
         nacionalidade entra como ele mesmo. Coletar todas as seleções (ou todos os times avulsos) de uma vez. Salvar e abrir projetos,
